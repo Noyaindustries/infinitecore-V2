@@ -1,6 +1,6 @@
 import { Handler } from "@netlify/functions";
-import multipart from "lambda-multipart-parser";
 import { randomUUID } from "crypto";
+import { parseMultipartLambdaEvent } from "./multipart-netlify";
 import { buildFileUrl, hasR2Config, putObject, sanitizeFolder } from "./_r2";
 
 const json = (statusCode: number, body: unknown) => ({
@@ -26,7 +26,7 @@ export const handler: Handler = async (event) => {
   }
 
   try {
-    const parsed = await multipart.parse(event);
+    const parsed = await parseMultipartLambdaEvent(event);
     const file = parsed.files?.[0];
     if (!file?.content) return json(400, { success: false, error: "Aucun fichier reçu." });
 

@@ -1,0 +1,467 @@
+import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Menu, X, ChevronDown } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { auth } from '../../firebase';
+import Logo from '../Logo';
+import { useAuth } from '../FirebaseProvider';
+import MarketingV4Background from './MarketingV4Background';
+import { cn } from '../../lib/utils';
+
+/** Liens modules marketing (menu Solutions + footer). */
+const MARKETING_SOLUTION_MODULE_LINKS: { to: string; label: string }[] = [
+  { to: '/infinite-crm', label: 'Infinite CRM' },
+  { to: '/infinite-finance', label: 'Infinite Finance' },
+  { to: '/rh', label: 'Infinite RH' },
+  { to: '/projects', label: 'Infinite Projects' },
+  { to: '/academy', label: 'Infinite Academy' },
+  { to: '/comms', label: 'Infinite Comms' },
+  { to: '/store', label: 'Infinite Store' },
+];
+
+const navLinkClass =
+  'rounded-md px-3.5 py-2 text-[14px] font-medium text-[#8E9EAE] transition-colors duration-150 hover:bg-white/[0.045] hover:text-[#F5F7FF]';
+const dropdownItemClass =
+  'block px-4 py-3 text-[13px] leading-snug text-[#C8D0E0] transition-colors hover:bg-white/[0.06] hover:text-[#F5F7FF]';
+
+export default function MarketingLayout() {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [solutionsSubOpen, setSolutionsSubOpen] = useState(false);
+  const [navSolid, setNavSolid] = useState(false);
+  const { user, userData } = useAuth();
+  const navigate = useNavigate();
+
+  const role = userData?.role;
+  const accountSpaces =
+    role === 'admin'
+      ? [
+          { to: '/superadmin', label: 'Espace SuperAdmin' },
+          { to: '/admin', label: 'Espace Commando' },
+        ]
+      : role === 'commando'
+        ? [{ to: '/admin', label: 'Espace Commando' }]
+        : role === 'developer'
+          ? [{ to: '/developer', label: 'Espace Développeur' }]
+          : role === 'partner'
+            ? [{ to: '/partenaire', label: 'Espace Partenaire' }]
+            : [{ to: '/dashboard', label: 'Mon espace client' }];
+
+  const handleLogout = async () => {
+    localStorage.removeItem('demoRole');
+    await auth.signOut();
+    navigate('/login');
+  };
+
+  useEffect(() => {
+    const onScroll = () => setNavSolid(window.scrollY > 60);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!isMenuOpen) setSolutionsSubOpen(false);
+  }, [isMenuOpen]);
+
+  return (
+    <div className="flex min-h-dvh flex-col bg-black font-[Urbanist,ui-sans-serif,system-ui,sans-serif] text-[#C8D0E0] selection:bg-noya-blue/30">
+      <MarketingV4Background />
+
+      {/* HEADER — nav fixe floutée (infinitecore-v4.html) */}
+      <header
+        className={`fixed left-0 right-0 top-0 z-[900] border-b border-white/[0.07] text-[#F5F7FF] transition-colors duration-300 ${
+          navSolid ? 'bg-[#03050d]/95' : 'bg-black/60'
+        } backdrop-blur-[24px] backdrop-saturate-[180%]`}
+      >
+        <div className="container mx-auto flex h-[66px] items-center justify-between px-4 sm:h-[70px] md:h-[78px] sm:px-6 lg:px-[52px]">
+          <div className="flex flex-1 justify-start items-center min-w-0">
+            <Link
+              to="/"
+              className="flex shrink-0 items-center self-center transition-opacity duration-300 hover:opacity-90"
+            >
+              <Logo lightText blendSurface="primary" className="h-11 sm:h-12 md:h-14" />
+            </Link>
+          </div>
+          
+          <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 md:flex" aria-label="Navigation principale">
+            <div className="relative group">
+              <button
+                type="button"
+                className={cn(
+                  navLinkClass,
+                  'flex items-center gap-1 border-0 bg-transparent cursor-pointer',
+                )}
+                aria-haspopup="true"
+              >
+                Solutions
+                <ChevronDown size={14} className="text-[#8E9EAE] opacity-80 transition-transform duration-200 group-hover:rotate-180" aria-hidden />
+              </button>
+              <div
+                aria-label="Solutions Infinite Core"
+                className="invisible absolute left-1/2 top-full z-[910] mt-2 w-[min(100vw-2rem,17rem)] -translate-x-1/2 translate-y-1 overflow-hidden rounded-lg border border-white/[0.08] bg-[#080D1E]/95 text-left opacity-0 shadow-xl backdrop-blur-xl transition-all duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100"
+              >
+                <Link to="/solutions" className={cn(dropdownItemClass, 'font-medium text-[#F5F7FF]')}>
+                  Toutes les solutions
+                </Link>
+                <div className="border-t border-white/[0.07]" aria-hidden />
+                {MARKETING_SOLUTION_MODULE_LINKS.map((item) => (
+                  <Link key={item.to} to={item.to} className={dropdownItemClass}>
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
+            {[
+              { to: '/a-propos', label: 'À propos' },
+              { to: '/tarifs', label: 'Tarifs' },
+              { to: '/faq', label: 'FAQ' },
+            ].map((item) => (
+              <Link key={item.to} to={item.to} className={navLinkClass}>
+                {item.label}
+              </Link>
+            ))}
+          </nav>
+
+          <div className="hidden md:flex flex-1 justify-end items-center gap-2.5">
+            {user ? (
+              <div className="relative group">
+                <button className="flex items-center gap-1.5 rounded-full border border-white/[0.07] bg-white/[0.04] px-3 py-1.5 text-[13px] text-[#F5F7FF] transition-colors hover:bg-white/[0.07]">
+                  <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#4A7FB5] text-[10px] font-bold text-white">
+                    {userData?.firstName?.charAt(0) || user.email?.charAt(0)?.toUpperCase() || 'U'}
+                  </div>
+                  <span className="hidden lg:inline">Mon espace</span>
+                  <ChevronDown size={13} className="text-[#8E9EAE]" />
+                </button>
+                <div className="invisible absolute right-0 top-full z-[910] mt-2 w-56 translate-y-1 overflow-hidden rounded-lg border border-white/[0.08] bg-[#080D1E]/95 text-[#C8D0E0] opacity-0 shadow-xl backdrop-blur-xl transition-all duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100">
+                  {accountSpaces.map((space) => (
+                    <Link key={space.to} to={space.to} className="block px-4 py-3 text-[13px] transition-colors hover:bg-white/[0.06] hover:text-[#F5F7FF]">
+                      {space.label}
+                    </Link>
+                  ))}
+                  {role === 'client' && (
+                    <>
+                      <Link to="/dashboard/profil" className="block px-4 py-3 text-[13px] transition-colors hover:bg-white/[0.06] hover:text-[#F5F7FF]">Mon profil</Link>
+                      <Link to="/dashboard/boutique" className="block px-4 py-3 text-[13px] transition-colors hover:bg-white/[0.06] hover:text-[#F5F7FF]">Boutique & Services</Link>
+                    </>
+                  )}
+                  <div className="border-t border-white/[0.07]" />
+                  <button onClick={handleLogout} className="w-full px-4 py-3 text-left text-[13px] text-noya-red transition-colors hover:bg-noya-red/10">
+                    Déconnexion
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className="rounded-md border border-white/[0.07] px-4 py-2.5 text-sm font-medium text-[#8E9EAE] transition-all duration-200 hover:border-white/[0.12] hover:text-[#F5F7FF]"
+                >
+                  Connexion
+                </Link>
+                <Link
+                  to="/signup"
+                  className="rounded-md bg-linear-to-br from-[#E8961E] to-[#F5A623] px-[18px] py-2.5 text-sm font-bold text-[#0D0700] shadow-[0_0_0_1px_rgba(232,150,30,0.25),0_2px_14px_rgba(232,150,30,0.22)] transition-all duration-200 hover:-translate-y-px hover:shadow-[0_0_0_1px_rgba(232,150,30,0.35),0_4px_18px_rgba(232,150,30,0.26)]"
+                >
+                  Créer mon compte
+                </Link>
+              </>
+            )}
+          </div>
+
+          {/* Mobile Menu Toggle */}
+          <button
+            className="p-1.5 text-[#8E9EAE] transition-colors hover:text-[#F5F7FF] md:hidden"
+            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            aria-label={isMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+          >
+            {isMenuOpen ? <X size={22} /> : <Menu size={22} />}
+          </button>
+        </div>
+
+        {/* Mobile Nav - Slide Down */}
+        <div
+          className={`overflow-hidden transition-all duration-300 ease-in-out md:hidden ${
+            isMenuOpen ? 'max-h-[80vh] opacity-100' : 'pointer-events-none max-h-0 opacity-0'
+          }`}
+        >
+          <div className="space-y-3 border-t border-white/[0.07] bg-surface-primary/95 px-4 py-4 backdrop-blur-xl">
+            {/* Nav Links */}
+            <nav className="space-y-1" aria-label="Navigation principale">
+              <div>
+                <button
+                  type="button"
+                  id="nav-mobile-solutions"
+                  className="flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-[13px] font-medium text-[#8E9EAE] transition-all hover:bg-white/[0.06] hover:text-[#F5F7FF]"
+                  aria-expanded={solutionsSubOpen}
+                  aria-controls="nav-mobile-solutions-panel"
+                  onClick={() => setSolutionsSubOpen((o) => !o)}
+                >
+                  Solutions
+                  <ChevronDown
+                    size={14}
+                    className={cn('shrink-0 text-[#8E9EAE] transition-transform duration-200', solutionsSubOpen && 'rotate-180')}
+                    aria-hidden
+                  />
+                </button>
+                <div
+                  id="nav-mobile-solutions-panel"
+                  role="region"
+                  aria-labelledby="nav-mobile-solutions"
+                  hidden={!solutionsSubOpen}
+                  className="mt-0.5 space-y-0 border-l border-white/[0.08] pl-2.5 ml-1.5"
+                >
+                  <Link
+                    to="/solutions"
+                    className="block rounded-md py-2 pr-2 text-xs font-medium text-[#F5F7FF] transition-colors hover:text-white"
+                    onClick={() => setIsMenuOpen(false)}
+                  >
+                    Toutes les solutions
+                  </Link>
+                  {MARKETING_SOLUTION_MODULE_LINKS.map((link) => (
+                    <Link
+                      key={link.to}
+                      to={link.to}
+                      className="block rounded-md py-2 pr-2 text-xs text-[#8E9EAE] transition-colors hover:text-[#F5F7FF]"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      {link.label}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+              {[
+                { to: '/a-propos', label: 'À propos' },
+                { to: '/tarifs', label: 'Tarifs' },
+                { to: '/faq', label: 'FAQ' },
+              ].map((link) => (
+                <Link
+                  key={link.to}
+                  to={link.to}
+                  className="block rounded-md px-3 py-2.5 text-[13px] font-medium text-[#8E9EAE] transition-all hover:bg-white/[0.06] hover:text-[#F5F7FF]"
+                  onClick={() => setIsMenuOpen(false)}
+                >
+                  {link.label}
+                </Link>
+              ))}
+            </nav>
+
+            {/* Auth Section */}
+            <div className="border-t border-white/[0.07] pt-3">
+              {user ? (
+                <div className="space-y-0">
+                  <p className="mb-1.5 px-3 text-[11px] font-black uppercase tracking-widest text-[#5E6E84]">Mon compte</p>
+                  {accountSpaces.map((space) => (
+                    <Link
+                      key={space.to}
+                      to={space.to}
+                      className="block rounded-md px-3 py-2.5 text-[13px] text-[#8E9EAE] transition-all hover:bg-white/[0.06] hover:text-[#F5F7FF]"
+                      onClick={() => setIsMenuOpen(false)}
+                    >
+                      {space.label}
+                    </Link>
+                  ))}
+                  {role === 'client' && (
+                    <>
+                      <Link to="/dashboard/profil" className="block rounded-md px-3 py-2.5 text-[13px] text-[#8E9EAE] transition-all hover:bg-white/[0.06] hover:text-[#F5F7FF]" onClick={() => setIsMenuOpen(false)}>Mon profil</Link>
+                      <Link to="/dashboard/boutique" className="block rounded-md px-3 py-2.5 text-[13px] text-[#8E9EAE] transition-all hover:bg-white/[0.06] hover:text-[#F5F7FF]" onClick={() => setIsMenuOpen(false)}>Boutique & Services</Link>
+                    </>
+                  )}
+                  <button
+                    onClick={() => { handleLogout(); setIsMenuOpen(false); }}
+                    className="mt-0.5 w-full rounded-md px-3 py-2.5 text-left text-[13px] font-medium text-noya-red transition-all hover:bg-noya-red/10"
+                  >
+                    Déconnexion
+                  </button>
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2.5">
+                  <Link
+                    to="/login"
+                    onClick={() => setIsMenuOpen(false)}
+                    className="rounded-md border border-white/[0.07] py-2.5 text-center text-[13px] font-medium text-[#8E9EAE] transition-all hover:border-white/[0.12] hover:text-[#F5F7FF]"
+                  >
+                    Connexion
+                  </Link>
+                  <Link
+                    to="/signup"
+                    onClick={() => setIsMenuOpen(false)}
+                    className="rounded-md bg-linear-to-br from-[#E8961E] to-[#F5A623] py-2.5 text-center text-[13px] font-bold text-[#0D0700] shadow-[0_0_0_1px_rgba(232,150,30,0.25),0_2px_14px_rgba(232,150,30,0.22)] transition-all"
+                  >
+                    Créer mon compte
+                  </Link>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* MAIN — le contenu passe sous la nav fixe (padding géré par les pages, ex. Home) */}
+      <main className="relative z-10 flex-1 pt-[66px] sm:pt-[70px] md:pt-[78px]">
+        <Outlet />
+      </main>
+
+      {/* FOOTER */}
+      <footer className="relative z-10 mt-auto border-t border-white/[0.07] bg-surface-primary text-[#5E6E84]">
+        <div
+          className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-[#E8961E]/30 to-transparent"
+          aria-hidden
+        />
+        <div className="container mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-9 lg:px-8 lg:py-10 xl:px-10">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-x-6 sm:gap-y-8 lg:mb-7 lg:grid-cols-12 lg:gap-x-6 lg:gap-y-0 xl:gap-x-8">
+            {/* Marque */}
+            <div className="sm:col-span-2 lg:col-span-5 xl:col-span-4">
+              <Link to="/" className="inline-block transition-opacity hover:opacity-90">
+                <Logo lightText blendSurface="primary" className="h-11 sm:h-12 md:h-14" />
+              </Link>
+              <p className="mt-2.5 max-w-[280px] text-[11px] font-normal leading-snug text-[#6B7A90] sm:text-[12px] sm:leading-relaxed">
+                The Operating System for African Business. Suite SaaS modulaire pour PME et grandes entreprises
+                d&apos;Afrique — conçue par Noya Industries, Abidjan.
+              </p>
+            </div>
+
+            <nav className="sm:col-span-1 lg:col-span-2" aria-label="Solutions">
+              <h4 className="mb-2 text-[9px] font-bold uppercase tracking-[0.2em] text-[#8E9EAE]">
+                Solutions
+              </h4>
+              <ul className="flex flex-col gap-1">
+                <li>
+                  <Link
+                    to="/solutions"
+                    className="inline-block py-px text-[11px] text-[#6B7A90] transition-colors duration-150 hover:text-[#F5F7FF] sm:text-xs"
+                  >
+                    Toutes les solutions
+                  </Link>
+                </li>
+                {MARKETING_SOLUTION_MODULE_LINKS.map((item) => (
+                  <li key={item.to}>
+                    <Link
+                      to={item.to}
+                      className="inline-block py-px text-[11px] text-[#5E6E84] transition-colors duration-150 hover:text-[#F5F7FF] sm:text-xs"
+                    >
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+
+            <nav className="sm:col-span-1 lg:col-span-2" aria-label="Entreprise">
+              <h4 className="mb-2 text-[9px] font-bold uppercase tracking-[0.2em] text-[#8E9EAE]">
+                Entreprise
+              </h4>
+              <ul className="flex flex-col gap-1">
+                {[
+                  { to: '/#system', label: 'Infinite System' },
+                  { to: '/a-propos', label: 'À propos' },
+                  { to: '/tarifs', label: 'Tarifs' },
+                  { to: '/faq', label: 'FAQ' },
+                ].map((item) => (
+                  <li key={item.to}>
+                    <Link
+                      to={item.to}
+                      className="inline-block py-px text-[11px] text-[#5E6E84] transition-colors duration-150 hover:text-[#F5F7FF] sm:text-xs"
+                    >
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+
+            <nav className="sm:col-span-2 lg:col-span-3 xl:col-span-4" aria-label="Légal">
+              <h4 className="mb-2 text-[9px] font-bold uppercase tracking-[0.2em] text-[#8E9EAE]">
+                Légal
+              </h4>
+              <ul className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-1">
+                {[
+                  { to: '/mentions-legales', label: 'Mentions légales' },
+                  { to: '/cgu', label: 'CGU' },
+                  { to: '/cgv', label: 'CGV' },
+                  { to: '/confidentialite', label: 'Confidentialité' },
+                  { to: '/securite', label: 'Sécurité' },
+                  { to: '/cookies', label: 'Cookies' },
+                ].map((item) => (
+                  <li key={item.to}>
+                    <Link
+                      to={item.to}
+                      className="inline-block py-px text-[11px] text-[#5E6E84] transition-colors duration-150 hover:text-[#F5F7FF] sm:text-xs"
+                    >
+                      {item.label}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          </div>
+
+          <div className="border-t border-white/[0.07] pt-5">
+            <div className="flex justify-center overflow-x-auto pb-1 [scrollbar-width:thin]">
+              <div className="inline-flex min-w-0 flex-nowrap items-center justify-center gap-x-2 text-[10px] leading-snug text-[#5E6E84] sm:gap-x-2.5 sm:text-[11px]">
+              <span className="shrink-0 whitespace-nowrap">
+                © {new Date().getFullYear()}{' '}
+                <span className="text-[#8E9EAE]">Infinite Core</span>
+                {' · '}
+                <span>Noya Industries</span>
+                <span className="text-[#5E6E84]/80"> · Abidjan, Côte d&apos;Ivoire</span>
+              </span>
+              <span className="shrink-0 text-[#5E6E84]/35" aria-hidden>
+                ·
+              </span>
+              <Link
+                to="/mentions-legales"
+                className="shrink-0 whitespace-nowrap transition-colors duration-150 hover:text-[#F5F7FF]"
+              >
+                Mentions légales
+              </Link>
+              <span className="shrink-0 text-[#5E6E84]/35" aria-hidden>
+                ·
+              </span>
+              <Link
+                to="/confidentialite"
+                className="shrink-0 whitespace-nowrap transition-colors duration-150 hover:text-[#F5F7FF]"
+              >
+                Confidentialité
+              </Link>
+              <span className="shrink-0 text-[#5E6E84]/35" aria-hidden>
+                ·
+              </span>
+              <Link
+                to="/cookies"
+                className="shrink-0 whitespace-nowrap transition-colors duration-150 hover:text-[#F5F7FF]"
+              >
+                Cookies
+              </Link>
+              <span className="shrink-0 text-[#5E6E84]/35" aria-hidden>
+                ·
+              </span>
+              <Link
+                to="/staff/login"
+                className="shrink-0 whitespace-nowrap transition-colors duration-150 hover:text-[#F5F7FF]"
+              >
+                Espace Staff
+              </Link>
+              <span className="shrink-0 text-[#5E6E84]/35" aria-hidden>
+                ·
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem('ic_consent');
+                  window.location.reload();
+                }}
+                className="shrink-0 whitespace-nowrap text-left transition-colors duration-150 hover:text-[#F5F7FF]"
+              >
+                Préférences cookies
+              </button>
+              </div>
+            </div>
+            <p className="mt-3 flex items-center justify-center gap-2 text-center text-[10px] italic leading-snug text-[#6B7A90] sm:text-[11px]">
+              <span className="h-px w-4 shrink-0 bg-current opacity-25" aria-hidden />
+              <span className="max-w-md text-balance">The Operating System for African Business</span>
+            </p>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}

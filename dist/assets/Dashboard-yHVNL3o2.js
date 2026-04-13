@@ -1,0 +1,1 @@
+import{j as e}from"./index-Cdq9jvFV.js";function s(){return e.jsxs("div",{className:"p-6",children:[e.jsx("h1",{className:"text-2xl font-bold text-text-primary",children:"Portail client"}),e.jsx("p",{className:"text-text-secondary mt-2",children:"Bienvenue sur votre espace Infinite Core."})]})}export{s as default};
