@@ -8,8 +8,7 @@ import {
   Eye, 
   EyeOff, 
   Phone, 
-  ArrowRight, 
-  ArrowLeft, 
+  ArrowRight,
   Building2,
   CheckCircle,
   Briefcase,
@@ -277,23 +276,9 @@ export default function Signup() {
   };
 
   return (
-    <div className="min-h-screen bg-[#0A0A0F] flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8 font-sans relative">
-      
-      {/* Back to Home Button */}
-      {!isSuccess && (
-        <div className="absolute top-6 left-6 sm:top-8 sm:left-8">
-          <Link 
-            to="/" 
-            className="flex items-center gap-2 text-[#9CA3AF] hover:text-white transition-colors font-medium"
-          >
-            <ArrowLeft size={20} />
-            <span className="hidden sm:inline">Retour à l'accueil</span>
-          </Link>
-        </div>
-      )}
-
+    <div className="relative flex w-full flex-col items-center px-4 py-8 font-sans sm:px-6 sm:py-10 lg:px-8">
       {/* Header */}
-      <div className="text-center mb-10 mt-8 sm:mt-0">
+      <div className="mb-8 text-center">
         <h2 className="text-3xl font-bold text-white mb-2">Créer mon compte gratuit</h2>
         <p className="text-[#9CA3AF]">Prêt en 2 minutes. Aucune carte bancaire.</p>
         {referralCode && (

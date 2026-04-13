@@ -26,6 +26,7 @@ import { signOut } from 'firebase/auth';
 import Logo from '../Logo';
 import { notificationService, Notification } from '../../services/notificationService';
 import { useAuth } from '../FirebaseProvider';
+import WorkspaceSpaceSwitcher from '../WorkspaceSpaceSwitcher';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -160,6 +161,10 @@ export default function SuperAdminLayout() {
             </NavLink>
           ))}
         </nav>
+
+        <div className="px-4 pb-1 shrink-0">
+          <WorkspaceSpaceSwitcher variant="surface" onNavigate={() => setIsMobileMenuOpen(false)} />
+        </div>
 
         <div className="p-4 mt-auto border-t border-border-subtle">
           <button 

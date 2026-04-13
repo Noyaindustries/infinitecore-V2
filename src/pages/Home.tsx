@@ -91,13 +91,18 @@ export default function Home() {
   };
 
   return (
-    <div ref={containerRef} className="relative overflow-hidden bg-transparent font-[Urbanist,ui-sans-serif,system-ui,sans-serif] text-[#F5F7FF] selection:bg-[#6EA7EA]/30">
-      {/* Barre de progression — au-dessus de la nav fixe (z-900) */}
+    <>
+      {/* Hors du bloc scroll / overflow : évite que overflow-x-hidden ou ancestors ne « coupent » la barre en pleine largeur */}
       <motion.div
-        className="fixed left-0 right-0 top-0 z-[950] h-1 origin-left bg-gradient-to-r from-[#FFB332] via-[#6EA7EA] to-[#FFB332]"
+        className="pointer-events-none fixed left-0 right-0 top-0 z-[950] h-1 origin-left bg-gradient-to-r from-[#FFB332] via-[#6EA7EA] to-[#FFB332]"
         style={{ scaleX }}
+        aria-hidden
       />
 
+      <div
+        ref={containerRef}
+        className="relative overflow-x-hidden bg-transparent font-[Urbanist,ui-sans-serif,system-ui,sans-serif] text-[#F5F7FF] selection:bg-[#6EA7EA]/30"
+      >
       {/* HERO SECTION */}
       <main className="relative z-10 flex w-full flex-col items-center justify-center px-4 pb-12 pt-6 sm:px-6 sm:pb-16 sm:pt-8 md:pb-20 md:pt-10">
         <div className="container mx-auto text-center max-w-[1100px]">
@@ -1107,6 +1112,7 @@ export default function Home() {
       </section>
 
       {/* FOOTER */}
-    </div>
+      </div>
+    </>
   );
 }

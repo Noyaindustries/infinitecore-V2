@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Search, Upload, X, FileText, CheckCircle, Clock, Trash2, ChevronDown, Users, Plus, Download } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { collection, onSnapshot, query, where, doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db, auth } from '../../firebase';
+import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { db } from '../../firebase';
 import { uploadFile } from '../../services/uploadService';
 import { useAuth } from '../../components/FirebaseProvider';
+import { formatFileSize } from '../../lib/formatFileSize';
+import { isPdfDocument } from '../../lib/dossierPdf';
 import { dossierService, DossierStep, StepType, STEP_META, STEP_ORDER } from '../../services/dossierService';
 import { notificationService } from '../../services/notificationService';
 import toast from 'react-hot-toast';
@@ -30,14 +32,6 @@ const STEP_COLORS: Record<string, string> = {
   facture: 'bg-noya-green/10 text-noya-green border-noya-green/20',
 };
 
-function formatSize(bytes: number) {
-  if (!bytes) return '';
-  const k = 1024;
-  const sizes = ['o', 'Ko', 'Mo'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
 interface UploadModalProps {
   client: any;
   stepType: StepType;
@@ -54,14 +48,29 @@ function UploadModal({ client, stepType, onClose, commandoName, commandoId }: Up
   const [progress, setProgress] = useState(0);
 
   const meta = STEP_META[stepType];
+  const auditPdfOnly = stepType === 'audit';
+  const fileInputAccept = auditPdfOnly
+    ? '.pdf,application/pdf'
+    : '.pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png';
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    if (f) setFile(f);
+    if (!f) return;
+    if (auditPdfOnly && !isPdfDocument(f)) {
+      toast.error("L'étape Audit (étape 1) n'accepte que des fichiers PDF.");
+      e.target.value = '';
+      setFile(null);
+      return;
+    }
+    setFile(f);
   };
 
   const handleUpload = async () => {
     if (!file) return;
+    if (auditPdfOnly && !isPdfDocument(file)) {
+      toast.error("L'étape Audit (étape 1) n'accepte que des fichiers PDF.");
+      return;
+    }
     setUploading(true);
     try {
       const result = await uploadFile(
@@ -83,32 +92,38 @@ function UploadModal({ client, stepType, onClose, commandoName, commandoId }: Up
         note: note.trim(),
       });
 
-      // Notify client
       const clientDisplayName = client.firstName
         ? `${client.firstName} ${client.lastName || ''}`.trim()
         : client.email;
-      await notificationService.createNotification(
-        client.id,
-        `Nouveau document : ${meta.label}`,
-        `L'équipe Noya a déposé votre ${meta.label.toLowerCase()}. Consultez-le et validez-le dans votre espace.`,
-        'mission',
-        { stepType, clientId: client.id }
-      );
 
-      toast.success(`${meta.label} envoyé à ${clientDisplayName} !`);
-      
-      // Update Commando Kanban Pipeline
-      const taskId = `TSK-${Math.floor(1000 + Math.random() * 9000)}`;
-      await setDoc(doc(db, 'tasks', taskId), {
-        id: taskId,
-        userId: commandoId,
-        title: `Document déposé: ${meta.label}`,
-        client: clientDisplayName,
-        columnId: 'contacte',
-        isOrder: false,
-        createdAt: new Date().toISOString(),
-      });
+      // Ne pas faire échouer le dépôt si la notif ou la tâche Kanban échoue (règles / quota).
+      try {
+        await notificationService.createNotification(
+          client.id,
+          `Nouveau document : ${meta.label}`,
+          `L'équipe Noya a déposé votre ${meta.label.toLowerCase()}. Consultez-le et validez-le dans votre espace.`,
+          'mission',
+          { stepType, clientId: client.id }
+        );
+      } catch (e) {
+        console.warn('[AdminDossiers] notification après dépôt:', e);
+      }
+      try {
+        const taskId = `TSK-${Math.floor(1000 + Math.random() * 9000)}`;
+        await setDoc(doc(db, 'tasks', taskId), {
+          id: taskId,
+          userId: commandoId,
+          title: `Document déposé: ${meta.label}`,
+          client: clientDisplayName,
+          columnId: 'contacte',
+          isOrder: false,
+          createdAt: new Date().toISOString(),
+        });
+      } catch (e) {
+        console.warn('[AdminDossiers] tâche pipeline après dépôt:', e);
+      }
 
+      toast.success(`${meta.label} enregistré pour ${clientDisplayName} — le client peut le valider dans Mon dossier.`);
       onClose();
     } catch (err) {
       console.error('[AdminDossiers] upload:', err);
@@ -146,20 +161,25 @@ function UploadModal({ client, stepType, onClose, commandoName, commandoId }: Up
           <div>
             <label className="block text-[10px] font-black text-text-secondary uppercase tracking-widest mb-2">
               Vecteur Documentaire <span className="text-noya-orange">*</span>
+              {auditPdfOnly ? (
+                <span className="ml-2 font-mono text-[9px] font-bold normal-case text-noya-orange">
+                  PDF uniquement (étape 1)
+                </span>
+              ) : null}
             </label>
             <input
               type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
               className="hidden"
-              accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
+              accept={fileInputAccept}
             />
             {file ? (
               <div className="flex items-center gap-4 px-5 py-4 bg-noya-blue/5 border border-noya-blue/20 rounded-2xl shadow-inner">
                 <FileText size={20} className="text-noya-blue flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[11px] font-black text-text-primary uppercase tracking-tight truncate">{file.name}</p>
-                  <p className="text-[10px] font-bold text-noya-blue uppercase tracking-widest">{formatSize(file.size)}</p>
+                  <p className="text-[10px] font-bold text-noya-blue uppercase tracking-widest">{formatFileSize(file.size)}</p>
                 </div>
                 <button onClick={() => setFile(null)} className="p-2 text-text-muted hover:text-red-500 transition-colors">
                   <X size={16} />
@@ -172,7 +192,9 @@ function UploadModal({ client, stepType, onClose, commandoName, commandoId }: Up
               >
                 <Upload size={32} className="group-hover:scale-110 transition-transform text-noya-blue/50" />
                 <span className="text-[10px] font-black uppercase tracking-[0.2em]">Sélection d'unité radar</span>
-                <span className="text-[9px] font-bold uppercase opacity-50 tracking-widest">PDF, Office, Images supportés</span>
+                <span className="text-[9px] font-bold uppercase opacity-50 tracking-widest">
+                  {auditPdfOnly ? 'Fichier PDF uniquement' : 'PDF, Office, Images supportés'}
+                </span>
               </button>
             )}
           </div>
@@ -343,7 +365,7 @@ function GeneralUploadModal({ client, onClose, commandoName, commandoId }: { cli
                 <FileText size={18} className="text-blue-600 flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-blue-900 truncate">{file.name}</p>
-                  <p className="text-xs text-blue-600">{formatSize(file.size)}</p>
+                  <p className="text-xs text-blue-600">{formatFileSize(file.size)}</p>
                 </div>
                 <button onClick={() => setFile(null)} className="p-1 text-blue-400 hover:text-red-500">
                   <X size={14} />
@@ -412,26 +434,40 @@ export default function AdminDossiers() {
     : 'Commando';
 
   useEffect(() => {
+    // Liste élargie : tous les profils avec rôle « client » (casse tolérée), pas seulement l’égalité stricte Firestore.
     const unsubClients = onSnapshot(
-      query(collection(db, 'users'), where('role', '==', 'client')),
+      collection(db, 'users'),
       (snap) => {
         const data = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .sort((a: any, b: any) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+          .map((d) => ({ id: d.id, ...d.data() } as { id: string; role?: string; createdAt?: string }))
+          .filter((u) => String(u.role || '').toLowerCase() === 'client')
+          .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
         setClients(data);
         setLoading(false);
       },
       (err) => {
         console.error('[AdminDossiers] clients query:', err);
+        toast.error('Impossible de charger les clients. Vérifiez la connexion ou les règles Firestore.');
         setLoading(false);
       }
     );
     const unsubSteps = dossierService.subscribeToAllSteps((data) => setAllSteps(data));
-    const unsubDocs = onSnapshot(collection(db, 'documents'), (snap) => {
-      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-      setAllGeneralDocs(data);
-    });
-    return () => { unsubClients(); unsubSteps(); unsubDocs(); };
+    const unsubDocs = onSnapshot(
+      collection(db, 'documents'),
+      (snap) => {
+        const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setAllGeneralDocs(data);
+      },
+      (err) => {
+        console.error('[AdminDossiers] documents:', err);
+        toast.error('Impossible de charger les documents généraux.');
+      }
+    );
+    return () => {
+      unsubClients();
+      unsubSteps();
+      unsubDocs();
+    };
   }, []);
 
   const handleDeleteStep = async (step: DossierStep) => {
@@ -523,7 +559,13 @@ export default function AdminDossiers() {
                 <div className="w-6 h-6 border-2 border-b-blue-500 rounded-full animate-spin" />
               </div>
             ) : filteredClients.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-gray-400 text-center">Aucun client.</p>
+              <div className="px-4 py-6 text-center text-sm text-text-secondary space-y-2">
+                <p className="font-semibold text-text-primary">Aucun compte portail client</p>
+                <p className="text-xs leading-relaxed">
+                  Seuls les utilisateurs avec le rôle <span className="font-mono text-noya-orange">client</span> (inscription
+                  / portail) apparaissent ici. Sans client sélectionné, vous ne pouvez pas injecter d’étape de dossier.
+                </p>
+              </div>
             ) : (
               <div className="max-h-[65vh] overflow-y-auto divide-y divide-border-subtle scrollbar-none">
                 {filteredClients.map((client) => {
@@ -713,7 +755,7 @@ export default function AdminDossiers() {
                                 <span className="text-[10px] text-text-muted font-bold uppercase tracking-widest opacity-60">
                                   {new Date(doc.createdAt).toLocaleDateString('fr-FR')} 
                                 </span>
-                                <span className="text-[10px] text-text-dim font-black font-mono hidden sm:inline">[{formatSize(doc.size)}]</span>
+                                <span className="text-[10px] text-text-dim font-black font-mono hidden sm:inline">[{formatFileSize(doc.size)}]</span>
                               </div>
                             </div>
                           </div>

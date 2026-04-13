@@ -2,6 +2,7 @@ import { Handler } from "@netlify/functions";
 import { randomUUID } from "crypto";
 import { parseMultipartLambdaEvent } from "./multipart-netlify";
 import { buildFileUrl, hasR2Config, putObject, sanitizeFolder } from "./_r2";
+import { writeLocalObject } from "./_localUploads";
 
 const json = (statusCode: number, body: unknown) => ({
   statusCode,
@@ -18,13 +19,6 @@ export const handler: Handler = async (event) => {
   if (event.httpMethod === "OPTIONS") return json(200, { ok: true });
   if (event.httpMethod !== "POST") return json(405, { success: false, error: "Method Not Allowed" });
 
-  if (!hasR2Config) {
-    return json(500, {
-      success: false,
-      error: "R2 non configuré. Ajoutez R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET_NAME.",
-    });
-  }
-
   try {
     const parsed = await parseMultipartLambdaEvent(event);
     const file = parsed.files?.[0];
@@ -36,13 +30,28 @@ export const handler: Handler = async (event) => {
     const bodyBuffer = Buffer.isBuffer(file.content)
       ? file.content
       : Buffer.from(String(file.content), "binary");
+    const contentType = file.contentType || "application/octet-stream";
 
-    await putObject({
-      key: objectKey,
-      body: bodyBuffer,
-      contentType: file.contentType || "application/octet-stream",
-      fileName: safeOriginal,
-    });
+    if (hasR2Config) {
+      await putObject({
+        key: objectKey,
+        body: bodyBuffer,
+        contentType,
+        fileName: safeOriginal,
+      });
+    } else {
+      try {
+        await writeLocalObject(objectKey, bodyBuffer);
+      } catch (e) {
+        console.error("Stockage local impossible:", e);
+        return json(503, {
+          success: false,
+          error:
+            "R2 non configuré et écriture disque impossible (souvent le cas sur Netlify en prod). " +
+            "Soit définissez les variables R2, soit en local lancez `npm run dev` (serveur Express) plutôt que seulement Vite / Netlify Dev sans disque projet.",
+        });
+      }
+    }
 
     return json(200, {
       success: true,
@@ -50,7 +59,7 @@ export const handler: Handler = async (event) => {
       publicId: objectKey,
       name: safeOriginal,
       size: bodyBuffer.length,
-      mimetype: file.contentType || "application/octet-stream",
+      mimetype: contentType,
     });
   } catch (error) {
     console.error("Erreur files-upload:", error);

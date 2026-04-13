@@ -1,13 +1,12 @@
 import {
   collection,
   doc,
-  addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   onSnapshot,
   query,
   where,
-  orderBy,
 } from 'firebase/firestore';
 import { db } from '../firebase';
 
@@ -64,14 +63,15 @@ export const STEP_ORDER: StepType[] = ['audit', 'proposition', 'contrat', 'factu
 const COL = 'dossier_steps';
 
 export const dossierService = {
-  // Commando uploads a doc for a client step
+  // Commando uploads a doc for a client step (single write = one create rule evaluation)
   async createStep(data: Omit<DossierStep, 'id' | 'uploadedAt' | 'status'>) {
-    const docRef = await addDoc(collection(db, COL), {
+    const docRef = doc(collection(db, COL));
+    await setDoc(docRef, {
+      id: docRef.id,
       ...data,
       status: 'soumis',
       uploadedAt: new Date().toISOString(),
     });
-    await updateDoc(docRef, { id: docRef.id });
     return docRef.id;
   },
 
@@ -105,11 +105,21 @@ export const dossierService = {
     });
   },
 
-  // Subscribe: all clients' steps (admin view)
+  // Subscribe: all clients' steps (admin / commando). No orderBy → évite un index composite ; tri côté client.
   subscribeToAllSteps(callback: (steps: DossierStep[]) => void) {
-    const q = query(collection(db, COL), orderBy('uploadedAt', 'desc'));
-    return onSnapshot(q, (snap) => {
-      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() } as DossierStep)));
-    });
+    const q = query(collection(db, COL));
+    return onSnapshot(
+      q,
+      (snap) => {
+        const steps = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() } as DossierStep))
+          .sort((a, b) => (b.uploadedAt || '').localeCompare(a.uploadedAt || ''));
+        callback(steps);
+      },
+      (error) => {
+        console.error('[dossierService] subscribeToAllSteps error:', error);
+        callback([]);
+      }
+    );
   },
 };

@@ -10,6 +10,14 @@ import { db, auth } from '../../firebase';
 import { collection, doc, setDoc } from 'firebase/firestore';
 import { useAuth } from '../../components/FirebaseProvider';
 import toast from 'react-hot-toast';
+import { PADDE_CI_FREE_AUDITS } from '../../data/paddeCiFreeAudits';
+import { openPaddeCiAuditForm } from '../../utils/openPaddeCiAuditForm';
+
+const AUDIT_ICONS = {
+  'audit-rapide': Zap,
+  'audit-business': Search,
+  'audit-institutionnel': Building2,
+} as const;
 
 export default function ClientShop() {
   const { user, userData } = useAuth();
@@ -18,12 +26,12 @@ export default function ClientShop() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSent, setOrderSent] = useState(false);
 
-  // PADDE-CI Audits — GRATUITS, redirigent vers le formulaire PADDE-CI
-  const auditPadde = [
-    { id: 'audit-rapide', title: 'Audit Rapide PADDE-CI', desc: 'Diagnostic digital complet de votre entreprise — rapport PDF personnalisé', duration: '48h', icon: Zap, color: 'text-yellow-600', bg: 'bg-yellow-50', formUrl: 'https://padde-ci.com/audit-rapide' },
-    { id: 'audit-business', title: 'Audit Business PADDE-CI', desc: 'Analyse approfondie : digital, commercial, financier, RH', duration: '5 jours ouvrables', icon: Search, color: 'text-blue-600', bg: 'bg-blue-50', formUrl: 'https://padde-ci.com/audit-business' },
-    { id: 'audit-institutionnel', title: 'Audit Institutionnel PADDE-CI', desc: 'Audit complet pour structures de grande taille et institutions', duration: '10-15 jours', icon: Building2, color: 'text-indigo-600', bg: 'bg-indigo-50', formUrl: 'https://padde-ci.com/audit-institutionnel' },
-  ];
+  const auditPadde = PADDE_CI_FREE_AUDITS.map((a) => ({
+    ...a,
+    icon: AUDIT_ICONS[a.id as keyof typeof AUDIT_ICONS],
+    color: 'text-noya-orange',
+    bg: 'bg-text-primary/5',
+  }));
 
   // Autres services PADDE-CI — payants
   const autresServicesPadde = [
@@ -46,26 +54,6 @@ export default function ClientShop() {
     { id: 'pack-croissance', title: 'Pack Croissance', price: 35000, desc: '3 modules au choix + onboarding dédié + support WhatsApp prioritaire', duration: '7-14 jours', icon: Package, color: 'text-teal-500', bg: 'bg-teal-50' },
     { id: 'pack-elite', title: 'Pack Elite', price: 95000, desc: '7 solutions + personnalisation + chef de projet dédié + SLA garanti', duration: 'Sur devis', icon: Crown, color: 'text-yellow-600', bg: 'bg-yellow-50' },
   ];
-
-  // Demander un audit PADDE-CI (gratuit) — redirige vers le formulaire.
-  // La commande n'est créée qu'après soumission effective du formulaire (webhook PADDE-CI).
-  const handleAuditClick = async (audit: typeof auditPadde[0]) => {
-    if (!auth.currentUser) {
-      toast.error('Vous devez être connecté pour demander un audit.');
-      return;
-    }
-
-    const toastId = toast.loading('Redirection vers le formulaire PADDE-CI...');
-    try {
-      toast.success('Remplissez le formulaire pour finaliser votre demande d’audit.', { id: toastId });
-
-      // Rediriger le client vers le formulaire d'audit choisi
-      window.open(audit.formUrl, '_blank', 'noopener,noreferrer');
-    } catch (error) {
-      console.error('Erreur audit PADDE:', error);
-      toast.error('Erreur lors de la redirection vers le formulaire.', { id: toastId });
-    }
-  };
 
   const handleOrderClick = (service: any) => {
     if (!auth.currentUser) {
@@ -181,7 +169,8 @@ export default function ClientShop() {
                     {audit.duration}
                   </div>
                   <button
-                    onClick={() => handleAuditClick(audit)}
+                    type="button"
+                    onClick={() => openPaddeCiAuditForm(audit.formUrl)}
                     className="flex items-center gap-1.5 text-sm font-bold text-noya-black bg-noya-orange hover:bg-noya-orange/80 transition-colors px-3 py-1.5 rounded-lg shadow-[0_0_15px_rgba(255,179,50,0.3)]"
                   >
                     Demander <ExternalLink size={14} />

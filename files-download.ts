@@ -1,5 +1,7 @@
 import { Handler } from "@netlify/functions";
 import { getSignedObjectUrl, hasR2Config, sanitizeObjectKey } from "./_r2";
+import { readLocalObject } from "./_localUploads";
+import { mimeFromStorageKey } from "./storageUtils";
 
 export const handler: Handler = async (event) => {
   if (event.httpMethod !== "GET") {
@@ -7,14 +9,6 @@ export const handler: Handler = async (event) => {
       statusCode: 405,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ success: false, error: "Method Not Allowed" }),
-    };
-  }
-
-  if (!hasR2Config) {
-    return {
-      statusCode: 500,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ success: false, error: "R2 non configuré." }),
     };
   }
 
@@ -29,6 +23,29 @@ export const handler: Handler = async (event) => {
     }
 
     const key = sanitizeObjectKey(publicId);
+
+    if (!hasR2Config) {
+      const buf = await readLocalObject(key);
+      if (!buf) {
+        return {
+          statusCode: 404,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ success: false, error: "Fichier introuvable (stockage local)." }),
+        };
+      }
+      const filename = key.split("/").pop()?.replace(/"/g, "") || "document";
+      return {
+        statusCode: 200,
+        headers: {
+          "Content-Type": mimeFromStorageKey(key),
+          "Content-Disposition": `inline; filename="${filename}"`,
+          "Cache-Control": "private, max-age=3600",
+        },
+        body: buf.toString("base64"),
+        isBase64Encoded: true,
+      };
+    }
+
     const signedUrl = await getSignedObjectUrl(key);
     return {
       statusCode: 302,

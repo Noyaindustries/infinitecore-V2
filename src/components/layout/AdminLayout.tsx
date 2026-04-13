@@ -8,6 +8,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import Logo from '../Logo';
 import { notificationService, Notification } from '../../services/notificationService';
 import { useAuth } from '../FirebaseProvider';
+import WorkspaceSpaceSwitcher from '../WorkspaceSpaceSwitcher';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -89,6 +90,11 @@ export default function AdminLayout() {
     ? `${userData.firstName} ${userData.lastName || ''}`.trim()
     : 'Commando';
 
+  const staffRoleLabel =
+    userData?.role === 'admin'
+      ? 'Admin — accès Commando + autres espaces'
+      : 'Commando — opérations & dossiers clients';
+
   return (
     <div className="min-h-screen bg-surface-primary flex flex-col md:flex-row font-sans text-text-primary">
       {/* Mobile Header */}
@@ -112,6 +118,9 @@ export default function AdminLayout() {
             <span className="w-1.5 h-1.5 rounded-full bg-noya-orange shadow-[0_0_8px_rgba(255,179,50,0.5)] animate-pulse"></span>
             Commando System
           </div>
+          <p className="mt-2 text-[11px] font-medium leading-snug text-text-secondary" title={staffRoleLabel}>
+            {staffRoleLabel}
+          </p>
         </div>
 
         <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
@@ -138,6 +147,10 @@ export default function AdminLayout() {
             </NavLink>
           ))}
         </nav>
+
+        <div className="px-4 pb-1 shrink-0">
+          <WorkspaceSpaceSwitcher variant="surface" onNavigate={() => setIsMobileMenuOpen(false)} />
+        </div>
 
         <div className="p-4 mt-auto border-t border-border-subtle">
           <button

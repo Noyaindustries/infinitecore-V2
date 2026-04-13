@@ -97,11 +97,11 @@ function App() {
             <Route path="/securite" element={<MarketingPage />} />
             <Route path="/faq" element={<FAQ />} />
             <Route path="/cookies" element={<Cookies />} />
-          </Route>
 
-          <Route path="/login" element={<Login />} />
-          <Route path="/staff/login" element={<Login isStaff={true} />} />
-          <Route path="/signup" element={<Signup />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/staff/login" element={<Login isStaff={true} />} />
+            <Route path="/signup" element={<Signup />} />
+          </Route>
           
           {/* Module Routes */}
           <Route path="/module/:id/login" element={<ModuleLogin />} />

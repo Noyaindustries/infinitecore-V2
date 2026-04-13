@@ -2,12 +2,15 @@ import express from "express";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import path from "path";
+import { createReadStream, promises as fs } from "fs";
 import multer from "multer";
 import { randomUUID } from "crypto";
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { db } from "./src/firebase";
 import { collection, doc, setDoc } from "firebase/firestore";
+import { sanitizeFolder } from "./_r2";
+import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } from "./storageUtils";
 
 async function startServer() {
   const app = express();
@@ -19,6 +22,12 @@ async function startServer() {
   const r2PublicBaseUrl = process.env.R2_PUBLIC_BASE_URL || "";
   const r2Endpoint = process.env.R2_ENDPOINT || (r2AccountId ? `https://${r2AccountId}.r2.cloudflarestorage.com` : "");
   const canUseR2 = Boolean(r2Endpoint && r2AccessKeyId && r2SecretAccessKey && r2Bucket);
+
+  if (!canUseR2) {
+    console.warn(
+      "[upload] Variables R2 absentes — mode développement : fichiers dans .local-uploads/ (non utilisé en prod sans R2)."
+    );
+  }
 
   app.use(cors());
   app.use(express.json());
@@ -34,13 +43,6 @@ async function startServer() {
     })
     : null;
 
-  const sanitizeFolder = (input: string) =>
-    input
-      .replace(/\.\./g, "")
-      .replace(/[^a-zA-Z0-9/_-]/g, "")
-      .replace(/\/+/g, "/")
-      .replace(/^\/|\/$/g, "") || "misc";
-
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
@@ -48,13 +50,6 @@ async function startServer() {
 
   app.post("/api/files/upload", upload.single("file"), async (req, res) => {
     try {
-      if (!canUseR2 || !s3) {
-        return res.status(500).json({
-          success: false,
-          error: "R2 non configuré. Ajoutez R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY et R2_BUCKET_NAME.",
-        });
-      }
-
       if (!req.file) {
         return res.status(400).json({ success: false, error: "Aucun fichier reçu." });
       }
@@ -64,20 +59,40 @@ async function startServer() {
       const safeOriginal = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
       const objectKey = `${folder}/${Date.now()}-${randomUUID()}-${safeOriginal}`;
 
-      await s3.send(
-        new PutObjectCommand({
-          Bucket: r2Bucket,
-          Key: objectKey,
-          Body: req.file.buffer,
-          ContentType: req.file.mimetype || "application/octet-stream",
-          ContentDisposition: `inline; filename="${safeOriginal}"`,
-        })
-      );
+      if (canUseR2 && s3) {
+        await s3.send(
+          new PutObjectCommand({
+            Bucket: r2Bucket,
+            Key: objectKey,
+            Body: req.file.buffer,
+            ContentType: req.file.mimetype || "application/octet-stream",
+            ContentDisposition: `inline; filename="${safeOriginal}"`,
+          })
+        );
 
-      const fileUrl = r2PublicBaseUrl
-        ? `${r2PublicBaseUrl.replace(/\/$/, "")}/${objectKey}`
-        : `/api/files/download?publicId=${encodeURIComponent(objectKey)}`;
+        const fileUrl = r2PublicBaseUrl
+          ? `${r2PublicBaseUrl.replace(/\/$/, "")}/${objectKey}`
+          : `/api/files/download?publicId=${encodeURIComponent(objectKey)}`;
 
+        return res.status(200).json({
+          success: true,
+          url: fileUrl,
+          publicId: objectKey,
+          name: req.file.originalname,
+          size: req.file.size,
+          mimetype: req.file.mimetype,
+        });
+      }
+
+      // Sans R2 : stockage local (développement / secours)
+      const absPath = resolveLocalUploadFile(objectKey);
+      if (!absPath) {
+        return res.status(400).json({ success: false, error: "Chemin de fichier invalide." });
+      }
+      await fs.mkdir(path.dirname(absPath), { recursive: true });
+      await fs.writeFile(absPath, req.file.buffer);
+
+      const fileUrl = `/api/files/download?publicId=${encodeURIComponent(objectKey)}`;
       return res.status(200).json({
         success: true,
         url: fileUrl,
@@ -88,37 +103,42 @@ async function startServer() {
       });
     } catch (error) {
       console.error("Erreur upload API:", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+      const msg =
+        error instanceof Error && process.env.NODE_ENV !== "production"
+          ? `Erreur interne du serveur. ${error.message}`
+          : "Erreur interne du serveur.";
+      return res.status(500).json({ success: false, error: msg });
     }
   });
 
-  app.delete("/api/files", (req, res) => {
+  app.delete("/api/files", async (req, res) => {
     try {
-      if (!canUseR2 || !s3) {
-        return res.status(500).json({
-          success: false,
-          error: "R2 non configuré.",
-        });
-      }
-
-      const publicId = String(req.query.publicId || "");
-      if (!publicId) {
+      const safePath = normalizePublicIdQuery(String(req.query.publicId || ""));
+      if (!safePath) {
         return res.status(400).json({ success: false, error: "publicId manquant." });
       }
 
-      const safePath = publicId.replace(/\.\./g, "").replace(/^\/+/, "");
-      s3
-        .send(
+      if (canUseR2 && s3) {
+        await s3.send(
           new DeleteObjectCommand({
             Bucket: r2Bucket,
             Key: safePath,
           })
-        )
-        .then(() => res.status(200).json({ success: true }))
-        .catch((error) => {
-          console.error("Erreur suppression API:", error);
-          res.status(500).json({ success: false, error: "Erreur interne du serveur." });
-        });
+        );
+        return res.status(200).json({ success: true });
+      }
+
+      const absPath = resolveLocalUploadFile(safePath);
+      if (!absPath) {
+        return res.status(400).json({ success: false, error: "Chemin invalide." });
+      }
+      try {
+        await fs.unlink(absPath);
+      } catch (e: unknown) {
+        const code = e && typeof e === "object" && "code" in e ? (e as NodeJS.ErrnoException).code : "";
+        if (code !== "ENOENT") throw e;
+      }
+      return res.status(200).json({ success: true });
     } catch (error) {
       console.error("Erreur suppression API:", error);
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
@@ -127,19 +147,46 @@ async function startServer() {
 
   app.get("/api/files/download", async (req, res) => {
     try {
-      if (!canUseR2 || !s3) {
-        return res.status(500).json({
-          success: false,
-          error: "R2 non configuré.",
-        });
-      }
-
-      const publicId = String(req.query.publicId || "");
-      if (!publicId) {
+      const safePath = normalizePublicIdQuery(String(req.query.publicId || ""));
+      if (!safePath) {
         return res.status(400).json({ success: false, error: "publicId manquant." });
       }
 
-      const safePath = publicId.replace(/\.\./g, "").replace(/^\/+/, "");
+      if (!canUseR2 || !s3) {
+        const absPath = resolveLocalUploadFile(safePath);
+        if (!absPath) {
+          return res.status(400).json({ success: false, error: "Chemin invalide." });
+        }
+        try {
+          const stat = await fs.stat(absPath);
+          if (!stat.isFile()) {
+            return res.status(404).json({ success: false, error: "Fichier introuvable." });
+          }
+        } catch (e: unknown) {
+          const code = e && typeof e === "object" && "code" in e ? (e as NodeJS.ErrnoException).code : "";
+          if (code === "ENOENT") {
+            return res.status(404).json({ success: false, error: "Fichier introuvable." });
+          }
+          throw e;
+        }
+        const filename = path.basename(safePath).replace(/"/g, "");
+        res.setHeader("Content-Type", mimeFromStorageKey(safePath));
+        res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        // createReadStream évite les NotFoundError du module « send » avec certains chemins Windows / encodages.
+        const stream = createReadStream(absPath);
+        stream.on("error", (err) => {
+          console.error("[api/files/download] lecture disque:", absPath, err?.message);
+          if (!res.headersSent) {
+            res.status(404).json({ success: false, error: "Fichier introuvable." });
+          } else {
+            res.destroy(err);
+          }
+        });
+        stream.pipe(res);
+        return;
+      }
+
       const command = new GetObjectCommand({
         Bucket: r2Bucket,
         Key: safePath,

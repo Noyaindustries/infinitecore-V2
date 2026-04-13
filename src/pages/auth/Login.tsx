@@ -2,9 +2,12 @@ import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Lock, Mail, ArrowRight } from 'lucide-react';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../../firebase';
+import { GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { auth, db } from '../../firebase';
 import { useAuth } from '../../components/FirebaseProvider';
+import { useStore } from '../../store/useStore';
+import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import toast from 'react-hot-toast';
 
 function homePathForRole(role: string | undefined): string {
@@ -26,6 +29,7 @@ function homePathForRole(role: string | undefined): string {
 export default function Login({ isStaff = false }: { isStaff?: boolean }) {
   const navigate = useNavigate();
   const { user, userData, isAuthReady } = useAuth();
+  const addClient = useStore((s) => s.addClient);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -53,18 +57,117 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
     }
   };
 
+  const handleGoogle = async () => {
+    setLoading(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const userCredential = await signInWithPopup(auth, provider);
+      const u = userCredential.user;
+      const userDocRef = doc(db, 'users', u.uid);
+      const userDoc = await getDoc(userDocRef);
+
+      if (isStaff) {
+        if (!userDoc.exists()) {
+          await signOut(auth);
+          toast.error('Aucun compte équipe n’est associé à cette adresse Google.');
+          return;
+        }
+        const role = userDoc.data()?.role as string | undefined;
+        if (role !== 'admin' && role !== 'commando') {
+          await signOut(auth);
+          toast.error('Ce compte n’a pas accès à l’espace équipe (commando ou admin uniquement).');
+          return;
+        }
+        toast.success('Connexion réussie');
+        return;
+      }
+
+      if (!userDoc.exists()) {
+        const nameParts = (u.displayName || '').split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        const isAdminEmail = u.email === 'superadmin@infinitecore.com';
+        const companyId = `comp_${Date.now()}`;
+        try {
+          await setDoc(doc(db, 'companies', companyId), {
+            id: companyId,
+            name: `${firstName || 'Mon'}'s Company`,
+            industry: 'Non spécifié',
+            size: '1-5',
+            pack: 'starter',
+            createdAt: new Date().toISOString(),
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.CREATE, `companies/${companyId}`);
+        }
+        try {
+          await setDoc(userDocRef, {
+            uid: u.uid,
+            email: u.email || '',
+            firstName,
+            lastName,
+            phone: u.phoneNumber || '',
+            role: isAdminEmail ? 'admin' : 'client',
+            companyId,
+            referredBy: null,
+            createdAt: new Date().toISOString(),
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.CREATE, `users/${u.uid}`);
+        }
+        addClient({
+          name: u.displayName || u.email || 'Nouveau client',
+          email: u.email || '',
+          company: `${firstName || 'Mon'}'s Company`,
+          pack: 'Pack Essentiel',
+        });
+      }
+      toast.success('Connexion réussie');
+    } catch (err: unknown) {
+      const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : '';
+      if (code === 'auth/popup-blocked') {
+        toast.error('Le navigateur a bloqué la fenêtre Google. Autorisez les popups pour ce site.');
+      } else if (code === 'auth/unauthorized-domain') {
+        toast.error('Ce domaine n’est pas autorisé dans Firebase. Contactez l’administrateur.');
+      } else if (code === 'auth/popup-closed-by-user') {
+        toast.error('Connexion Google annulée.');
+      } else {
+        toast.error('Connexion Google impossible. Réessayez.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#0A0A0F] flex flex-col justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div className="flex min-h-[calc(100dvh-66px)] flex-col justify-center py-8 px-4 sm:min-h-[calc(100dvh-70px)] sm:px-6 md:min-h-[calc(100dvh-78px)] lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <h2 className="text-center text-3xl font-extrabold text-white">
           {isStaff ? 'Connexion équipe' : 'Connexion'}
         </h2>
-        <p className="mt-2 text-center text-sm text-gray-400">
-          Pas de compte ?{' '}
-          <Link to="/signup" className="font-medium text-[#F27D26] hover:text-[#e06b15]">
-            Créer un compte
-          </Link>
-        </p>
+        {isStaff ? (
+          <p className="mt-3 text-center text-sm leading-relaxed text-gray-400">
+            Accès <span className="font-semibold text-gray-200">Infinite Commando</span> (rôle commando ou admin) : après
+            connexion vous êtes redirigé vers <span className="font-mono text-[#F27D26]">/admin</span> — pipeline,
+            <span className="whitespace-nowrap"> dossiers clients</span>, messagerie, opérations, etc.
+          </p>
+        ) : (
+          <p className="mt-2 text-center text-sm text-gray-400">
+            Pas de compte ?{' '}
+            <Link to="/signup" className="font-medium text-[#F27D26] hover:text-[#e06b15]">
+              Créer un compte
+            </Link>
+          </p>
+        )}
+        {isStaff ? (
+          <p className="mt-3 text-center text-xs text-gray-500">
+            Espace client ?{' '}
+            <Link to="/login" className="font-medium text-gray-300 hover:text-white">
+              Connexion portail client
+            </Link>
+          </p>
+        ) : null}
       </div>
 
       <motion.div
@@ -72,7 +175,38 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
         animate={{ opacity: 1, y: 0 }}
         className="mt-8 sm:mx-auto sm:w-full sm:max-w-md bg-white/5 border border-white/10 rounded-2xl p-8 backdrop-blur"
       >
-        <form className="space-y-6" onSubmit={handleSubmit}>
+        <div className="mb-6 space-y-3">
+          <button
+            type="button"
+            onClick={() => void handleGoogle()}
+            disabled={loading}
+            className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/15 bg-[#0a0d14] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-white/[0.06] disabled:opacity-60"
+          >
+            <img
+              src="https://www.svgrepo.com/show/475656/google-color.svg"
+              alt=""
+              width={20}
+              height={20}
+              className="h-5 w-5 shrink-0"
+              aria-hidden
+            />
+            Continuer avec Google
+          </button>
+          {isStaff ? (
+            <p className="text-center text-xs text-gray-500">
+              Réservé aux comptes <span className="font-medium text-gray-400">commando</span> ou{' '}
+              <span className="font-medium text-gray-400">admin</span> déjà créés dans Infinite Core.
+            </p>
+          ) : null}
+        </div>
+
+        <div className="relative flex items-center py-2">
+          <div className="flex-grow border-t border-white/10" />
+          <span className="mx-4 shrink-0 text-sm text-gray-500">ou</span>
+          <div className="flex-grow border-t border-white/10" />
+        </div>
+
+        <form className="mt-6 space-y-6" onSubmit={handleSubmit}>
           <div>
             <label htmlFor="email" className="block text-sm font-medium text-gray-200">
               Email

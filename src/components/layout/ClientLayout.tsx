@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { LayoutDashboard, MessageCircle, ShoppingCart, FolderCheck, LogOut, Menu, X, User, Bell, Sun, Moon } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { cn } from '../../lib/utils';
@@ -8,10 +8,22 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import Logo from '../Logo';
 import { notificationService, Notification } from '../../services/notificationService';
 import { useAuth } from '../FirebaseProvider';
+import WorkspaceSpaceSwitcher from '../WorkspaceSpaceSwitcher';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
+const CLIENT_PAGE_TITLES: { match: (path: string) => boolean; title: string }[] = [
+  { match: (p) => p === '/dashboard' || p === '/dashboard/', title: 'Mon espace' },
+  { match: (p) => p.startsWith('/dashboard/suivi'), title: 'Mon dossier' },
+  { match: (p) => p.startsWith('/dashboard/messagerie'), title: 'Messagerie' },
+  { match: (p) => p.startsWith('/dashboard/boutique'), title: 'Boutique & services' },
+  { match: (p) => p.startsWith('/dashboard/profil'), title: 'Mon profil' },
+];
+
 export default function ClientLayout() {
+  const location = useLocation();
+  const pageTitle =
+    CLIENT_PAGE_TITLES.find((e) => e.match(location.pathname))?.title ?? 'Espace client';
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -72,8 +84,9 @@ export default function ClientLayout() {
     if (!notification.read) {
       await notificationService.markAsRead(notification.id);
     }
-    if (notification.type === 'mission') navigate('/dashboard');
-    if (notification.type === 'mission') navigate('/dashboard/suivi');
+    if (notification.type === 'mission') {
+      navigate('/dashboard/suivi');
+    }
     setShowNotifications(false);
   };
 
@@ -86,118 +99,161 @@ export default function ClientLayout() {
   ];
 
   return (
-    <div className="min-h-screen bg-noya-black flex flex-col md:flex-row font-sans text-text-primary">
+    <div className="client-portal flex min-h-screen flex-col font-sans text-text-primary antialiased md:flex-row">
       {/* Mobile Header */}
-      <div className="md:hidden bg-noya-sidebar border-b border-white/5 text-text-primary px-4 py-3 min-h-[60px] flex justify-between items-center z-50 relative">
-        <Logo lightText={theme === 'dark'} className="h-14" />
-        <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="text-text-primary">
-          {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
+      <div className="relative z-50 flex min-h-[60px] items-center justify-between border-b border-white/[0.06] bg-[#060910]/85 px-4 py-3 text-text-primary backdrop-blur-xl md:hidden">
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-luxe-champagne/35 to-transparent" aria-hidden />
+        <Logo lightText={theme === 'dark'} className="h-12" />
+        <button
+          type="button"
+          onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          className="rounded-xl p-2 text-text-secondary transition-colors hover:bg-white/5 hover:text-text-primary"
+          aria-label={isMobileMenuOpen ? 'Fermer le menu' : 'Ouvrir le menu'}
+        >
+          {isMobileMenuOpen ? <X size={22} /> : <Menu size={22} />}
         </button>
       </div>
 
       {/* Sidebar */}
-      <aside className={cn(
-        "bg-noya-sidebar border-r border-white/5 text-text-primary w-64 sidebar-responsive flex-shrink-0 flex-col transition-transform duration-300 ease-in-out fixed md:relative z-50 h-full",
-        isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-      )}>
-        <div className="p-6 hidden md:block">
-          <div className="mb-2">
-            <Logo lightText className="h-14 md:h-16" />
+      <aside
+        className={cn(
+          'sidebar-responsive fixed z-50 flex h-full w-64 shrink-0 flex-col border-r border-white/[0.06] bg-[#050810]/92 text-text-primary backdrop-blur-2xl transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] md:relative',
+          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
+        )}
+      >
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-px bg-linear-to-b from-luxe-champagne/25 via-luxe-champagne/10 to-transparent" aria-hidden />
+        <div className="hidden p-6 md:block">
+          <div className="mb-3">
+            <Logo lightText className="h-14 md:h-[3.75rem]" />
           </div>
-          <div className="text-xs text-text-secondary font-mono tracking-widest flex items-center gap-2 mt-2">
-            <span className="w-2 h-2 rounded-full bg-noya-blue shadow-[0_0_8px_rgba(110,167,234,0.8)] animate-pulse"></span>
-            Espace Client
+          <div className="h-px w-full bg-linear-to-r from-transparent via-luxe-champagne/30 to-transparent" aria-hidden />
+          <div className="mt-4 flex items-center gap-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.35em] text-luxe-champagne/90">
+            <span
+              className="h-1.5 w-1.5 shrink-0 rounded-full bg-luxe-champagne shadow-[0_0_12px_rgba(201,169,98,0.65)]"
+              aria-hidden
+            />
+            Espace client
           </div>
         </div>
 
-        <nav className="flex-1 px-4 py-6 space-y-2">
+        <nav className="flex-1 space-y-1.5 px-3 py-4 md:px-4 md:py-6">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               end={item.to === '/dashboard'}
               onClick={() => setIsMobileMenuOpen(false)}
-              className={({ isActive }) => cn(
-                "flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300",
-                isActive 
-                  ? "bg-noya-blue/10 text-noya-blue border border-noya-blue/20 shadow-[0_0_15px_rgba(110,167,234,0.1)] font-medium" 
-                  : "text-text-secondary hover:bg-white/5 hover:text-text-primary"
-              )}
+              className={({ isActive }) =>
+                cn(
+                  'group relative flex items-center gap-3 rounded-xl px-4 py-3 text-[13px] transition-all duration-300',
+                  isActive
+                    ? 'border-y border-r border-transparent border-l-2 border-l-luxe-champagne bg-linear-to-r from-luxe-champagne/[0.14] to-transparent pl-[14px] font-semibold text-luxe-champagne-bright shadow-[0_0_32px_-10px_rgba(201,169,98,0.4),inset_0_1px_0_0_rgba(255,255,255,0.05)]'
+                    : 'border border-transparent text-text-secondary hover:border-white/5 hover:bg-white/[0.04] hover:text-text-primary',
+                )
+              }
             >
               <div className="relative">
-                <item.icon size={20} className="flex-shrink-0" />
+                <item.icon size={20} className="shrink-0 opacity-90 group-hover:opacity-100" strokeWidth={1.75} />
                 {item.id === 'messagerie' && unreadChats > 0 && (
-                  <span className="absolute -top-1 -right-1 h-3 w-3 rounded-full bg-[#E15B64] border border-[#0A1020]"></span>
+                  <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#050810] bg-noya-red shadow-[0_0_8px_rgba(225,91,100,0.6)]" />
                 )}
               </div>
-              <span>{item.label}</span>
+              <span className="tracking-wide">{item.label}</span>
             </NavLink>
           ))}
         </nav>
 
-        <div className="p-4 mt-auto">
-          <button 
+        <div className="shrink-0 px-3 pb-1 md:px-4">
+          <WorkspaceSpaceSwitcher variant="noya-dark" onNavigate={() => setIsMobileMenuOpen(false)} />
+        </div>
+
+        <div className="mt-auto p-3 md:p-4">
+          <button
+            type="button"
             onClick={handleLogout}
-            className="flex items-center gap-3 px-4 py-3 w-full rounded-xl text-[#8D98AA] hover:bg-white/5 hover:text-[#E15B64] transition-colors"
+            className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm text-text-muted transition-colors hover:bg-white/[0.04] hover:text-noya-red"
           >
-            <LogOut size={20} />
-            <span className="font-medium">Déconnexion</span>
+            <LogOut size={20} strokeWidth={1.5} />
+            <span className="font-medium tracking-wide">Déconnexion</span>
           </button>
         </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden bg-noya-black">
+      <main className="flex h-screen flex-1 flex-col overflow-hidden bg-black/20 md:bg-black/25">
         {/* Desktop Header */}
-        <header className="bg-noya-sidebar shadow-sm sticky top-0 z-40 hidden md:block border-b border-white/5">
-          <div className="px-6 py-4 flex items-center justify-between">
-            <h1 className="text-xl font-semibold text-text-primary">Espace Client</h1>
-            <div className="flex items-center space-x-4">
+        <header className="sticky top-0 z-40 hidden border-b border-white/[0.06] bg-[#060910]/80 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.8)] backdrop-blur-xl md:block">
+          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-luxe-champagne/25 to-transparent" aria-hidden />
+          <div className="flex items-center justify-between px-6 py-4">
+            <div>
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.28em] text-luxe-champagne/80">
+                Portail privé
+              </p>
+              <h1 className="font-display text-2xl font-medium tracking-[0.02em] text-text-primary md:text-[1.75rem]">
+                {pageTitle}
+              </h1>
+            </div>
+            <div className="flex items-center gap-2 sm:gap-4">
               {/* Notifications */}
               <div className="relative">
-                <button 
+                <button
+                  type="button"
                   onClick={() => setShowNotifications(!showNotifications)}
-                  className="text-text-secondary hover:text-text-primary relative p-2 rounded-full hover:bg-white/5 transition-colors"
+                  className="relative rounded-full p-2.5 text-text-secondary transition-colors hover:bg-white/[0.06] hover:text-text-primary"
+                  aria-haspopup="true"
+                  aria-label="Notifications"
                 >
-                  <Bell size={20} />
+                  <Bell size={20} strokeWidth={1.5} />
                   {unreadCount > 0 && (
-                    <span className="absolute top-1 right-1 bg-[#E15B64] text-white text-[10px] font-bold rounded-full h-4 w-4 flex items-center justify-center">
+                    <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-noya-red text-[10px] font-bold text-white shadow-[0_0_10px_rgba(225,91,100,0.5)]">
                       {unreadCount}
                     </span>
                   )}
                 </button>
 
                 {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-80 bg-[#0D1320] rounded-2xl shadow-xl border border-white/10 py-2 z-50">
-                    <div className="px-4 py-2 border-b border-white/5 flex justify-between items-center">
-                      <h3 className="font-bold text-[#F2F4F8]">Notifications</h3>
-                      <button 
+                  <div className="absolute right-0 z-50 mt-3 w-80 overflow-hidden rounded-2xl border border-white/10 bg-[#080c14]/95 py-2 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.65),0_0_0_1px_rgba(201,169,98,0.12)] backdrop-blur-xl">
+                    <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
+                      <h3 className="font-display text-lg font-medium text-text-primary">Notifications</h3>
+                      <button
+                        type="button"
                         onClick={handleMarkAllAsRead}
-                        className="text-xs text-[#6EA7EA] font-medium cursor-pointer hover:underline"
+                        className="cursor-pointer text-xs font-medium text-noya-blue hover:underline"
                       >
                         Tout marquer comme lu
                       </button>
                     </div>
-                    <div className="max-h-96 overflow-y-auto">
+                    <div className="custom-scrollbar max-h-96 overflow-y-auto">
                       {notifications.length === 0 ? (
-                        <div className="px-4 py-8 text-center text-[#8D98AA] text-sm">
-                          Aucune notification
-                        </div>
+                        <div className="px-4 py-10 text-center text-sm text-text-muted">Aucune notification</div>
                       ) : (
                         notifications.map((notification) => (
-                          <div 
+                          <div
                             key={notification.id}
+                            role="button"
+                            tabIndex={0}
                             onClick={() => handleNotificationClick(notification)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                void handleNotificationClick(notification);
+                              }
+                            }}
                             className={cn(
-                              "px-4 py-3 hover:bg-white/5 cursor-pointer border-b border-white/5 transition-colors",
-                              !notification.read && "bg-[#6EA7EA]/5"
+                              'cursor-pointer border-b border-white/[0.05] px-4 py-3 transition-colors last:border-0 hover:bg-white/[0.04]',
+                              !notification.read && 'bg-noya-blue/[0.06]',
                             )}
                           >
-                            <p className={cn("text-sm font-medium", !notification.read ? "text-[#F2F4F8]" : "text-[#8D98AA]")}>
+                            <p
+                              className={cn(
+                                'text-sm font-medium',
+                                !notification.read ? 'text-text-primary' : 'text-text-secondary',
+                              )}
+                            >
                               {notification.title}
                             </p>
-                            <p className="text-xs text-[#8D98AA]/80 mt-1">{notification.message}</p>
-                            <p className="text-[10px] text-[#8D98AA]/50 mt-1">
+                            <p className="mt-1 text-xs text-text-muted">{notification.message}</p>
+                            <p className="mt-1.5 text-[10px] text-text-dim">
                               {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true, locale: fr })}
                             </p>
                           </div>
@@ -210,24 +266,28 @@ export default function ClientLayout() {
 
               {/* Theme Toggle */}
               <button
+                type="button"
                 onClick={toggleTheme}
-                className="p-2 text-text-secondary hover:text-text-primary hover:bg-white/5 rounded-full transition-colors flex items-center justify-center"
+                className="flex items-center justify-center rounded-full p-2.5 text-text-secondary transition-colors hover:bg-white/[0.06] hover:text-text-primary"
                 title={theme === 'dark' ? 'Passer au mode clair' : 'Passer au mode sombre'}
+                aria-label={theme === 'dark' ? 'Passer au mode clair' : 'Passer au mode sombre'}
               >
-                {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+                {theme === 'dark' ? <Sun size={20} strokeWidth={1.5} /> : <Moon size={20} strokeWidth={1.5} />}
               </button>
 
-              <div className="flex items-center space-x-2 pl-4 border-l border-white/10">
-                <div className="w-8 h-8 bg-[#6EA7EA]/20 border border-[#6EA7EA]/30 rounded-full flex items-center justify-center text-[#6EA7EA] font-bold text-sm uppercase">
+              <div className="flex items-center gap-3 border-l border-white/10 pl-4">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full border border-luxe-champagne/30 bg-linear-to-br from-luxe-champagne/20 to-noya-blue/10 text-xs font-bold uppercase tracking-wide text-luxe-champagne-bright shadow-[0_0_20px_-6px_rgba(201,169,98,0.4)]">
                   {user?.email?.substring(0, 2) || 'CL'}
                 </div>
-                <span className="hidden md:block text-sm font-medium text-[#F2F4F8]">{user?.email}</span>
+                <span className="hidden max-w-[200px] truncate text-sm font-medium text-text-primary lg:max-w-xs lg:inline">
+                  {user?.email}
+                </span>
               </div>
             </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+        <div className="custom-scrollbar flex-1 overflow-y-auto p-4 md:p-8 lg:p-10">
           <Outlet />
         </div>
       </main>

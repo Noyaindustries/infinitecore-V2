@@ -6,6 +6,7 @@ import Logo from '../Logo';
 import { useAuth } from '../FirebaseProvider';
 import MarketingV4Background from './MarketingV4Background';
 import { cn } from '../../lib/utils';
+import { getWorkspaceNavLinks } from '../../lib/workspaceSpaces';
 
 /** Liens modules marketing (menu Solutions + footer). */
 const MARKETING_SOLUTION_MODULE_LINKS: { to: string; label: string }[] = [
@@ -31,19 +32,7 @@ export default function MarketingLayout() {
   const navigate = useNavigate();
 
   const role = userData?.role;
-  const accountSpaces =
-    role === 'admin'
-      ? [
-          { to: '/superadmin', label: 'Espace SuperAdmin' },
-          { to: '/admin', label: 'Espace Commando' },
-        ]
-      : role === 'commando'
-        ? [{ to: '/admin', label: 'Espace Commando' }]
-        : role === 'developer'
-          ? [{ to: '/developer', label: 'Espace Développeur' }]
-          : role === 'partner'
-            ? [{ to: '/partenaire', label: 'Espace Partenaire' }]
-            : [{ to: '/dashboard', label: 'Mon espace client' }];
+  const workspaceLinks = user ? getWorkspaceNavLinks(role) : [];
 
   const handleLogout = async () => {
     localStorage.removeItem('demoRole');
@@ -131,9 +120,9 @@ export default function MarketingLayout() {
                   <span className="hidden lg:inline">Mon espace</span>
                   <ChevronDown size={13} className="text-[#8E9EAE]" />
                 </button>
-                <div className="invisible absolute right-0 top-full z-[910] mt-2 w-56 translate-y-1 overflow-hidden rounded-lg border border-white/[0.08] bg-[#080D1E]/95 text-[#C8D0E0] opacity-0 shadow-xl backdrop-blur-xl transition-all duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100">
-                  {accountSpaces.map((space) => (
-                    <Link key={space.to} to={space.to} className="block px-4 py-3 text-[13px] transition-colors hover:bg-white/[0.06] hover:text-[#F5F7FF]">
+                <div className="invisible absolute right-0 top-full z-[910] mt-2 min-w-[14rem] max-w-[18rem] translate-y-1 overflow-hidden rounded-lg border border-white/[0.08] bg-[#080D1E]/95 text-[#C8D0E0] opacity-0 shadow-xl backdrop-blur-xl transition-all duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100">
+                  {workspaceLinks.map((space) => (
+                    <Link key={space.id} to={space.to} className="block px-4 py-3 text-[13px] transition-colors hover:bg-white/[0.06] hover:text-[#F5F7FF]">
                       {space.label}
                     </Link>
                   ))}
@@ -249,9 +238,9 @@ export default function MarketingLayout() {
               {user ? (
                 <div className="space-y-0">
                   <p className="mb-1.5 px-3 text-[11px] font-black uppercase tracking-widest text-[#5E6E84]">Mon compte</p>
-                  {accountSpaces.map((space) => (
+                  {workspaceLinks.map((space) => (
                     <Link
-                      key={space.to}
+                      key={space.id}
                       to={space.to}
                       className="block rounded-md px-3 py-2.5 text-[13px] text-[#8E9EAE] transition-all hover:bg-white/[0.06] hover:text-[#F5F7FF]"
                       onClick={() => setIsMenuOpen(false)}

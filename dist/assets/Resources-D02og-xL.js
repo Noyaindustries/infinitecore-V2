@@ -1,1 +1,0 @@
-import{j as e}from"./index-Cdq9jvFV.js";function t(){return e.jsxs("div",{className:"p-6",children:[e.jsx("h1",{className:"text-2xl font-bold text-text-primary",children:"Ressources"}),e.jsx("p",{className:"text-text-secondary mt-2",children:"Documentation et assets pour les missions."})]})}export{t as default};

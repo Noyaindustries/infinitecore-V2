@@ -24,8 +24,51 @@
   --color-border-subtle: rgba(255, 255, 255, 0.05);
   --color-border-medium: rgba(255, 255, 255, 0.1);
 
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Urbanist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "DM Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-display: "Cormorant Garamond", ui-serif, Georgia, "Times New Roman", serif;
+
+  /* Espace client — accents « maison de luxe » (champagne / or froid) */
+  --color-luxe-champagne: #c9a962;
+  --color-luxe-champagne-bright: #e4d4a5;
+  --color-luxe-ink: #03050a;
+}
+
+/* Fond atmosphère portail client (dark) */
+.client-portal {
+  background-color: var(--color-luxe-ink);
+  background-image:
+    radial-gradient(ellipse 130% 70% at 50% -25%, rgba(110, 167, 234, 0.14), transparent 55%),
+    radial-gradient(ellipse 55% 45% at 100% 0%, rgba(201, 169, 98, 0.1), transparent 50%),
+    radial-gradient(ellipse 45% 40% at 0% 100%, rgba(255, 179, 50, 0.06), transparent 45%);
+}
+
+.light .client-portal {
+  background-color: var(--color-surface-primary);
+  background-image:
+    radial-gradient(ellipse 120% 60% at 50% -20%, rgba(37, 99, 235, 0.08), transparent 50%),
+    radial-gradient(ellipse 50% 40% at 100% 0%, rgba(180, 140, 60, 0.06), transparent 45%);
+}
+
+/* Fenêtre : pas de piste grise système à droite (scroll souris / tactile inchangé) */
+html {
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+}
+html::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* Panneaux scrollables sans classe custom-scrollbar : même traitement */
+.overflow-y-auto:not(.custom-scrollbar),
+.overflow-y-scroll:not(.custom-scrollbar) {
+  scrollbar-width: none;
+}
+.overflow-y-auto:not(.custom-scrollbar)::-webkit-scrollbar,
+.overflow-y-scroll:not(.custom-scrollbar)::-webkit-scrollbar {
+  width: 0;
+  height: 0;
 }
 
 .light {
@@ -50,6 +93,9 @@
   --color-noya-green: #16A34A;
   --color-noya-red: #DC2626;
   --color-noya-orange: #D97706;
+
+  --color-luxe-champagne: #9a7b3c;
+  --color-luxe-champagne-bright: #b08d44;
 }
 
 body {
@@ -81,13 +127,17 @@ p {
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--color-border-medium);
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 10px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--color-noya-blue);
-  opacity: 0.5;
+  background: rgba(110, 167, 234, 0.45);
+}
+
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
 }
 
 /* Glassmorphism effects */
@@ -103,10 +153,6 @@ p {
 body {
   overflow-x: hidden;
   -webkit-text-size-adjust: 100%;
-}
-
-html {
-  scroll-behavior: smooth;
 }
 
 /* Make all images and media responsive by default */

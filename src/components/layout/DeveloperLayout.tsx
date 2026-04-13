@@ -6,6 +6,7 @@ import { signOut } from 'firebase/auth';
 import Logo from '../Logo';
 import { notificationService, Notification } from '../../services/notificationService';
 import { useAuth } from '../FirebaseProvider';
+import WorkspaceSpaceSwitcher from '../WorkspaceSpaceSwitcher';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '../../lib/utils';
@@ -101,6 +102,9 @@ export default function DeveloperLayout() {
               );
             })}
           </nav>
+          <div className="px-2 pb-2 shrink-0">
+            <WorkspaceSpaceSwitcher variant="surface" className="border-t-0 pt-3 mt-0" onNavigate={() => setSidebarOpen(false)} />
+          </div>
           <div className="p-4 border-t border-border-subtle bg-surface-primary/30">
             <button onClick={handleLogout} className="w-full flex items-center px-4 py-3 text-text-muted hover:text-noya-red hover:bg-noya-red/5 rounded-xl transition-all group font-bold text-sm">
               <LogOut size={18} className="mr-3 group-hover:-translate-x-1 transition-transform" />

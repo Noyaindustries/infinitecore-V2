@@ -1,1 +1,0 @@
-import{j as s}from"./index-Cdq9jvFV.js";function t(){return s.jsxs("div",{className:"p-6",children:[s.jsx("h1",{className:"text-2xl font-bold text-text-primary",children:"Missions"}),s.jsx("p",{className:"text-text-secondary mt-2",children:"Liste des missions assignées."})]})}export{t as default};

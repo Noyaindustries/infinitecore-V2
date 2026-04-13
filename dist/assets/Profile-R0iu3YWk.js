@@ -1,1 +1,0 @@
-import{j as t}from"./index-Cdq9jvFV.js";function s(){return t.jsxs("div",{className:"p-6",children:[t.jsx("h1",{className:"text-2xl font-bold text-text-primary",children:"Mon profil"}),t.jsx("p",{className:"text-text-secondary mt-2",children:"Informations du compte client."})]})}export{s as default};

@@ -7,6 +7,8 @@ import { useAuth } from '../../components/FirebaseProvider';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { cn } from '../../lib/utils';
+import { formatFileSize } from '../../lib/formatFileSize';
+import { formatTimeShort } from '../../lib/formatTimeShort';
 
 interface ChatMeta {
   clientId: string;
@@ -30,18 +32,6 @@ interface Message {
   orderDetails?: { serviceName: string; orderId?: string; isPaddeAudit?: boolean };
   createdAt: string;
   readByCommando: boolean;
-}
-
-function formatSize(bytes: number) {
-  if (!bytes) return '';
-  const k = 1024;
-  const sizes = ['o', 'Ko', 'Mo', 'Go'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
 function formatDate(iso: string) {
@@ -141,6 +131,7 @@ export default function AdminMessagerie() {
       lastMessage: msg.text || msg.fileName || 'Fichier',
       lastMessageAt: new Date().toISOString(),
       unreadCommando: false,
+      unreadClient: true,
     }, { merge: true });
 
     // Notification pour le client
@@ -258,7 +249,7 @@ export default function AdminMessagerie() {
             </div>
             <div className="min-w-0">
               <p className="font-black uppercase tracking-tight truncate max-w-[180px] text-[11px]">{msg.fileName}</p>
-              {msg.fileSize && <p className={`text-[10px] font-bold uppercase tracking-widest ${isMe ? 'text-blue-100 opacity-70' : 'text-text-muted'}`}>{formatSize(msg.fileSize)}</p>}
+              {msg.fileSize && <p className={`text-[10px] font-bold uppercase tracking-widest ${isMe ? 'text-blue-100 opacity-70' : 'text-text-muted'}`}>{formatFileSize(msg.fileSize)}</p>}
             </div>
             <Download size={16} className="flex-shrink-0 opacity-70" />
           </a>
@@ -309,7 +300,7 @@ export default function AdminMessagerie() {
           {!isMe && <p className="text-[10px] font-black text-noya-blue uppercase tracking-widest mb-1.5">{msg.senderName}</p>}
           {content()}
           <p className={`text-[9px] mt-2 font-black uppercase tracking-widest text-right ${isMe ? 'text-blue-200 opacity-60' : 'text-text-dim opacity-50'}`}>
-            {formatTime(msg.createdAt)}
+            {formatTimeShort(msg.createdAt)}
           </p>
         </div>
       </div>

@@ -179,10 +179,8 @@ export default function MarketingV4Background() {
       <div
         className="pointer-events-none fixed inset-0 z-[1] bg-[length:64px_64px] opacity-100"
         style={{
-          backgroundImage: `
-            linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(255,255,255,0.022) 1px, transparent 1px)
-          `,
+          /* Lignes horizontales uniquement — les lignes verticales laissaient une bande grise visible au bord droit */
+          backgroundImage: `linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px)`,
           maskImage: 'radial-gradient(ellipse 120% 80% at 50% 0%, black 10%, transparent 75%)',
         }}
         aria-hidden

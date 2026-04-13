@@ -26,8 +26,15 @@ export function uploadFile(
 
     xhr.onreadystatechange = () => {
       if (xhr.readyState !== XMLHttpRequest.DONE) return;
+      let errBody: { error?: string } = {};
+      try {
+        errBody = JSON.parse(xhr.responseText || "{}");
+      } catch {
+        /* ignore */
+      }
       if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new Error(`Upload échoué (${xhr.status})`));
+        const detail = errBody?.error ? ` ${errBody.error}` : "";
+        reject(new Error(`Upload échoué (${xhr.status}).${detail}`));
         return;
       }
 
