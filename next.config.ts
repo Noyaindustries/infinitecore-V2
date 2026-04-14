@@ -24,15 +24,7 @@ const nextConfig: NextConfig = {
     };
     return config;
   },
-  /** En dev, proxy /api vers Express (port 3001). En prod Vercel, définir API_UPSTREAM vers l’API Node. */
-  async rewrites() {
-    const upstream =
-      process.env.API_UPSTREAM?.trim() ||
-      (process.env.NODE_ENV === "development" ? "http://127.0.0.1:3001" : "");
-    if (!upstream) return [];
-    const base = upstream.replace(/\/$/, "");
-    return [{ source: "/api/:path*", destination: `${base}/api/:path*` }];
-  },
+  /** Le proxy `/api/*` → Express est géré par `src/app/api/[[...path]]/route.ts` (runtime). En prod, définir `API_UPSTREAM`. */
 };
 
 export default nextConfig;
