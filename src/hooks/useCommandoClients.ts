@@ -12,6 +12,9 @@ export interface CommandoClientRow {
   role?: string;
   phone?: string;
   companyName?: string;
+  referredBy?: string | null;
+  referredByPartnerId?: string | null;
+  referredByPartnerName?: string | null;
 }
 
 export function clientDisplayName(c: CommandoClientRow): string {
@@ -30,9 +33,27 @@ export function useCommandoClients() {
     const unsub = onSnapshot(
       collection(db, 'users'),
       (snap) => {
-        const data = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() } as CommandoClientRow))
+        const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CommandoClientRow));
+
+        // Fallback: reconstitue le nom du parrain via l'UID si le champ nommé n'existe pas encore.
+        const partnerNameById = new Map<string, string>();
+        for (const row of rows) {
+          const role = String(row.role || '').toLowerCase();
+          if (role !== 'partner') continue;
+          const fullName = `${row.firstName || ''} ${row.lastName || ''}`.trim();
+          const fallbackLabel = fullName || row.email || `Partenaire ${row.id}`;
+          partnerNameById.set(row.id, fallbackLabel);
+        }
+
+        const data = rows
           .filter((u) => String(u.role || '').toLowerCase() === 'client')
+          .map((u) => {
+            const fallbackName = u.referredByPartnerId ? partnerNameById.get(u.referredByPartnerId) : null;
+            return {
+              ...u,
+              referredByPartnerName: u.referredByPartnerName || fallbackName || null,
+            } as CommandoClientRow;
+          })
           .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
         setClients(data);
         setLoading(false);

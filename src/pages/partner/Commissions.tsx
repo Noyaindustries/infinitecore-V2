@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Download, DollarSign, Clock, CheckCircle, TrendingUp, Building2 } from 'lucide-react';
 import { useAuth } from '../../components/FirebaseProvider';
 import { leadService, Lead, LeadStatus } from '../../services/leadService';
@@ -20,18 +21,20 @@ function formatFCFA(n: number) {
 }
 
 export default function PartnerCommissions() {
-  const { user } = useAuth();
+  const { user, userData } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const partnerUid = String(userData?.uid || user?.uid || '');
 
   useEffect(() => {
-    if (!user) return;
-    const unsub = leadService.subscribeToPartnerLeads(user.uid, (data) => {
+    if (!partnerUid) return;
+    const unsub = leadService.subscribeToPartnerLeads(partnerUid, (data) => {
       setLeads(data);
       setLoading(false);
     });
     return () => unsub();
-  }, [user]);
+  }, [partnerUid]);
 
   const signedLeads = leads.filter(l => l.status === 'signe' || l.status === 'gagne');
   const gainedLeads = leads.filter(l => l.status === 'gagne');
@@ -40,6 +43,15 @@ export default function PartnerCommissions() {
   const paidCommissions = paidLeads.reduce((sum, l) => sum + (l.commissionAmount || 0), 0);
   const pendingCommissions = totalCommissions - paidCommissions;
   const activeLeads = leads.filter(l => l.status !== 'gagne' && l.status !== 'perdu' && l.status !== 'signe').length;
+  const filteredSignedLeads = useMemo(
+    () =>
+      signedLeads.filter((lead) => {
+        const haystack = `${lead.companyName} ${lead.whatsapp} ${lead.firstName || ''} ${lead.lastName || ''}`.toLowerCase();
+        return haystack.includes(search.toLowerCase());
+      }),
+    [signedLeads, search]
+  );
+  const payoutRate = totalCommissions > 0 ? Math.round((paidCommissions / totalCommissions) * 100) : 0;
 
   const handleExport = () => {
     if (signedLeads.length === 0) return;
@@ -71,6 +83,21 @@ export default function PartnerCommissions() {
         >
           <Download size={16} /> Exporter CSV
         </button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <Link to="/partenaire" className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-text-primary hover:bg-white/10 transition-colors">
+          Tableau de bord
+          <TrendingUp size={14} className="text-noya-blue" />
+        </Link>
+        <Link to="/partenaire/clients" className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-text-primary hover:bg-white/10 transition-colors">
+          Mes contacts
+          <Building2 size={14} className="text-noya-green" />
+        </Link>
+        <Link to="/partenaire/profil" className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-text-primary hover:bg-white/10 transition-colors">
+          Profil / RIB
+          <CheckCircle size={14} className="text-noya-orange" />
+        </Link>
       </div>
 
       {/* Summary cards */}
@@ -127,6 +154,13 @@ export default function PartnerCommissions() {
               <p className="text-xl font-bold text-noya-orange">{formatFCFA(pendingCommissions)}</p>
             </div>
           </div>
+          <div className="w-full md:w-56">
+            <p className="text-xs text-text-secondary uppercase font-bold">Taux de versement</p>
+            <div className="mt-2 h-2 rounded-full bg-black/20 overflow-hidden">
+              <div className="h-full bg-noya-green rounded-full" style={{ width: `${payoutRate}%` }} />
+            </div>
+            <p className="mt-1 text-sm font-bold text-text-primary">{payoutRate}% versé</p>
+          </div>
         </div>
       )}
 
@@ -137,16 +171,25 @@ export default function PartnerCommissions() {
           <p className="text-sm text-text-secondary mt-0.5">
             Uniquement les contacts ayant atteint la signature ou mieux. Les commissions sont définies par l'équipe Commando.
           </p>
+          <div className="mt-3 max-w-sm">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Rechercher une entreprise ou un contact..."
+              className="w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-sm text-text-primary placeholder:text-text-secondary/60 outline-none focus:ring-2 focus:ring-noya-blue"
+            />
+          </div>
         </div>
 
         {loading ? (
           <div className="flex justify-center py-12">
             <div className="w-8 h-8 border-b-2 border-noya-blue rounded-full animate-spin" />
           </div>
-        ) : signedLeads.length === 0 ? (
+        ) : filteredSignedLeads.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-text-secondary/50 gap-3">
             <DollarSign size={40} className="opacity-20" />
-            <p className="font-medium text-text-secondary">Aucune commission pour le moment.</p>
+            <p className="font-medium text-text-secondary">{signedLeads.length === 0 ? 'Aucune commission pour le moment.' : 'Aucun résultat pour cette recherche.'}</p>
             <p className="text-sm text-center max-w-xs text-text-secondary/70">
               Vos commissions apparaîtront ici dès qu'un de vos contacts aura signé un contrat avec Noya Industries.
             </p>
@@ -165,7 +208,7 @@ export default function PartnerCommissions() {
                 </tr>
               </thead>
               <tbody className="text-sm divide-y divide-gray-50">
-                {signedLeads.map((lead) => (
+                {filteredSignedLeads.map((lead) => (
                   <tr key={lead.id} className="hover:bg-white/5 border-b border-white/5 transition-colors">
                     <td className="px-5 py-4">
                       <div className="flex items-center gap-2">

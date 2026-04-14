@@ -22,6 +22,15 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "firebase/app": [
+        "./src/lib/mongoApp.ts"
+      ],
+      "firebase/auth": [
+        "./src/lib/mongoAuth.ts"
+      ],
+      "firebase/firestore": [
+        "./src/lib/mongoFirestore.ts"
       ]
     },
     "allowImportingTsExtensions": true,

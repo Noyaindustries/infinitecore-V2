@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Code2, Wallet, LogOut, Menu, X, Bell, User, Upload, BookOpen, Sun, Moon } from 'lucide-react';
+import { LayoutDashboard, Code2, Wallet, LogOut, Menu, X, Bell, User, Upload, BookOpen, Sun, Moon, ChevronDown, Mail, Copy } from 'lucide-react';
 import { auth } from '../../firebase';
 import { signOut } from 'firebase/auth';
 import Logo from '../Logo';
@@ -10,11 +10,15 @@ import WorkspaceSpaceSwitcher from '../WorkspaceSpaceSwitcher';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '../../lib/utils';
+import { useRef } from 'react';
 
 export default function DeveloperLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [copiedEmail, setCopiedEmail] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
   const location = useLocation();
   const navigate = useNavigate();
@@ -39,13 +43,25 @@ export default function DeveloperLayout() {
     return () => unsub();
   }, [user]);
 
+  useEffect(() => {
+    if (!showProfileMenu) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (profileMenuRef.current && !profileMenuRef.current.contains(target)) {
+        setShowProfileMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [showProfileMenu]);
+
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const handleLogout = async () => {
     try {
       localStorage.removeItem('demoRole');
       await signOut(auth);
-      window.location.href = 'https://infinitecore.netlify.app/staff/login';
+      window.location.href = '/login';
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -59,6 +75,17 @@ export default function DeveloperLayout() {
     if (!notification.read) await notificationService.markAsRead(notification.id);
     if (notification.type === 'mission') navigate('/developer/missions');
     setShowNotifications(false);
+  };
+
+  const copyEmail = async () => {
+    if (!user?.email) return;
+    try {
+      await navigator.clipboard.writeText(user.email);
+      setCopiedEmail(true);
+      window.setTimeout(() => setCopiedEmail(false), 2000);
+    } catch {
+      // navigateur sans accès presse-papiers
+    }
   };
 
   const navigation = [
@@ -81,7 +108,11 @@ export default function DeveloperLayout() {
         <div className="h-full flex flex-col">
           <div className="h-[4.75rem] md:h-20 flex items-center px-6 border-b border-border-subtle bg-surface-secondary">
             <Logo lightText={theme === 'dark'} className="h-13 md:h-14" />
-            <button onClick={() => setSidebarOpen(false)} className="ml-auto lg:hidden text-text-secondary hover:text-text-primary p-2">
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="ml-auto lg:hidden text-text-secondary hover:text-text-primary p-2"
+              aria-label="Fermer le menu"
+            >
               <X size={20} />
             </button>
           </div>
@@ -122,7 +153,11 @@ export default function DeveloperLayout() {
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-surface-primary">
         <header className="h-16 bg-surface-secondary border-b border-border-subtle flex items-center justify-between px-6 lg:px-10 z-40 relative shadow-sm">
-          <button onClick={() => setSidebarOpen(true)} className="lg:hidden text-text-secondary hover:text-text-primary p-2">
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="lg:hidden text-text-secondary hover:text-text-primary p-2"
+            aria-label="Ouvrir le menu"
+          >
             <Menu size={24} />
           </button>
           
@@ -138,7 +173,10 @@ export default function DeveloperLayout() {
             {/* Notification bell */}
             <div className="relative">
               <button
-                onClick={() => setShowNotifications(!showNotifications)}
+                onClick={() => {
+                  setShowProfileMenu(false);
+                  setShowNotifications((open) => !open);
+                }}
                 className="text-text-muted hover:text-text-primary relative p-2.5 rounded-xl hover:bg-surface-tertiary transition-all shadow-sm border border-border-subtle bg-surface-primary"
               >
                 <Bell size={18} />
@@ -162,7 +200,7 @@ export default function DeveloperLayout() {
                       </button>
                     )}
                   </div>
-                  <div className="max-h-96 overflow-y-auto">
+                  <div className="custom-scrollbar max-h-96 overflow-y-auto">
                     {notifications.length === 0 ? (
                       <div className="px-6 py-12 text-center text-text-dim text-xs font-medium italic">
                         Aucun signal entrant indexé.
@@ -192,18 +230,102 @@ export default function DeveloperLayout() {
               )}
             </div>
 
-            <div className="flex items-center gap-4 pl-6 border-l border-border-subtle group/profile cursor-pointer">
-              <div className="w-10 h-10 rounded-xl bg-noya-blue/10 border border-noya-blue/20 flex items-center justify-center text-noya-blue font-black text-xs shadow-inner group-hover/profile:scale-110 transition-transform">
-                {userData?.firstName?.[0] || 'D'}
-              </div>
-              <div className="hidden sm:block">
-                <span className="text-xs font-black text-text-primary uppercase tracking-tight block leading-none">{displayName}</span>
-                <span className="text-[8px] font-black text-noya-blue uppercase tracking-widest mt-1 block opacity-70">Core Dev</span>
-              </div>
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowNotifications(false);
+                  setShowProfileMenu((open) => !open);
+                }}
+                className={cn(
+                  "flex items-center gap-4 rounded-xl py-1.5 pl-6 pr-2 border-l border-border-subtle transition-colors",
+                  showProfileMenu ? "bg-surface-tertiary" : "hover:bg-surface-tertiary/70"
+                )}
+                aria-haspopup="menu"
+                aria-label="Profil développeur"
+              >
+                <div className="w-10 h-10 rounded-xl bg-noya-blue/10 border border-noya-blue/20 flex items-center justify-center text-noya-blue font-black text-xs shadow-inner">
+                  {userData?.firstName?.[0] || 'D'}
+                </div>
+                <div className="hidden sm:block text-left">
+                  <span className="text-xs font-black text-text-primary uppercase tracking-tight block leading-none">{displayName}</span>
+                  <span className="text-[8px] font-black text-noya-blue uppercase tracking-widest mt-1 block opacity-70">Core Dev</span>
+                </div>
+                <ChevronDown size={14} className={cn("text-text-dim transition-transform", showProfileMenu && "rotate-180")} />
+              </button>
+
+              {showProfileMenu && (
+                <div
+                  className="absolute right-0 top-full mt-3 w-80 bg-surface-secondary rounded-2xl shadow-2xl border border-border-medium py-2 z-50 overflow-hidden"
+                  role="menu"
+                >
+                  <div className="px-4 py-3 border-b border-border-subtle bg-surface-primary/60">
+                    <p className="text-sm font-semibold text-text-primary">{displayName}</p>
+                    <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.18em] text-noya-blue">Développeur</p>
+                  </div>
+
+                  {user?.email ? (
+                    <div className="px-4 py-3 border-b border-border-subtle">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-dim">Compte</p>
+                      <div className="mt-2 flex items-start gap-2 rounded-xl border border-border-subtle bg-surface-primary px-3 py-2">
+                        <Mail size={14} className="mt-0.5 shrink-0 text-noya-blue" />
+                        <span className="min-w-0 flex-1 break-all text-xs text-text-secondary">{user.email}</span>
+                      </div>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => void copyEmail()}
+                        className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-border-subtle py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-text-secondary transition-colors hover:border-noya-blue/40 hover:bg-noya-blue/10 hover:text-text-primary"
+                      >
+                        <Copy size={13} />
+                        {copiedEmail ? 'Copié' : 'Copier l’e-mail'}
+                      </button>
+                    </div>
+                  ) : null}
+
+                  <div className="border-b border-border-subtle px-2 py-2">
+                    <WorkspaceSpaceSwitcher
+                      variant="surface"
+                      className="border-t-0 pt-0 mt-0"
+                      onNavigate={() => {
+                        setShowProfileMenu(false);
+                        setSidebarOpen(false);
+                      }}
+                    />
+                  </div>
+
+                  <div className="p-2">
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        navigate('/developer/profil');
+                      }}
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary"
+                    >
+                      <User size={16} />
+                      Mon profil
+                    </button>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setShowProfileMenu(false);
+                        void handleLogout();
+                      }}
+                      className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-noya-red transition-colors hover:bg-noya-red/10"
+                    >
+                      <LogOut size={16} />
+                      Déconnexion
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </header>
-        <main className="flex-1 overflow-y-auto p-4 lg:p-10 custom-scrollbar">
+        <main className="flex-1 overflow-y-scroll p-4 lg:p-10 custom-scrollbar">
           <Outlet />
         </main>
       </div>

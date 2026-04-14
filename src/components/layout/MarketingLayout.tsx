@@ -67,7 +67,7 @@ export default function MarketingLayout() {
               to="/"
               className="flex shrink-0 items-center self-center transition-opacity duration-300 hover:opacity-90"
             >
-              <Logo lightText blendSurface="primary" className="h-11 sm:h-12 md:h-14" />
+              <Logo lightText blendSurface="primary" className="h-[3.25rem] sm:h-[3.65rem] md:h-[4.1rem]" />
             </Link>
           </div>
           
@@ -424,7 +424,7 @@ export default function MarketingLayout() {
                 ·
               </span>
               <Link
-                to="/staff/login"
+                to="/login"
                 className="shrink-0 whitespace-nowrap transition-colors duration-150 hover:text-[#F5F7FF]"
               >
                 Espace Staff

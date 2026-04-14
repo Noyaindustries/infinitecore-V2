@@ -59,7 +59,7 @@ export default function SuperAdminDevelopers() {
     setIsSubmitting(true);
     try {
       // 1. Create user in Firebase Auth using secondary app
-      const authResult = await createUserAsAdmin(newDev.email);
+      const authResult = await createUserAsAdmin(newDev.email, undefined, 'developer');
       
       if (!authResult.success || !authResult.uid) {
         throw new Error(authResult.error || "Erreur lors de la création du compte.");

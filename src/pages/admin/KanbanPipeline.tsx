@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MoreHorizontal, Plus, FileSignature, ShoppingBag, X, Zap } from 'lucide-react';
+import { MoreHorizontal, Plus, FileSignature, ShoppingBag, X, Zap, Users } from 'lucide-react';
 import { db, auth } from '../../firebase';
 import { collection, onSnapshot, query, orderBy, doc, setDoc } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
@@ -22,6 +22,8 @@ const columnsDef: Column[] = [
 export default function KanbanPipeline() {
   const [orders, setOrders] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
+  const [leads, setLeads] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeColumnId, setActiveColumnId] = useState<string | null>(null);
   const [title, setTitle] = useState('');
@@ -43,8 +45,32 @@ export default function KanbanPipeline() {
       handleFirestoreError(error, OperationType.LIST, 'orders');
     });
 
-    return () => { unsubTasks(); unsubOrders(); };
+    const qLeads = query(collection(db, 'leads'), orderBy('createdAt', 'desc'));
+    const unsubLeads = onSnapshot(qLeads, (snapshot) => {
+      setLeads(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'leads');
+    });
+
+    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
+      setUsers(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'users');
+    });
+
+    return () => { unsubTasks(); unsubOrders(); unsubLeads(); unsubUsers(); };
   }, []);
+
+  const partnerNameById = useMemo(() => {
+    const map: Record<string, string> = {};
+    users.forEach((row) => {
+      if (String(row.role || '').toLowerCase() !== 'partner') return;
+      const uid = String(row.uid || row.id);
+      const fullName = `${row.firstName || ''} ${row.lastName || ''}`.trim();
+      map[uid] = fullName || row.email || `Partenaire ${uid}`;
+    });
+    return map;
+  }, [users]);
 
   const handleAddTask = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -116,7 +142,33 @@ export default function KanbanPipeline() {
           isPadde: o.source === 'padde-ci',
           columnId: 'nouveau',
         }));
-      columnTasks = [...pendingOrders, ...columnTasks];
+      const leadCards = leads
+        .filter((lead) => {
+          const leadPhone = lead.phone || lead.whatsapp || '';
+          return !tasks.some(
+            (task) =>
+              task.source === 'partner_lead' &&
+              (task.leadId === lead.id ||
+                (task.partnerId === lead.partnerId &&
+                  task.leadCompany === lead.companyName &&
+                  task.leadPhone === leadPhone))
+          );
+        })
+        .map((lead) => ({
+          id: `lead-${lead.id}`,
+          leadId: lead.id,
+          title: `Lead partenaire: ${lead.companyName || 'Entreprise'}`,
+          client: `${lead.firstName || ''} ${lead.lastName || ''}`.trim() || lead.companyName || 'Contact',
+          createdAt: lead.createdAt,
+          isOrder: false,
+          source: 'partner_lead',
+          partnerId: lead.partnerId,
+          partnerName: lead.partnerName || (lead.partnerId ? partnerNameById[lead.partnerId] || `Partenaire ${lead.partnerId}` : 'Partenaire'),
+          columnId: 'nouveau',
+          __fromLeadOnly: true,
+        }));
+
+      columnTasks = [...pendingOrders, ...columnTasks, ...leadCards];
     }
 
     return columnTasks;
@@ -196,7 +248,7 @@ export default function KanbanPipeline() {
                       {columnTasks.length}
                     </span>
                   </h3>
-                  <button className="text-text-dim hover:text-text-primary transition-colors">
+                  <button title="Options de la colonne" aria-label="Options de la colonne" className="text-text-dim hover:text-text-primary transition-colors">
                     <MoreHorizontal size={20} />
                   </button>
                 </div>
@@ -205,8 +257,9 @@ export default function KanbanPipeline() {
                   {columnTasks.map((task, taskIndex) => (
                     <motion.div
                       key={task.id}
-                      draggable
+                      draggable={!task.__fromLeadOnly}
                       onDragStart={(e) => {
+                        if (task.__fromLeadOnly) return;
                         e.dataTransfer.setData('text/plain', JSON.stringify({ 
                           id: task.id, 
                           isOrder: task.isOrder, 
@@ -226,6 +279,12 @@ export default function KanbanPipeline() {
                             : 'border-border-subtle hover:border-noya-blue'
                       }`}
                     >
+                      {(() => {
+                        const resolvedPartnerName =
+                          task.partnerName ||
+                          (task.partnerId ? partnerNameById[task.partnerId] || `Partenaire ${task.partnerId}` : '');
+                        return (
+                          <>
                       {task.isPadde && (
                         <div className="flex items-center gap-2 mb-3 px-3 py-1.5 bg-noya-orange/5 border border-noya-orange/20 rounded-xl w-fit">
                           <Zap size={10} className="text-noya-orange" />
@@ -238,6 +297,29 @@ export default function KanbanPipeline() {
                           <span className="text-[9px] font-black text-noya-orange/70 uppercase tracking-widest leading-none">Commande Directe</span>
                         </div>
                       )}
+                      {task.source === 'partner_lead' && (
+                        <div className="mb-3 space-y-1.5">
+                          <div className="flex items-center gap-2 px-3 py-1.5 bg-noya-blue/10 border border-noya-blue/25 rounded-xl w-fit">
+                            <Users size={10} className="text-noya-blue" />
+                            <span className="text-[9px] font-black text-noya-blue uppercase tracking-widest leading-none">Lead partenaire</span>
+                          </div>
+                          {resolvedPartnerName ? (
+                            <div className="flex items-center gap-2 px-3 py-1.5 bg-noya-blue/5 border border-noya-blue/20 rounded-xl w-fit">
+                              <span className="text-[9px] font-black text-noya-blue uppercase tracking-widest leading-none">
+                                Parrainé · {resolvedPartnerName}
+                              </span>
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                      {task.__fromLeadOnly && (
+                        <p className="mb-2 text-[9px] font-semibold uppercase tracking-[0.14em] text-text-dim">
+                          Synchronisation en attente
+                        </p>
+                      )}
+                          </>
+                        );
+                      })()}
                       
                       <div className="flex justify-between items-start mb-3">
                         <span className={`text-[10px] font-black uppercase tracking-widest px-2.5 py-1 rounded-lg shadow-inner ${task.isPadde ? 'bg-noya-orange/10 text-noya-orange' : task.isOrder ? 'bg-noya-orange/10 text-noya-orange' : 'bg-noya-blue/10 text-noya-blue'}`}>
@@ -268,6 +350,56 @@ export default function KanbanPipeline() {
         </div>
       </div>
 
+      <div className="mt-6 rounded-2xl border border-border-subtle bg-surface-secondary/30 p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-black uppercase tracking-[0.16em] text-text-primary">
+            Leads partenaires
+          </h2>
+          <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-dim">
+            {leads.length} entrée{leads.length > 1 ? 's' : ''}
+          </span>
+        </div>
+
+        {leads.length === 0 ? (
+          <div className="rounded-xl border border-white/6 bg-white/2 px-4 py-5 text-sm text-text-muted">
+            Aucun lead partenaire enregistré.
+          </div>
+        ) : (
+          <div className="overflow-x-auto custom-scrollbar">
+            <table className="w-full min-w-[760px] text-left">
+              <thead>
+                <tr className="border-b border-white/10 text-[10px] font-semibold uppercase tracking-[0.14em] text-text-dim">
+                  <th className="px-3 py-3">Contact</th>
+                  <th className="px-3 py-3">Entreprise</th>
+                  <th className="px-3 py-3">Partenaire</th>
+                  <th className="px-3 py-3">Téléphone</th>
+                  <th className="px-3 py-3">Statut</th>
+                  <th className="px-3 py-3">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {leads.map((lead) => (
+                  <tr key={lead.id} className="border-b border-white/5 text-sm text-text-secondary">
+                    <td className="px-3 py-3 text-text-primary">
+                      {`${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Contact'}
+                    </td>
+                    <td className="px-3 py-3">{lead.companyName || '—'}</td>
+                    <td className="px-3 py-3">
+                      {lead.partnerName || (lead.partnerId ? partnerNameById[lead.partnerId] || `Partenaire ${lead.partnerId}` : '—')}
+                    </td>
+                    <td className="px-3 py-3">{lead.phone || lead.whatsapp || '—'}</td>
+                    <td className="px-3 py-3 uppercase text-[11px]">{lead.status || 'soumis'}</td>
+                    <td className="px-3 py-3 text-[12px]">
+                      {lead.createdAt ? format(new Date(lead.createdAt), 'dd MMM yyyy', { locale: fr }) : '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       <AnimatePresence>
         {isModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-noya-black/80 backdrop-blur-sm">
@@ -279,7 +411,7 @@ export default function KanbanPipeline() {
             >
               <div className="flex justify-between items-center p-8 border-b border-border-subtle bg-surface-primary/50">
                 <h3 className="text-xl font-black text-text-primary uppercase tracking-tight">Injection Radar</h3>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
+                <button title="Fermer la fenêtre" aria-label="Fermer la fenêtre" onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
                   <X size={24} />
                 </button>
               </div>

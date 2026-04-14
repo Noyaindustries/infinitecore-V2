@@ -75,7 +75,7 @@ export default function SuperAdminPartners() {
     
     setIsSubmitting(true);
     try {
-      const authResult = await createUserAsAdmin(newPartner.email);
+      const authResult = await createUserAsAdmin(newPartner.email, undefined, 'partner');
       
       if (!authResult.success || !authResult.uid) {
         throw new Error(authResult.error || "Erreur lors de la création du compte.");

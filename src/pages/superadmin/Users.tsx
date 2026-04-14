@@ -11,6 +11,9 @@ interface UserData {
   lastName: string;
   role: string;
   companyId?: string;
+  referredBy?: string | null;
+  referredByPartnerId?: string | null;
+  referredByPartnerName?: string | null;
   createdAt: string;
 }
 
@@ -30,9 +33,25 @@ export default function SuperAdminUsers() {
     const q = query(usersRef, orderBy('createdAt', 'desc'));
     
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const usersData = snapshot.docs.map(doc => ({
+      const rows = snapshot.docs.map(doc => ({
         ...doc.data(),
         uid: doc.id
+      })) as UserData[];
+
+      // Fallback: reconstruit le nom du parrain depuis l'UID partenaire si nécessaire.
+      const partnerNameById = new Map<string, string>();
+      for (const row of rows) {
+        if (String(row.role || '').toLowerCase() !== 'partner') continue;
+        const fullName = `${row.firstName || ''} ${row.lastName || ''}`.trim();
+        const fallbackLabel = fullName || row.email || `Partenaire ${row.uid}`;
+        partnerNameById.set(row.uid, fallbackLabel);
+      }
+
+      const usersData = rows.map((row) => ({
+        ...row,
+        referredByPartnerName:
+          row.referredByPartnerName ||
+          (row.referredByPartnerId ? partnerNameById.get(row.referredByPartnerId) || null : null),
       })) as UserData[];
       
       // We show all users by default in the SuperAdmin view
@@ -170,6 +189,11 @@ export default function SuperAdminUsers() {
                       <div className="flex items-center gap-2 text-text-secondary font-medium italic opacity-80">
                         <Mail size={14} className="text-noya-blue/50" /> {user.email}
                       </div>
+                      {user.referredByPartnerName ? (
+                        <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-noya-blue/20 bg-noya-blue/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-noya-blue">
+                          Parrain: {user.referredByPartnerName}
+                        </div>
+                      ) : null}
                     </td>
                     <td className="p-4">
                       <div className="flex flex-col gap-1">
@@ -189,6 +213,8 @@ export default function SuperAdminUsers() {
                         {editingUser === user.uid ? (
                           <div className="flex items-center gap-2 bg-surface-tertiary p-1 rounded-xl border border-border-subtle animate-in slide-in-from-right-4 duration-300">
                             <select
+                              title="Choisir un rôle utilisateur"
+                              aria-label="Choisir un rôle utilisateur"
                               value={selectedRole || user.role}
                               onChange={(e) => setSelectedRole(e.target.value)}
                               className="bg-surface-primary border border-border-subtle text-[10px] font-black uppercase tracking-widest px-2 py-1.5 rounded-lg outline-none focus:ring-1 focus:ring-noya-blue"

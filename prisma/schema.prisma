@@ -1,5 +1,5 @@
 // Schéma MongoDB — Prisma (serveur Node).
-// Les collections Firestore du client React ne sont pas remplacées ici : migrer progressivement via /api.
+// Modèle unifié pour remplacer Firestore/Auth par API + MongoDB.
 
 generator client {
   provider = "prisma-client-js"
@@ -18,4 +18,41 @@ model PaddeCiAudit {
   processed Boolean  @default(false)
 
   @@map("padde_ci_audits")
+}
+
+/// Document générique compatible "collections/documents" (style Firestore).
+model DataDocument {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  collectionPath String
+  docId          String
+  data           Json
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([collectionPath, docId])
+  @@index([collectionPath])
+  @@index([collectionPath, updatedAt(sort: Desc)])
+  @@map("data_documents")
+}
+
+/// Compte d'authentification natif MongoDB.
+model UserAccount {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  uid          String   @unique
+  email        String   @unique
+  passwordHash String?
+  role         String   @default("client")
+  firstName    String?
+  lastName     String?
+  phone        String?
+  companyId    String?
+  referredBy   String?
+  photoURL     String?
+  provider     String?
+  profile      Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([role])
+  @@map("user_accounts")
 }

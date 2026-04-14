@@ -28,6 +28,7 @@ export default function SuperAdminDashboard() {
 
   const [recentLogs, setRecentLogs] = useState<any[]>([]);
   const [recentOrders, setRecentOrders] = useState<any[]>([]);
+  const [recentPartnerLeads, setRecentPartnerLeads] = useState<any[]>([]);
 
   useEffect(() => {
     // Real-time stats listeners
@@ -57,12 +58,17 @@ export default function SuperAdminDashboard() {
       setRecentLogs(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
     });
 
+    const unsubLeads = onSnapshot(query(collection(db, 'leads'), orderBy('createdAt', 'desc'), limit(8)), (snapshot) => {
+      setRecentPartnerLeads(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+    });
+
     return () => {
       unsubPayments();
       unsubUsers();
       unsubOrders();
       unsubTickets();
       unsubLogs();
+      unsubLeads();
     };
   }, []);
 
@@ -105,7 +111,7 @@ export default function SuperAdminDashboard() {
                   <span className="text-[10px] font-black text-noya-green uppercase tracking-widest">Temps Réel</span>
                 </div>
               </div>
-              <select className="px-4 py-2 bg-surface-primary border border-border-subtle rounded-xl text-xs font-black uppercase tracking-widest text-text-secondary focus:ring-2 focus:ring-noya-blue outline-none cursor-pointer">
+              <select title="Filtre période revenus" aria-label="Filtre période revenus" className="px-4 py-2 bg-surface-primary border border-border-subtle rounded-xl text-xs font-black uppercase tracking-widest text-text-secondary focus:ring-2 focus:ring-noya-blue outline-none cursor-pointer">
                 <option>Analyses 12 Mois</option>
                 <option>Fiscalité 2026</option>
               </select>
@@ -251,6 +257,67 @@ export default function SuperAdminDashboard() {
                       <div className="flex flex-col items-center gap-4">
                         <CreditCard size={48} className="opacity-20" />
                         <p className="text-[10px] font-black uppercase tracking-widest italic">Aucun flux transactionnel détecté</p>
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Recent Partner Leads */}
+        <div className="bg-surface-secondary rounded-3xl shadow-sm border border-border-subtle overflow-hidden">
+          <div className="p-8 border-b border-border-subtle bg-surface-primary/50 flex justify-between items-center">
+            <div>
+              <h2 className="text-xl font-black text-text-primary uppercase tracking-tight">Leads Partenaires Récents</h2>
+              <p className="text-[10px] text-text-secondary font-black uppercase tracking-[0.2em] mt-1 opacity-50">Formulaires reçus depuis l&apos;espace partenaire</p>
+            </div>
+            <button
+              onClick={() => navigate('/superadmin/partners')}
+              className="px-6 py-2 bg-noya-blue/10 border border-noya-blue/20 text-noya-blue text-[10px] font-black uppercase tracking-widest rounded-xl hover:bg-noya-blue hover:text-noya-black transition-all"
+            >
+              Ouvrir partenaires
+            </button>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-surface-primary text-text-secondary/70 text-[10px] uppercase font-black tracking-widest border-b border-border-subtle">
+                  <th className="p-6 font-black tracking-widest">Contact</th>
+                  <th className="p-6 font-black tracking-widest">Entreprise</th>
+                  <th className="p-6 font-black tracking-widest">Partenaire</th>
+                  <th className="p-6 font-black tracking-widest">Téléphone</th>
+                  <th className="p-6 font-black tracking-widest">Statut</th>
+                  <th className="p-6 font-black tracking-widest text-right">Datation</th>
+                </tr>
+              </thead>
+              <tbody className="text-sm text-text-primary font-medium">
+                {recentPartnerLeads.length > 0 ? recentPartnerLeads.map((lead) => (
+                  <tr key={lead.id} className="border-b border-border-subtle hover:bg-surface-primary transition-all group">
+                    <td className="p-6">
+                      <div className="font-bold group-hover:text-noya-blue transition-colors">
+                        {`${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Contact'}
+                      </div>
+                    </td>
+                    <td className="p-6 text-xs">{lead.companyName || '—'}</td>
+                    <td className="p-6 text-xs">{lead.partnerName || '—'}</td>
+                    <td className="p-6 text-xs">{lead.phone || lead.whatsapp || '—'}</td>
+                    <td className="p-6">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest shadow-inner bg-noya-blue/10 text-noya-blue">
+                        {lead.status || 'soumis'}
+                      </span>
+                    </td>
+                    <td className="p-6 text-right font-mono text-[10px] text-text-secondary opacity-60">
+                      {lead.createdAt ? format(new Date(lead.createdAt), 'dd MMMM yyyy HH:mm', { locale: fr }) : '--'}
+                    </td>
+                  </tr>
+                )) : (
+                  <tr>
+                    <td colSpan={6} className="p-20 text-center text-text-secondary/20">
+                      <div className="flex flex-col items-center gap-4">
+                        <Users size={48} className="opacity-20" />
+                        <p className="text-[10px] font-black uppercase tracking-widest italic">Aucun lead partenaire détecté</p>
                       </div>
                     </td>
                   </tr>

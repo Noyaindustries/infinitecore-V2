@@ -19,8 +19,6 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 import { paymentService, Payment, resolveFactureEtape, type FactureEtape } from '../../services/paymentService';
 import { db } from '../../firebase';
 import {
@@ -181,7 +179,7 @@ export default function Finance() {
         p.id,
         mergedInvoiceSettings.invoiceNumberPrefix
       );
-      downloadInvoicePdf(paymentToPdfInput(p), resolveClientName(p), mergedInvoiceSettings, {
+      await downloadInvoicePdf(paymentToPdfInput(p), resolveClientName(p), mergedInvoiceSettings, {
         invoiceNumber,
         documentDate: invoiceIssuedAt,
       });
@@ -270,7 +268,7 @@ export default function Finance() {
     setInvoiceSettingsOpen(true);
   };
 
-  const handlePreviewDraftPdf = () => {
+  const handlePreviewDraftPdf = async () => {
     const lines = addressText
       .split('\n')
       .map((l) => l.trim())
@@ -287,7 +285,7 @@ export default function Finance() {
       createdAt: new Date().toISOString(),
       clientEmail: 'client@exemple.com',
     };
-    const opened = openInvoicePdfPreview(sample, 'Client démonstration', previewSettings, {
+    const opened = await openInvoicePdfPreview(sample, 'Client démonstration', previewSettings, {
       invoiceNumber: 'APERÇU',
       isDraft: true,
     });
@@ -502,8 +500,12 @@ export default function Finance() {
     toast.success('Filtres appliqués !');
   };
 
-  const handleExportPDF = () => {
-    const doc = new jsPDF();
+  const handleExportPDF = async () => {
+    const [{ default: JsPdf }, { default: autoTable }] = await Promise.all([
+      import('jspdf'),
+      import('jspdf-autotable'),
+    ]);
+    const doc = new JsPdf();
     
     doc.setFontSize(18);
     doc.text('Rapport Financier Infinite Core', 14, 22);

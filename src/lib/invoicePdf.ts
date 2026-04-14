@@ -1,5 +1,4 @@
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
+import type jsPDF from 'jspdf';
 
 export interface InvoicePdfSettings {
   companyName: string;
@@ -78,6 +77,15 @@ export interface InvoicePdfBuildMeta {
   isDraft?: boolean;
 }
 
+async function loadPdfDependencies() {
+  const [{ default: JsPdf }, { default: autoTable }] = await Promise.all([
+    import('jspdf'),
+    import('jspdf-autotable'),
+  ]);
+
+  return { JsPdf, autoTable };
+}
+
 function formatMoney(n: number): string {
   return Math.round(n).toLocaleString('fr-FR', { maximumFractionDigits: 0 });
 }
@@ -93,13 +101,14 @@ function formatDisplayDate(isoOrText: string | undefined, fallbackIso: string): 
  * Construit un PDF facture (A4) à partir d’un paiement / ligne journal et des paramètres d’en-tête.
  * @param meta Si fourni : numéro de facture officiel et date d’émission (workflow équipe).
  */
-export function buildInvoicePdf(
+export async function buildInvoicePdf(
   payment: InvoicePaymentInput,
   clientName: string,
   settings: InvoicePdfSettings,
   meta?: InvoicePdfBuildMeta
-): jsPDF {
-  const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+): Promise<jsPDF> {
+  const { JsPdf, autoTable } = await loadPdfDependencies();
+  const doc = new JsPdf({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 16;
@@ -236,13 +245,13 @@ export function buildInvoicePdf(
   return doc;
 }
 
-export function downloadInvoicePdf(
+export async function downloadInvoicePdf(
   payment: InvoicePaymentInput,
   clientName: string,
   settings: InvoicePdfSettings,
   meta?: InvoicePdfBuildMeta
-): void {
-  const doc = buildInvoicePdf(payment, clientName, settings, meta);
+): Promise<void> {
+  const doc = await buildInvoicePdf(payment, clientName, settings, meta);
   const safeName = meta?.invoiceNumber
     ? meta.invoiceNumber.replace(/[^\w.-]+/g, '_')
     : payment.id.replace(/[^a-zA-Z0-9-_]/g, '_').slice(0, 24);
@@ -250,14 +259,14 @@ export function downloadInvoicePdf(
 }
 
 /** Ouvre un aperçu dans un nouvel onglet (sans téléchargement automatique). */
-export function openInvoicePdfPreview(
+export async function openInvoicePdfPreview(
   payment: InvoicePaymentInput,
   clientName: string,
   settings: InvoicePdfSettings,
   meta?: InvoicePdfBuildMeta
-): boolean {
-  const doc = buildInvoicePdf(payment, clientName, settings, meta);
-  const url = doc.output('bloburl') as string;
+): Promise<boolean> {
+  const doc = await buildInvoicePdf(payment, clientName, settings, meta);
+  const url = doc.output('bloburl') as unknown as string;
   const w = window.open(url, '_blank', 'noopener,noreferrer');
   return Boolean(w);
 }

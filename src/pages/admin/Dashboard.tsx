@@ -1,8 +1,12 @@
-import { Fragment, useMemo } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../components/FirebaseProvider';
 import { cn } from '../../lib/utils';
 import { useCommandoClients, clientDisplayName } from '../../hooks/useCommandoClients';
+import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
+import { db } from '../../firebase';
+import { leadService } from '../../services/leadService';
+import toast from 'react-hot-toast';
 import {
   FolderOpen,
   KanbanSquare,
@@ -14,6 +18,7 @@ import {
   Sparkles,
   ClipboardList,
   ChevronRight,
+  Bell,
 } from 'lucide-react';
 
 const shortcuts: {
@@ -47,6 +52,12 @@ const shortcuts: {
     to: '/admin/clients',
     title: 'CRM clients',
     description: 'Fiches et suivi des comptes clients.',
+    icon: Users,
+  },
+  {
+    to: '/admin/leads',
+    title: 'Leads partenaires',
+    description: 'Visualiser tous les leads acquis via les liens partenaires.',
     icon: Users,
   },
   {
@@ -88,11 +99,44 @@ function HeroCorners() {
 }
 
 export default function AdminDashboard() {
-  const { userData } = useAuth();
+  const { user, userData } = useAuth();
   const isCommandoOnly = userData?.role === 'commando';
   const firstName = userData?.firstName?.trim() || null;
   const { clients: crmClients, loading: crmLoading } = useCommandoClients();
   const recentCrm = useMemo(() => crmClients.slice(0, 5), [crmClients]);
+  const [referralAlerts, setReferralAlerts] = useState<
+    Array<{
+      id: string;
+      message: string;
+      createdAt: string;
+      referralCode: string;
+      referredByPartnerId: string | null;
+      referredByPartnerName: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string;
+      companyName: string;
+      industry: string;
+      leadCreated: boolean;
+    }>
+  >([]);
+  const [creatingLeadNotifId, setCreatingLeadNotifId] = useState<string | null>(null);
+  const [partnerLeads, setPartnerLeads] = useState<
+    Array<{
+      id: string;
+      partnerId?: string;
+      firstName?: string;
+      lastName?: string;
+      companyName?: string;
+      partnerName?: string;
+      whatsapp?: string;
+      phone?: string;
+      status?: string;
+      createdAt?: string;
+    }>
+  >([]);
+  const [partnerNameById, setPartnerNameById] = useState<Record<string, string>>({});
 
   const featured = shortcuts.find((s) => s.highlight);
   const others = shortcuts.filter((s) => !s.highlight);
@@ -108,6 +152,216 @@ export default function AdminDashboard() {
 
   const roleLabel =
     userData?.role === 'admin' ? 'Plein accès' : isCommandoOnly ? 'Commando' : 'Équipe';
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const map: Record<string, string> = {};
+      snapshot.docs.forEach((docSnap) => {
+        const data = docSnap.data() as { role?: string; firstName?: string; lastName?: string; email?: string; uid?: string };
+        if (String(data.role || '').toLowerCase() !== 'partner') return;
+        const uid = String(data.uid || docSnap.id);
+        const fullName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+        map[uid] = fullName || data.email || `Partenaire ${uid}`;
+      });
+      setPartnerNameById(map);
+    });
+    return () => unsub();
+  }, []);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setReferralAlerts([]);
+      return;
+    }
+    const q = query(
+      collection(db, 'notifications'),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
+    const unsub = onSnapshot(q, (snapshot) => {
+      const alerts = snapshot.docs
+        .map((d) => {
+          const data = d.data() as {
+            message?: string;
+            createdAt?: string;
+            metadata?: {
+              source?: string;
+              referralCode?: string;
+              referredByPartnerId?: string | null;
+              referredByPartnerName?: string;
+              firstName?: string;
+              lastName?: string;
+              email?: string;
+              phone?: string;
+              companyName?: string;
+              industry?: string;
+              leadCreated?: boolean;
+            };
+          };
+          return {
+            id: d.id,
+            message: data.message || '',
+            createdAt: data.createdAt || '',
+            source: data.metadata?.source || '',
+            referralCode: data.metadata?.referralCode || '',
+            referredByPartnerId: data.metadata?.referredByPartnerId || null,
+            referredByPartnerName:
+              data.metadata?.referredByPartnerName ||
+              (data.metadata?.referredByPartnerId ? partnerNameById[data.metadata.referredByPartnerId] || '' : ''),
+            firstName: data.metadata?.firstName || '',
+            lastName: data.metadata?.lastName || '',
+            email: data.metadata?.email || '',
+            phone: data.metadata?.phone || '',
+            companyName: data.metadata?.companyName || '',
+            industry: data.metadata?.industry || '',
+            leadCreated: Boolean(data.metadata?.leadCreated),
+          };
+        })
+        .filter((n) => n.source === 'referral_signup')
+        .slice(0, 5)
+        .map(
+          ({
+            id,
+            message,
+            createdAt,
+            referralCode,
+            referredByPartnerId,
+            referredByPartnerName,
+            firstName,
+            lastName,
+            email,
+            phone,
+            companyName,
+            industry,
+            leadCreated,
+          }) => ({
+            id,
+            message,
+            createdAt,
+            referralCode,
+            referredByPartnerId,
+            referredByPartnerName,
+            firstName,
+            lastName,
+            email,
+            phone,
+            companyName,
+            industry,
+            leadCreated,
+          })
+        );
+      setReferralAlerts(alerts);
+    });
+    return () => unsub();
+  }, [user?.uid, partnerNameById]);
+
+  useEffect(() => {
+    const q = query(collection(db, 'leads'), orderBy('createdAt', 'desc'), limit(8));
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        setPartnerLeads(
+          snapshot.docs.map((d) => {
+            const data = d.data() as {
+              firstName?: string;
+              lastName?: string;
+              companyName?: string;
+              partnerName?: string;
+              partnerId?: string;
+              whatsapp?: string;
+              phone?: string;
+              status?: string;
+              createdAt?: string;
+            };
+            return {
+              id: d.id,
+              firstName: data.firstName,
+              lastName: data.lastName,
+              companyName: data.companyName,
+              partnerName: data.partnerName,
+              partnerId: data.partnerId,
+              whatsapp: data.whatsapp,
+              phone: data.phone,
+              status: data.status,
+              createdAt: data.createdAt,
+            };
+          })
+        );
+      },
+      (error) => {
+        console.error('[AdminDashboard] leads snapshot:', error);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  const handleCreateLeadFromReferral = async (alert: (typeof referralAlerts)[number]) => {
+    if (!alert.referredByPartnerId) {
+      toast.error('Partenaire introuvable pour ce parrainage.');
+      return;
+    }
+    setCreatingLeadNotifId(alert.id);
+    try {
+      const partnerLabel =
+        alert.referredByPartnerName ||
+        (alert.referredByPartnerId ? partnerNameById[alert.referredByPartnerId] || '' : '') ||
+        'Partenaire parrain';
+
+      const leadId = await leadService.createLead({
+        partnerId: alert.referredByPartnerId,
+        partnerName: partnerLabel,
+        firstName: alert.firstName,
+        lastName: alert.lastName,
+        email: alert.email,
+        companyName: alert.companyName || 'Entreprise non renseignée',
+        sector: alert.industry || 'Non spécifié',
+        whatsapp: alert.phone || 'Non renseigné',
+        phone: alert.phone || 'Non renseigné',
+        note: `Lead créé depuis formulaire parrainage (${alert.referralCode || 'sans code'}).`,
+        status: 'soumis',
+      });
+
+      const taskId = `TSK-${crypto.randomUUID().split('-')[0].toUpperCase()}`;
+      await setDoc(doc(db, 'tasks', taskId), {
+        id: taskId,
+        leadId,
+        userId: user.uid,
+        title: `Lead partenaire: ${alert.companyName || 'Entreprise non renseignée'}`,
+        client: `${alert.firstName} ${alert.lastName}`.trim() || alert.companyName || 'Nouveau contact',
+        columnId: 'nouveau',
+        isOrder: false,
+        source: 'partner_lead',
+        partnerId: alert.referredByPartnerId,
+        partnerName: partnerLabel,
+        leadCompany: alert.companyName || 'Entreprise non renseignée',
+        leadPhone: alert.phone || 'Non renseigné',
+        createdAt: new Date().toISOString(),
+      });
+
+      await updateDoc(doc(db, 'notifications', alert.id), {
+        metadata: {
+          source: 'referral_signup',
+          referralCode: alert.referralCode || null,
+          referredByPartnerId: alert.referredByPartnerId || null,
+          referredByPartnerName: partnerLabel,
+          firstName: alert.firstName || '',
+          lastName: alert.lastName || '',
+          email: alert.email || '',
+          phone: alert.phone || '',
+          companyName: alert.companyName || '',
+          industry: alert.industry || '',
+          leadCreated: true,
+        },
+      });
+
+      toast.success('Lead créé dans le pipeline Commando.');
+    } catch (error) {
+      console.error('[AdminDashboard] create lead from referral:', error);
+      toast.error('Impossible de créer le lead.');
+    } finally {
+      setCreatingLeadNotifId(null);
+    }
+  };
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-8 md:px-8 md:py-10 pb-20">
@@ -205,6 +459,143 @@ export default function AdminDashboard() {
           <p className="mt-1.5 text-[11px] text-text-muted">Espace sécurisé TLS</p>
         </div>
       </div>
+
+      {/* Entrées formulaires parrainage */}
+      <section className="mt-12 md:mt-14">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="commando-luxe-ornament-diamond shrink-0" aria-hidden />
+            <div>
+              <h2 className="font-display text-xl tracking-tight text-text-primary md:text-2xl">Parrainages entrants</h2>
+              <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.18em] text-text-muted">
+                Formulaires du lien partenaire
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/admin/clients"
+            className="inline-flex items-center gap-2 rounded-xl border border-luxe-champagne/28 bg-luxe-champagne/8 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-luxe-champagne-bright transition-all hover:border-luxe-champagne/45 hover:bg-luxe-champagne/12"
+          >
+            Voir les clients
+            <ChevronRight className="h-3.5 w-3.5 opacity-80" aria-hidden />
+          </Link>
+        </div>
+
+        <div className="commando-luxe-hero-shell relative overflow-hidden rounded-2xl border border-luxe-champagne/15 bg-noya-sidebar/40 p-5 backdrop-blur-md md:p-7">
+          <div className="commando-dashboard-hero-mesh pointer-events-none absolute inset-0 opacity-35" aria-hidden />
+          <div className="relative">
+            {referralAlerts.length === 0 ? (
+              <div className="rounded-xl border border-white/6 bg-white/[0.02] px-4 py-6 text-sm text-text-muted">
+                Aucun formulaire de parrainage reçu pour l’instant.
+              </div>
+            ) : (
+              <ul className="space-y-2">
+                {referralAlerts.map((item) => (
+                  <li key={item.id} className="rounded-xl border border-white/8 bg-black/20 px-4 py-3">
+                    <div className="flex items-start gap-3">
+                      <Bell className="mt-0.5 h-4 w-4 shrink-0 text-luxe-champagne-bright" aria-hidden />
+                      <div className="min-w-0">
+                        <p className="text-sm text-text-primary">{item.message}</p>
+                        <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-text-dim">
+                          {item.createdAt
+                            ? new Date(item.createdAt).toLocaleString('fr-FR')
+                            : 'Date non disponible'}
+                        </p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleCreateLeadFromReferral(item)}
+                            disabled={item.leadCreated || creatingLeadNotifId === item.id || !item.referredByPartnerId}
+                            className="inline-flex items-center gap-2 rounded-lg border border-luxe-champagne/25 bg-luxe-champagne/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-luxe-champagne-bright transition-colors hover:bg-luxe-champagne/15 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {item.leadCreated
+                              ? 'Lead déjà créé'
+                              : creatingLeadNotifId === item.id
+                                ? 'Création...'
+                                : 'Créer lead'}
+                          </button>
+                          {item.leadCreated ? (
+                            <Link
+                              to="/admin/pipeline"
+                              className="inline-flex items-center gap-2 rounded-lg border border-white/15 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-text-primary transition-colors hover:bg-white/5"
+                            >
+                              Ouvrir le pipeline
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* Leads partenaires (source formulaire partenaire) */}
+      <section className="mt-12 md:mt-14">
+        <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="commando-luxe-ornament-diamond shrink-0" aria-hidden />
+            <div>
+              <h2 className="font-display text-xl tracking-tight text-text-primary md:text-2xl">Leads partenaires</h2>
+              <p className="mt-1 text-[11px] font-medium uppercase tracking-[0.18em] text-text-muted">
+                Formulaires reçus depuis l&apos;espace partenaire
+              </p>
+            </div>
+          </div>
+          <Link
+            to="/admin/pipeline"
+            className="inline-flex items-center gap-2 rounded-xl border border-luxe-champagne/28 bg-luxe-champagne/8 px-4 py-2.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-luxe-champagne-bright transition-all hover:border-luxe-champagne/45 hover:bg-luxe-champagne/12"
+          >
+            Ouvrir le pipeline
+            <ChevronRight className="h-3.5 w-3.5 opacity-80" aria-hidden />
+          </Link>
+        </div>
+
+        <div className="commando-luxe-hero-shell relative overflow-hidden rounded-2xl border border-luxe-champagne/15 bg-noya-sidebar/40 p-5 backdrop-blur-md md:p-7">
+          <div className="commando-dashboard-hero-mesh pointer-events-none absolute inset-0 opacity-35" aria-hidden />
+          <div className="relative overflow-x-auto custom-scrollbar">
+            {partnerLeads.length === 0 ? (
+              <div className="rounded-xl border border-white/6 bg-white/[0.02] px-4 py-6 text-sm text-text-muted">
+                Aucun lead partenaire pour l&apos;instant.
+              </div>
+            ) : (
+              <table className="w-full min-w-[760px] text-left">
+                <thead>
+                  <tr className="border-b border-white/10 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-dim">
+                    <th className="px-3 py-3">Contact</th>
+                    <th className="px-3 py-3">Entreprise</th>
+                    <th className="px-3 py-3">Partenaire</th>
+                    <th className="px-3 py-3">Téléphone</th>
+                    <th className="px-3 py-3">Statut</th>
+                    <th className="px-3 py-3">Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {partnerLeads.map((lead) => (
+                    <tr key={lead.id} className="border-b border-white/5 text-sm text-text-secondary">
+                      <td className="px-3 py-3 text-text-primary">
+                        {`${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Contact'}
+                      </td>
+                      <td className="px-3 py-3">{lead.companyName || '—'}</td>
+                    <td className="px-3 py-3">
+                      {lead.partnerName || (lead.partnerId ? partnerNameById[lead.partnerId] || `Partenaire ${lead.partnerId}` : '—')}
+                    </td>
+                      <td className="px-3 py-3">{lead.phone || lead.whatsapp || '—'}</td>
+                      <td className="px-3 py-3 uppercase text-[11px]">{lead.status || 'soumis'}</td>
+                      <td className="px-3 py-3 text-[12px]">
+                        {lead.createdAt ? new Date(lead.createdAt).toLocaleString('fr-FR') : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      </section>
 
       {/* Aperçu CRM — carnet clients */}
       <section className="mt-12 md:mt-14" aria-labelledby="crm-dashboard-heading">

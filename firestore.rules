@@ -63,6 +63,21 @@ service cloud.firestore {
         isValidDateString(data.createdAt);
     }
 
+    function isPartnerInboundTask(data) {
+      return isAuthenticated() &&
+        userRole() == 'partner' &&
+        data.source == 'partner_lead' &&
+        data.partnerId == request.auth.uid &&
+        data.columnId == 'nouveau' &&
+        data.isOrder == false &&
+        data.id is string && data.id.size() > 0 &&
+        data.title is string && data.title.size() > 0 &&
+        data.client is string && data.client.size() > 0 &&
+        data.leadCompany is string && data.leadCompany.size() > 0 &&
+        data.leadPhone is string && data.leadPhone.size() > 0 &&
+        isValidDateString(data.createdAt);
+    }
+
     function isPaddeCiInboundOrder(data) {
       return data.source == 'padde-ci' &&
         data.userId == 'system' &&
@@ -128,7 +143,9 @@ service cloud.firestore {
 
     match /tasks/{taskId} {
       allow read: if isAdmin() || (isAuthenticated() && resource.data.userId == request.auth.uid);
-      allow create: if isAdmin() || isPaddeCiInboundTask(request.resource.data);
+      allow create: if isAdmin() ||
+                    isPaddeCiInboundTask(request.resource.data) ||
+                    isPartnerInboundTask(request.resource.data);
       allow update: if isAdmin();
       allow delete: if isAdmin();
     }

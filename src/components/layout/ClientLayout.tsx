@@ -287,7 +287,7 @@ export default function ClientLayout() {
           </div>
         </header>
 
-        <div className="custom-scrollbar flex-1 overflow-y-auto p-4 md:p-8 lg:p-10">
+        <div className="custom-scrollbar flex-1 overflow-y-scroll p-4 md:p-8 lg:p-10">
           <Outlet />
         </div>
       </main>

@@ -17,9 +17,12 @@ import {
   ChevronDown,
   ClipboardList,
   Sun,
-  Moon
+  Moon,
+  User,
+  Mail,
+  Copy
 } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { cn } from '../../lib/utils';
 import { auth } from '../../firebase';
 import { signOut } from 'firebase/auth';
@@ -33,8 +36,11 @@ import { fr } from 'date-fns/locale';
 export default function SuperAdminLayout() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [copiedEmail, setCopiedEmail] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const { user } = useAuth();
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+  const { user, userData } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -66,7 +72,7 @@ export default function SuperAdminLayout() {
     try {
       localStorage.removeItem('demoRole');
       await signOut(auth);
-      window.location.href = 'https://infinitecore.netlify.app/staff/login';
+      window.location.href = '/login';
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -88,6 +94,29 @@ export default function SuperAdminLayout() {
     setShowNotifications(false);
   };
 
+  useEffect(() => {
+    if (!showProfileMenu) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (profileMenuRef.current && !profileMenuRef.current.contains(target)) {
+        setShowProfileMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [showProfileMenu]);
+
+  const copyEmail = async () => {
+    if (!user?.email) return;
+    try {
+      await navigator.clipboard.writeText(user.email);
+      setCopiedEmail(true);
+      window.setTimeout(() => setCopiedEmail(false), 2000);
+    } catch {
+      // navigateur sans accès presse-papiers
+    }
+  };
+
   const navItems = [
     { to: '/superadmin', icon: LayoutDashboard, label: 'Tableau de bord' },
     { to: '/superadmin/users', icon: Users, label: 'Utilisateurs' },
@@ -100,6 +129,10 @@ export default function SuperAdminLayout() {
     { to: '/superadmin/supervision', icon: Activity, label: 'Supervision' },
     { to: '/superadmin/settings', icon: Settings, label: 'Configuration' },
   ];
+
+  const displayName = userData?.firstName
+    ? `${userData.firstName} ${userData.lastName || ''}`.trim()
+    : user?.email?.split('@')[0] || 'Super Admin';
 
   const getPageTitle = () => {
     switch (location.pathname) {
@@ -142,7 +175,7 @@ export default function SuperAdminLayout() {
           </div>
         </div>
 
-        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+        <nav className="custom-scrollbar flex-1 px-4 py-6 space-y-2 overflow-y-auto">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -196,7 +229,10 @@ export default function SuperAdminLayout() {
               {/* Notifications */}
               <div className="relative">
                 <button 
-                  onClick={() => setShowNotifications(!showNotifications)}
+                  onClick={() => {
+                    setShowProfileMenu(false);
+                    setShowNotifications((open) => !open);
+                  }}
                   className="text-text-secondary hover:text-text-primary relative p-2 rounded-full hover:bg-surface-tertiary transition-colors"
                 >
                   <Bell size={20} />
@@ -218,7 +254,7 @@ export default function SuperAdminLayout() {
                         Tout marquer comme lu
                       </button>
                     </div>
-                    <div className="max-h-96 overflow-y-auto">
+                    <div className="custom-scrollbar max-h-96 overflow-y-auto">
                       {notifications.length === 0 ? (
                         <div className="px-4 py-8 text-center text-[#8D98AA] text-sm">
                           Aucune notification
@@ -256,18 +292,100 @@ export default function SuperAdminLayout() {
                 {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
               </button>
 
-              <button className="flex items-center space-x-2 pl-4 border-l border-border-subtle group">
-                <div className="w-8 h-8 bg-noya-red/20 border border-noya-red/30 rounded-full flex items-center justify-center text-noya-red font-bold text-sm shadow-inner group-hover:scale-110 transition-transform">
-                  AD
-                </div>
-                <span className="hidden md:block text-sm font-black text-text-primary uppercase tracking-tighter">Super Admin</span>
-                <ChevronDown size={14} className="text-text-secondary/50" />
-              </button>
+              <div className="relative" ref={profileMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNotifications(false);
+                    setShowProfileMenu((open) => !open);
+                  }}
+                  className={cn(
+                    "flex items-center space-x-2 pl-4 pr-2 py-1.5 border-l border-border-subtle rounded-xl transition-colors",
+                    showProfileMenu ? "bg-surface-tertiary" : "hover:bg-surface-tertiary"
+                  )}
+                  aria-haspopup="menu"
+                  aria-label="Profil super admin"
+                >
+                  <div className="w-8 h-8 bg-noya-red/20 border border-noya-red/30 rounded-full flex items-center justify-center text-noya-red font-bold text-sm shadow-inner">
+                    {userData?.firstName?.[0] || 'A'}
+                  </div>
+                  <span className="hidden md:block text-sm font-black text-text-primary uppercase tracking-tighter">{displayName}</span>
+                  <ChevronDown size={14} className={cn("text-text-secondary/50 transition-transform", showProfileMenu && "rotate-180")} />
+                </button>
+
+                {showProfileMenu && (
+                  <div
+                    className="absolute right-0 top-full mt-3 w-80 bg-surface-secondary rounded-2xl shadow-xl border border-border-medium py-2 z-50 overflow-hidden"
+                    role="menu"
+                  >
+                    <div className="px-4 py-3 border-b border-border-subtle bg-surface-primary/50">
+                      <p className="text-sm font-semibold text-text-primary">{displayName}</p>
+                      <p className="mt-1 text-[10px] font-bold uppercase tracking-[0.18em] text-noya-orange">Super Admin</p>
+                    </div>
+
+                    {user?.email ? (
+                      <div className="px-4 py-3 border-b border-border-subtle">
+                        <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-text-dim">Compte</p>
+                        <div className="mt-2 flex items-start gap-2 rounded-xl border border-border-subtle bg-surface-primary px-3 py-2">
+                          <Mail size={14} className="mt-0.5 shrink-0 text-noya-orange" />
+                          <span className="min-w-0 flex-1 break-all text-xs text-text-secondary">{user.email}</span>
+                        </div>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => void copyEmail()}
+                          className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-border-subtle py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-text-secondary transition-colors hover:border-noya-orange/40 hover:bg-noya-orange/10 hover:text-text-primary"
+                        >
+                          <Copy size={13} />
+                          {copiedEmail ? 'Copié' : 'Copier l’e-mail'}
+                        </button>
+                      </div>
+                    ) : null}
+
+                    <div className="border-b border-border-subtle px-2 py-2">
+                      <WorkspaceSpaceSwitcher
+                        variant="surface"
+                        onNavigate={() => {
+                          setShowProfileMenu(false);
+                          setIsMobileMenuOpen(false);
+                        }}
+                      />
+                    </div>
+
+                    <div className="p-2">
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setShowProfileMenu(false);
+                          navigate('/superadmin/settings');
+                        }}
+                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary"
+                      >
+                        <User size={16} />
+                        Paramètres
+                      </button>
+                      <button
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          setShowProfileMenu(false);
+                          void handleLogout();
+                        }}
+                        className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-noya-red transition-colors hover:bg-noya-red/10"
+                      >
+                        <LogOut size={16} />
+                        Déconnexion
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-2 md:p-4 lg:p-8 custom-scrollbar">
+        <div className="flex-1 overflow-y-scroll p-2 md:p-4 lg:p-8 custom-scrollbar">
           <Outlet />
         </div>
       </main>

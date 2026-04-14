@@ -4,6 +4,8 @@ import {
   KanbanSquare,
   Briefcase,
   Users,
+  Handshake,
+  UserPlus,
   Wallet,
   Copy,
   FolderOpen,
@@ -89,7 +91,7 @@ export default function AdminLayout() {
     try {
       localStorage.removeItem('demoRole');
       await signOut(auth);
-      window.location.href = 'https://infinitecore.netlify.app/staff/login';
+      window.location.href = '/login';
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -112,6 +114,8 @@ export default function AdminLayout() {
     { id: 'pipeline', to: '/admin/pipeline', icon: KanbanSquare, label: 'Pipeline Noya' },
     { id: 'audits-padde', to: '/admin/audits-padde', icon: ClipboardList, label: 'Audits PADDE-CI' },
     { id: 'clients', to: '/admin/clients', icon: Users, label: 'CRM Clients' },
+    { id: 'partners', to: '/admin/partners', icon: Handshake, label: 'Partenaires' },
+    { id: 'leads', to: '/admin/leads', icon: UserPlus, label: 'Leads partenaires' },
     { id: 'operations', to: '/admin/operations', icon: Briefcase, label: 'Opérations' },
     { id: 'finance', to: '/admin/finance', icon: Wallet, label: 'Finance' },
     { id: 'messagerie', to: '/admin/messagerie', icon: MessageCircle, label: 'Messagerie Clients' },

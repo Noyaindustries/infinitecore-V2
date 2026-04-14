@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, DollarSign, FolderOpen, User, LogOut, Menu, X, Bell, ChevronDown, Sun, Moon } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { LayoutDashboard, Users, DollarSign, FolderOpen, User, LogOut, Menu, X, Bell, ChevronDown, Sun, Moon, Mail, Copy, UserPlus } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
 import { cn } from '../../lib/utils';
 import { auth } from '../../firebase';
 import { signOut } from 'firebase/auth';
@@ -14,7 +14,10 @@ import { fr } from 'date-fns/locale';
 export default function PartnerLayout() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [copiedEmail, setCopiedEmail] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { user, userData } = useAuth();
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
@@ -38,13 +41,25 @@ export default function PartnerLayout() {
     return () => unsub();
   }, [user]);
 
+  useEffect(() => {
+    if (!showProfileMenu) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (profileMenuRef.current && !profileMenuRef.current.contains(target)) {
+        setShowProfileMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    return () => document.removeEventListener('pointerdown', onPointerDown);
+  }, [showProfileMenu]);
+
   const unreadCount = notifications.filter(n => !n.read).length;
 
   const handleLogout = async () => {
     try {
       localStorage.removeItem('demoRole');
       await signOut(auth);
-      window.location.href = 'https://infinitecore.netlify.app/staff/login';
+      window.location.href = '/login';
     } catch (error) {
       console.error('Logout error:', error);
     }
@@ -60,6 +75,17 @@ export default function PartnerLayout() {
     setShowNotifications(false);
   };
 
+  const copyEmail = async () => {
+    if (!user?.email) return;
+    try {
+      await navigator.clipboard.writeText(user.email);
+      setCopiedEmail(true);
+      window.setTimeout(() => setCopiedEmail(false), 2000);
+    } catch {
+      // navigateur sans accès presse-papiers
+    }
+  };
+
   const displayName = userData?.firstName
     ? `${userData.firstName} ${userData.lastName || ''}`.trim()
     : 'Partenaire';
@@ -67,6 +93,7 @@ export default function PartnerLayout() {
   const navItems = [
     { to: '/partenaire', icon: LayoutDashboard, label: 'Tableau de bord' },
     { to: '/partenaire/clients', icon: Users, label: 'Mes contacts' },
+    { to: '/partenaire/filleuls', icon: UserPlus, label: 'Clients parrainés' },
     { to: '/partenaire/commissions', icon: DollarSign, label: 'Commissions' },
     { to: '/partenaire/ressources', icon: FolderOpen, label: 'Ressources' },
     { to: '/partenaire/profil', icon: User, label: 'Mon profil' },
@@ -93,11 +120,14 @@ export default function PartnerLayout() {
           </div>
           <div className="text-xs text-text-secondary font-mono tracking-widest flex items-center gap-2 mt-2">
             <span className="w-2 h-2 rounded-full bg-noya-green shadow-[0_0_8px_rgba(43,198,115,0.8)] animate-pulse"></span>
-            Espace Partenaire
+            Infinite Partenaire
           </div>
+          <p className="mt-2 text-[11px] text-text-muted/80">
+            Programme partenaire Infinite
+          </p>
         </div>
 
-        <nav className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+        <nav className="custom-scrollbar flex-1 px-4 py-6 space-y-2 overflow-y-auto">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -121,19 +151,10 @@ export default function PartnerLayout() {
           <WorkspaceSpaceSwitcher variant="noya-dark" onNavigate={() => setIsMobileMenuOpen(false)} />
         </div>
 
-        <div className="p-4 mt-auto border-t border-white/5">
-          <button
-            onClick={handleLogout}
-            className="flex items-center gap-3 px-4 py-3 w-full rounded-xl text-[#8D98AA] hover:bg-white/5 hover:text-[#E15B64] transition-colors"
-          >
-            <LogOut size={20} />
-            <span className="font-medium text-sm">Déconnexion</span>
-          </button>
-        </div>
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-h-screen overflow-hidden bg-noya-black text-text-primary">
+      <main className="flex-1 flex flex-col min-h-0 md:min-h-screen overflow-hidden bg-noya-black text-text-primary">
         {/* Top bar */}
         <header className="bg-noya-sidebar border-b border-white/5 px-6 py-3 hidden md:flex items-center justify-end gap-4 z-40 relative">
           {/* Theme Toggle */}
@@ -147,7 +168,10 @@ export default function PartnerLayout() {
           {/* Notification bell */}
           <div className="relative">
             <button
-              onClick={() => setShowNotifications(!showNotifications)}
+              onClick={() => {
+                setShowProfileMenu(false);
+                setShowNotifications((open) => !open);
+              }}
               className="p-2 text-text-secondary hover:text-text-primary hover:bg-white/5 rounded-full transition-colors relative"
             >
               <Bell size={20} />
@@ -171,7 +195,7 @@ export default function PartnerLayout() {
                     </button>
                   )}
                 </div>
-                <div className="max-h-80 overflow-y-auto">
+                <div className="custom-scrollbar max-h-80 overflow-y-auto">
                   {notifications.length === 0 ? (
                     <div className="px-4 py-8 text-center text-[#8D98AA] text-sm">
                       Aucune notification
@@ -201,16 +225,105 @@ export default function PartnerLayout() {
             )}
           </div>
 
-          <div className="flex items-center gap-2 pl-4 border-l border-white/10">
-            <div className="w-8 h-8 bg-[#2BC673]/20 border border-[#2BC673]/30 rounded-full flex items-center justify-center text-[#2BC673] font-bold text-xs">
-              {userData?.firstName?.[0] || 'P'}
-            </div>
-            <span className="text-sm font-medium text-[#F2F4F8]">{displayName}</span>
-            <ChevronDown size={14} className="text-[#8D98AA]" />
+          <div className="relative" ref={profileMenuRef}>
+            <button
+              type="button"
+              onClick={() => {
+                setShowNotifications(false);
+                setShowProfileMenu((open) => !open);
+              }}
+              className={cn(
+                "flex items-center gap-2 pl-4 border-l border-white/10 rounded-xl py-1.5 pr-2 transition-colors",
+                showProfileMenu ? "bg-white/10" : "hover:bg-white/5"
+              )}
+              aria-haspopup="menu"
+              aria-label="Profil partenaire"
+            >
+              <div className="w-8 h-8 bg-[#2BC673]/20 border border-[#2BC673]/30 rounded-full overflow-hidden flex items-center justify-center text-[#2BC673] font-bold text-xs">
+                {userData?.photoURL ? (
+                  <img src={userData.photoURL as string} alt={displayName} className="h-full w-full object-cover" />
+                ) : (
+                  userData?.firstName?.[0] || 'P'
+                )}
+              </div>
+              <span className="text-sm font-medium text-[#F2F4F8]">{displayName}</span>
+              <ChevronDown
+                size={14}
+                className={cn("text-[#8D98AA] transition-transform", showProfileMenu && "rotate-180")}
+              />
+            </button>
+
+            {showProfileMenu && (
+              <div
+                className="absolute right-0 top-full mt-2 w-72 bg-[#0D1320] rounded-2xl shadow-xl border border-white/10 py-2 z-50 overflow-hidden"
+                role="menu"
+              >
+                <div className="px-4 py-3 border-b border-white/10">
+                  <p className="text-sm font-semibold text-[#F2F4F8]">{displayName}</p>
+                  <p className="mt-1 text-[10px] uppercase tracking-[0.18em] text-[#2BC673]">Partenaire</p>
+                </div>
+
+                {user?.email ? (
+                  <div className="px-4 py-3 border-b border-white/10">
+                    <p className="text-[10px] uppercase tracking-[0.18em] text-[#8D98AA]">Compte</p>
+                    <div className="mt-2 flex items-start gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2">
+                      <Mail size={14} className="mt-0.5 shrink-0 text-[#2BC673]" />
+                      <span className="min-w-0 flex-1 break-all text-xs text-[#C8D0E0]">{user.email}</span>
+                    </div>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => void copyEmail()}
+                      className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 py-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-[#C8D0E0] transition-colors hover:border-[#2BC673]/40 hover:bg-[#2BC673]/10 hover:text-[#F2F4F8]"
+                    >
+                      <Copy size={13} />
+                      {copiedEmail ? 'Copié' : 'Copier l’e-mail'}
+                    </button>
+                  </div>
+                ) : null}
+
+                <div className="border-b border-white/10 px-2 py-2">
+                  <WorkspaceSpaceSwitcher
+                    variant="noya-dark"
+                    onNavigate={() => {
+                      setShowProfileMenu(false);
+                      setIsMobileMenuOpen(false);
+                    }}
+                  />
+                </div>
+
+                <div className="p-2">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      void handleLogout();
+                    }}
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[#E15B64] transition-colors hover:bg-[#E15B64]/10"
+                  >
+                    <LogOut size={16} />
+                    Déconnexion
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setShowProfileMenu(false);
+                      navigate('/partenaire/profil');
+                    }}
+                    className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm text-[#C8D0E0] transition-colors hover:bg-white/5 hover:text-[#F2F4F8]"
+                  >
+                    <User size={16} />
+                    Mon profil
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto p-4 md:p-8">
+        <div className="custom-scrollbar min-h-0 flex-1 overflow-y-scroll p-4 md:p-8">
           <Outlet />
         </div>
       </main>

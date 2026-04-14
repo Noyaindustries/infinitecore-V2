@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged } from 'firebase/auth';
-import { doc, getDocFromServer, onSnapshot } from 'firebase/firestore';
-import { auth, db } from '../firebase';
+import { auth } from '../firebase';
+import { apiRequest } from '../lib/apiClient';
 
 interface AuthContextType {
   user: User | null;
-  userData: any | null;
+  userData: Record<string, unknown> | null;
   isAuthReady: boolean;
 }
 
@@ -19,53 +19,50 @@ export const useAuth = () => useContext(AuthContext);
 
 export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [userData, setUserData] = useState<any | null>(null);
+  const [userData, setUserData] = useState<Record<string, unknown> | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
 
   useEffect(() => {
-    // Test connection on boot
-    async function testConnection() {
-      try {
-        await getDocFromServer(doc(db, 'test', 'connection'));
-      } catch (error) {
-        if (error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration.");
-        }
-      }
-    }
-    testConnection();
-
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      
-      let unsubscribeUserData: (() => void) | undefined;
 
       if (currentUser) {
-        // Real-time listener for user data
-        unsubscribeUserData = onSnapshot(doc(db, 'users', currentUser.uid), (docSnap) => {
-          if (docSnap.exists()) {
-            setUserData(docSnap.data());
-          } else {
+        void apiRequest<{ success: boolean; userData?: Record<string, unknown> }>('/api/auth/me')
+          .then((payload) => {
+            setUserData(payload.userData || null);
+          })
+          .catch((error) => {
+            console.error('Error fetching user data:', error);
             setUserData(null);
-          }
-          setIsAuthReady(true);
-        }, (error) => {
-          console.error("Error fetching user data:", error);
-          setUserData(null);
-          setIsAuthReady(true);
-        });
+          })
+          .finally(() => {
+            setIsAuthReady(true);
+          });
       } else {
         setUserData(null);
         setIsAuthReady(true);
       }
-      
-      return () => {
-        if (unsubscribeUserData) unsubscribeUserData();
-      };
     });
 
     return () => unsubscribe();
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    const intervalId = window.setInterval(() => {
+      void apiRequest<{ success: boolean; userData?: Record<string, unknown> }>('/api/auth/me')
+        .then((payload) => {
+          setUserData(payload.userData || null);
+        })
+        .catch(() => {
+          // Ignorer les erreurs temporaires réseau
+        });
+    }, 15000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [user]);
 
   return (
     <AuthContext.Provider

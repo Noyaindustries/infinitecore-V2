@@ -1,0 +1,47 @@
+# Dépendances
+node_modules/
+
+# Variables d’environnement et secrets
+.env
+.env.*
+!.env.example
+
+# Builds (générés par `npm run build`)
+dist/
+
+# Logs et debug
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Firebase (CLI / émulateurs)
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Uploads locaux (déjà utilisé dans le projet)
+.local-uploads/
+
+# Repo imbriqué local (ne pas indexer depuis ce dépôt)
+infinitecore-V2/
+
+# Outils / caches
+.vite/
+.cache/
+*.tsbuildinfo
+.turbo/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Éditeurs (garde les réglages partagés si besoin : retirer la ligne)
+.idea/
+
+# Tests / couverture
+coverage/
+.nyc_output/

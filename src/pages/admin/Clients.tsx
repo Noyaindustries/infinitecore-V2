@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import {
   Search,
   Mail,
@@ -7,6 +7,7 @@ import {
   MessageCircle,
   Building2,
   Phone,
+  UserRoundCheck,
   ChevronRight,
   Clock,
   CheckCircle2,
@@ -53,9 +54,23 @@ function dossierMetrics(steps: DossierStep[], clientId: string) {
 }
 
 export default function AdminClients() {
+  const location = useLocation();
   const { clients, loading } = useCommandoClients();
   const [search, setSearch] = useState('');
+  const [referralFilter, setReferralFilter] = useState<'all' | 'referred'>('all');
+  const [partnerFilterId, setPartnerFilterId] = useState('');
   const [allSteps, setAllSteps] = useState<DossierStep[]>([]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const partnerId = params.get('partnerId') || '';
+    if (partnerId) {
+      setReferralFilter('referred');
+      setPartnerFilterId(partnerId);
+    } else {
+      setPartnerFilterId('');
+    }
+  }, [location.search]);
 
   useEffect(() => {
     const unsub = dossierService.subscribeToAllSteps(setAllSteps);
@@ -81,12 +96,19 @@ export default function AdminClients() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return clients;
-    return clients.filter((c) => {
+    const scoped = referralFilter === 'referred'
+      ? clients.filter((c) => Boolean(c.referredByPartnerName))
+      : clients;
+    const scopedByPartner = partnerFilterId
+      ? scoped.filter((c) => String(c.referredByPartnerId || '') === partnerFilterId)
+      : scoped;
+
+    if (!q) return scopedByPartner;
+    return scopedByPartner.filter((c) => {
       const blob = `${clientDisplayName(c)} ${c.email || ''} ${c.companyName || ''} ${c.phone || ''}`.toLowerCase();
       return blob.includes(q);
     });
-  }, [clients, search]);
+  }, [clients, search, referralFilter, partnerFilterId]);
 
   return (
     <div className="mx-auto max-w-6xl px-5 py-8 md:px-8 md:py-10 pb-20">
@@ -132,6 +154,41 @@ export default function AdminClients() {
 
       <div className="commando-luxe-hero-shell relative mt-10 overflow-hidden rounded-2xl border border-luxe-champagne/15 bg-noya-sidebar/45 p-5 backdrop-blur-md md:p-6">
         <div className="relative">
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setReferralFilter('all')}
+              className={cn(
+                'rounded-lg border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors',
+                referralFilter === 'all'
+                  ? 'border-luxe-champagne/40 bg-luxe-champagne/10 text-luxe-champagne-bright'
+                  : 'border-white/10 text-text-muted hover:border-white/20 hover:text-text-primary'
+              )}
+            >
+              Tous
+            </button>
+            <button
+              type="button"
+              onClick={() => setReferralFilter('referred')}
+              className={cn(
+                'rounded-lg border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors',
+                referralFilter === 'referred'
+                  ? 'border-noya-blue/45 bg-noya-blue/15 text-noya-blue'
+                  : 'border-white/10 text-text-muted hover:border-white/20 hover:text-text-primary'
+              )}
+            >
+              Parrainés
+            </button>
+            {partnerFilterId ? (
+              <button
+                type="button"
+                onClick={() => setPartnerFilterId('')}
+                className="rounded-lg border border-noya-blue/35 bg-noya-blue/10 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-noya-blue transition-colors hover:bg-noya-blue/20"
+              >
+                Filtre partenaire actif · réinitialiser
+              </button>
+            ) : null}
+          </div>
           <label htmlFor="crm-search" className="sr-only">
             Rechercher un client
           </label>
@@ -167,7 +224,11 @@ export default function AdminClients() {
           ) : filtered.length === 0 ? (
             <li className="px-5 py-16 text-center text-sm text-text-muted">Aucun client ne correspond à votre recherche.</li>
           ) : (
-            filtered.map((c) => <ClientRow key={c.id} client={c} steps={allSteps} />)
+            filtered.map((c) => (
+              <Fragment key={c.id}>
+                <ClientRow client={c} steps={allSteps} />
+              </Fragment>
+            ))
           )}
         </ul>
       </div>
@@ -193,6 +254,12 @@ function ClientRow({ client, steps }: { client: CommandoClientRow; steps: Dossie
               <p className="mt-0.5 flex items-center gap-1.5 truncate text-xs text-text-muted">
                 <Building2 className="h-3 w-3 shrink-0 opacity-60" aria-hidden />
                 {client.companyName}
+              </p>
+            ) : null}
+            {client.referredByPartnerName ? (
+              <p className="mt-1 inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-noya-blue/30 bg-noya-blue/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-noya-blue">
+                <UserRoundCheck className="h-3 w-3 shrink-0" aria-hidden />
+                Parrainé par {client.referredByPartnerName}
               </p>
             ) : null}
           </div>

@@ -1,10 +1,9 @@
 import path from 'path';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
-export default defineConfig(({ mode }) => {
-    const env = loadEnv(mode, '.', '');
+export default defineConfig(() => {
     return {
       // Port 5173 : `vite` seul n’écoute pas les routes /api/* (celles-ci sont sur `npm run dev` → Express :3000).
       server: {
@@ -22,13 +21,23 @@ export default defineConfig(({ mode }) => {
         react(),
         tailwindcss(),
       ],
-      define: {
-        'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-        'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      build: {
+        rollupOptions: {
+          output: {
+            manualChunks: {
+              'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+              'vendor-ui': ['framer-motion', 'lucide-react'],
+              'vendor-utils': ['clsx', 'zustand', 'react-hot-toast', 'tailwind-merge'],
+            },
+          },
+        },
       },
       resolve: {
         alias: {
           '@': path.resolve(__dirname, 'src'),
+          'firebase/app': path.resolve(__dirname, 'src/lib/mongoApp.ts'),
+          'firebase/auth': path.resolve(__dirname, 'src/lib/mongoAuth.ts'),
+          'firebase/firestore': path.resolve(__dirname, 'src/lib/mongoFirestore.ts'),
         }
       }
     };

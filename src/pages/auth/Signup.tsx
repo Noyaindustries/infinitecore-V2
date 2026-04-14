@@ -17,9 +17,11 @@ import {
 import { useStore } from '../../store/useStore';
 import { auth, db } from '../../firebase';
 import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import toast from 'react-hot-toast';
+import { notificationService } from '../../services/notificationService';
+import { leadService } from '../../services/leadService';
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -28,14 +30,22 @@ export default function Signup() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [referrerName, setReferrerName] = useState<string | null>(null);
+  const [referrerId, setReferrerId] = useState<string | null>(null);
+
+  const getPartnerLabel = (data: { firstName?: string; lastName?: string; email?: string }, fallbackId: string) => {
+    const fullName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+    return fullName || data.email || `Partenaire ${fallbackId}`;
+  };
   
   const [formData, setFormData] = useState({
     fullName: '',
     email: '',
     phone: '',
     company: '',
+    companyDescription: '',
     industry: '',
     employees: '',
     password: '',
@@ -50,10 +60,32 @@ export default function Signup() {
       // Fetch partner name
       const fetchPartner = async () => {
         try {
+          // 1) Compat direct: ref = uid du partenaire
           const partnerDoc = await getDoc(doc(db, 'users', ref));
           if (partnerDoc.exists()) {
-            const data = partnerDoc.data();
-            setReferrerName(`${data.firstName || ''} ${data.lastName || ''}`.trim());
+            const data = partnerDoc.data() as { firstName?: string; lastName?: string; email?: string };
+            setReferrerId(partnerDoc.id);
+            setReferrerName(getPartnerLabel(data, partnerDoc.id));
+            return;
+          }
+
+          // 2) ref = code de parrainage (nouveau champ)
+          const byReferralCode = await getDocs(query(collection(db, 'users'), where('referralCode', '==', ref)));
+          if (!byReferralCode.empty) {
+            const match = byReferralCode.docs[0];
+            const data = match.data() as { firstName?: string; lastName?: string; email?: string };
+            setReferrerId(match.id);
+            setReferrerName(getPartnerLabel(data, match.id));
+            return;
+          }
+
+          // 3) compat historique: partnerCode
+          const byPartnerCode = await getDocs(query(collection(db, 'users'), where('partnerCode', '==', ref)));
+          if (!byPartnerCode.empty) {
+            const match = byPartnerCode.docs[0];
+            const data = match.data() as { firstName?: string; lastName?: string; email?: string };
+            setReferrerId(match.id);
+            setReferrerName(getPartnerLabel(data, match.id));
           }
         } catch (err) {
           console.error("Error fetching partner name:", err);
@@ -62,6 +94,115 @@ export default function Signup() {
       fetchPartner();
     }
   }, [location]);
+
+  const notifyReferralLeadToCommando = async (payload: {
+    signupUserId?: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    companyName: string;
+    industry: string;
+  }) => {
+    if (!referralCode) return;
+    try {
+      const [commandoSnap, adminSnap] = await Promise.all([
+        getDocs(query(collection(db, 'users'), where('role', '==', 'commando'))),
+        getDocs(query(collection(db, 'users'), where('role', '==', 'admin'))),
+      ]);
+
+      const recipients = new Set<string>();
+      for (const d of commandoSnap.docs) {
+        const data = d.data() as { uid?: string };
+        recipients.add(data.uid || d.id);
+      }
+      for (const d of adminSnap.docs) {
+        const data = d.data() as { uid?: string };
+        recipients.add(data.uid || d.id);
+      }
+
+      const partnerLabel = referrerName?.trim() || 'Partenaire Infinite';
+      const message = `Inscription via le lien de ${partnerLabel}: ${payload.firstName} ${payload.lastName} (${payload.companyName}) - ${payload.industry} - ${payload.phone} - ref: ${referralCode}`;
+      const metadata = {
+        referralCode,
+        referredByPartnerId: referrerId || null,
+        referredByPartnerName: partnerLabel,
+        source: 'referral_signup',
+        signupUserId: payload.signupUserId || null,
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        email: payload.email,
+        phone: payload.phone,
+        companyName: payload.companyName,
+        industry: payload.industry,
+        leadCreated: false,
+      };
+
+      if (recipients.size > 0) {
+        await Promise.all(
+          Array.from(recipients).map((recipientId) =>
+            notificationService.createNotification(
+              recipientId,
+              'Nouveau formulaire parrainage',
+              message,
+              'order',
+              metadata
+            )
+          )
+        );
+      } else {
+        await notificationService.createNotification(
+          'admin_general',
+          'Nouveau formulaire parrainage',
+          message,
+          'order',
+          metadata
+        );
+      }
+    } catch (error) {
+      console.error('[Signup] notify referral failed:', error);
+    }
+  };
+
+  const ensureReferralLeadForPartner = async (payload: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone: string;
+    companyName: string;
+    industry: string;
+  }) => {
+    if (!referrerId || !referralCode) return;
+    try {
+      const existingLead = await getDocs(
+        query(
+          collection(db, 'leads'),
+          where('partnerId', '==', referrerId),
+          where('email', '==', payload.email)
+        )
+      );
+      if (!existingLead.empty) return;
+
+      await leadService.createLead({
+        partnerId: referrerId,
+        partnerName: referrerName?.trim() || 'Partenaire Infinite',
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        email: payload.email,
+        companyName: payload.companyName || 'Prospect parrainé',
+        sector: payload.industry || 'Non spécifié',
+        city: 'Non spécifiée',
+        employeesRange: '1-5',
+        urgency: 'moyenne',
+        whatsapp: payload.phone || 'Non renseigné',
+        phone: payload.phone || 'Non renseigné',
+        note: `Inscription via lien de parrainage (${referralCode}).`,
+        status: 'soumis',
+      });
+    } catch (error) {
+      console.error('[Signup] ensure referral lead for partner failed:', error);
+    }
+  };
 
   const updateFormData = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -78,16 +219,67 @@ export default function Signup() {
 
   const strength = getPasswordStrength(formData.password);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (formData.password !== formData.confirmPassword) {
-      toast.error('Les mots de passe ne correspondent pas.');
-      return;
+  const validateStep = (step: 1 | 2 | 3) => {
+    if (step === 1) {
+      if (!formData.fullName.trim()) {
+        toast.error('Le nom complet est requis.');
+        return false;
+      }
+      if (!formData.email.trim()) {
+        toast.error("L'email est requis.");
+        return false;
+      }
+      if (!formData.phone.trim()) {
+        toast.error('Le numéro WhatsApp est requis.');
+        return false;
+      }
+      return true;
     }
 
+    if (step === 2) {
+      if (!formData.company.trim()) {
+        toast.error("Le nom de l'entreprise est requis.");
+        return false;
+      }
+      if (!formData.industry.trim()) {
+        toast.error("Le secteur d'activité est requis.");
+        return false;
+      }
+      if (!formData.employees.trim()) {
+        toast.error("Le nombre d'employés est requis.");
+        return false;
+      }
+      return true;
+    }
+
+    if (!formData.password.trim()) {
+      toast.error('Le mot de passe est requis.');
+      return false;
+    }
     if (formData.password.length < 8) {
       toast.error('Le mot de passe doit contenir au moins 8 caractères.');
+      return false;
+    }
+    if (formData.password !== formData.confirmPassword) {
+      toast.error('Les mots de passe ne correspondent pas.');
+      return false;
+    }
+    return true;
+  };
+
+  const goToNextStep = () => {
+    if (!validateStep(currentStep)) return;
+    setCurrentStep((prev) => (prev === 1 ? 2 : 3));
+  };
+
+  const goToPrevStep = () => {
+    setCurrentStep((prev) => (prev === 3 ? 2 : 1));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (![1, 2, 3].every((step) => validateStep(step as 1 | 2 | 3))) {
       return;
     }
 
@@ -104,6 +296,7 @@ export default function Signup() {
         await setDoc(doc(db, 'companies', companyId), {
           id: companyId,
           name: formData.company,
+          description: formData.companyDescription.trim() || '',
           industry: formData.industry,
           size: formData.employees,
           pack: 'starter', // Default
@@ -128,16 +321,37 @@ export default function Signup() {
           lastName: lastName,
           phone: formData.phone,
           company: formData.company,
+          companyDescription: formData.companyDescription.trim() || '',
           industry: formData.industry,
           employees: formData.employees,
           role: isAdminEmail ? 'admin' : 'client',
           companyId: companyId,
           referredBy: referralCode || null,
+          referredByPartnerId: referrerId || null,
+          referredByPartnerName: referrerName?.trim() || null,
           createdAt: new Date().toISOString()
         });
       } catch (error) {
         handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}`);
       }
+
+      await notifyReferralLeadToCommando({
+        signupUserId: user.uid,
+        firstName,
+        lastName,
+        email: formData.email,
+        phone: formData.phone,
+        companyName: formData.company,
+        industry: formData.industry,
+      });
+      await ensureReferralLeadForPartner({
+        firstName,
+        lastName,
+        email: formData.email,
+        phone: formData.phone,
+        companyName: formData.company,
+        industry: formData.industry,
+      });
 
       // Keep local store update for UI consistency if needed
       addClient({
@@ -227,11 +441,31 @@ export default function Signup() {
             role: isAdminEmail ? 'admin' : 'client',
             companyId: companyId,
             referredBy: referralCode || null,
+            referredByPartnerId: referrerId || null,
+            referredByPartnerName: referrerName?.trim() || null,
             createdAt: new Date().toISOString()
           });
         } catch (error) {
           handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}`);
         }
+
+        await notifyReferralLeadToCommando({
+          signupUserId: user.uid,
+          firstName,
+          lastName,
+          email: user.email || '',
+          phone: user.phoneNumber || '',
+          companyName: `${firstName}'s Company`,
+          industry: 'Non spécifié',
+        });
+        await ensureReferralLeadForPartner({
+          firstName,
+          lastName,
+          email: user.email || '',
+          phone: user.phoneNumber || '',
+          companyName: `${firstName}'s Company`,
+          industry: 'Non spécifié',
+        });
 
         addClient({
           name: user.displayName || user.email || 'Nouveau Client',
@@ -276,13 +510,13 @@ export default function Signup() {
   };
 
   return (
-    <div className="relative flex w-full flex-col items-center px-4 py-8 font-sans sm:px-6 sm:py-10 lg:px-8">
+    <div className="relative flex w-full flex-col items-center px-4 py-6 font-sans sm:px-6 sm:py-8 lg:px-8">
       {/* Header */}
-      <div className="mb-8 text-center">
-        <h2 className="text-3xl font-bold text-white mb-2">Créer mon compte gratuit</h2>
+      <div className="mb-6 text-center">
+        <h2 className="mb-1 text-3xl font-bold text-white">Créer mon compte gratuit</h2>
         <p className="text-[#9CA3AF]">Prêt en 2 minutes. Aucune carte bancaire.</p>
         {referralCode && (
-          <div className="mt-4 inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-full text-sm font-medium border border-blue-100">
+          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-4 py-1.5 text-sm font-medium text-blue-700">
             <CheckCircle size={16} />
             Parrainé par : <span className="font-bold">{referrerName || 'Partenaire Infinite'}</span>
           </div>
@@ -290,7 +524,7 @@ export default function Signup() {
       </div>
 
       {/* Form Container */}
-      <div className="w-full max-w-2xl bg-[#1E1E2E] rounded-2xl shadow-sm border border-[#2d2d3d] p-8">
+      <div className="w-full max-w-2xl rounded-2xl border border-[#2d2d3d] bg-[#1E1E2E] p-6 shadow-sm sm:p-7">
         {isSuccess ? (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -308,214 +542,271 @@ export default function Signup() {
         ) : (
           <>
             {/* OAuth Buttons */}
-            <div className="space-y-4 mb-8">
+            <div className="mb-6 space-y-3">
               <button 
                 onClick={() => handleOAuth('google')}
-                className="w-full flex items-center justify-center gap-3 bg-[#0A0A0F] border border-[#2d2d3d] text-white px-6 py-3 rounded-xl font-medium hover:bg-[#111116] transition-colors"
+                className="flex w-full items-center justify-center gap-3 rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] px-6 py-2.5 font-medium text-white transition-colors hover:bg-[#111116]"
               >
                 <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
                 Continuer avec Google
               </button>
             </div>
 
-            <div className="relative flex items-center py-5">
-              <div className="flex-grow border-t border-[#2d2d3d]"></div>
-              <span className="flex-shrink-0 mx-4 text-[#4B5563] text-sm">OU</span>
-              <div className="flex-grow border-t border-[#2d2d3d]"></div>
+            <div className="relative flex items-center py-3">
+              <div className="grow border-t border-[#2d2d3d]"></div>
+              <span className="mx-3 shrink-0 text-sm text-[#4B5563]">OU</span>
+              <div className="grow border-t border-[#2d2d3d]"></div>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-5 mt-4">
-              
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
-                    Prénom et Nom <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <User className="h-5 w-5 text-[#4B5563]" />
-                    </div>
-                    <input
-                      type="text"
-                      required
-                      value={formData.fullName}
-                      onChange={(e) => updateFormData('fullName', e.target.value)}
-                      className="block w-full pl-10 pr-3 py-3 border border-[#2d2d3d] rounded-xl focus:ring-[#6366F1] focus:border-[#6366F1] text-sm bg-[#0A0A0F] text-white placeholder-[#4B5563]"
-                      placeholder="Jean Dupont"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
-                    Email <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Mail className="h-5 w-5 text-[#4B5563]" />
-                    </div>
-                    <input
-                      type="email"
-                      required
-                      value={formData.email}
-                      onChange={(e) => updateFormData('email', e.target.value)}
-                      className="block w-full pl-10 pr-3 py-3 border border-[#2d2d3d] rounded-xl focus:ring-[#6366F1] focus:border-[#6366F1] text-sm bg-[#0A0A0F] text-white placeholder-[#4B5563]"
-                      placeholder="jean@entreprise.com"
-                    />
-                  </div>
-                </div>
+            <form onSubmit={handleSubmit} className="mt-3 space-y-4">
+              <div className="grid grid-cols-3 gap-2 rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] p-1">
+                {[1, 2, 3].map((step) => (
+                  <button
+                    key={step}
+                    type="button"
+                    onClick={() => setCurrentStep(step as 1 | 2 | 3)}
+                    className={`rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors ${
+                      currentStep === step ? 'bg-[#6366F1] text-white' : 'text-[#9CA3AF] hover:bg-white/5'
+                    }`}
+                  >
+                    Étape {step}
+                  </button>
+                ))}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
-                    WhatsApp <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Phone className="h-5 w-5 text-[#4B5563]" />
+              {currentStep === 1 && (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                      Prénom et Nom <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <User className="h-5 w-5 text-[#4B5563]" />
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        value={formData.fullName}
+                        onChange={(e) => updateFormData('fullName', e.target.value)}
+                        className="block w-full rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] py-2.5 pl-10 pr-3 text-sm text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
+                        placeholder="Jean Dupont"
+                      />
                     </div>
-                    <input
-                      type="tel"
-                      required
-                      value={formData.phone}
-                      onChange={(e) => updateFormData('phone', e.target.value)}
-                      className="block w-full pl-10 pr-3 py-3 border border-[#2d2d3d] rounded-xl focus:ring-[#6366F1] focus:border-[#6366F1] text-sm bg-[#0A0A0F] text-white placeholder-[#4B5563]"
-                      placeholder="+225XXXXXXXXXX"
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                      Email <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Mail className="h-5 w-5 text-[#4B5563]" />
+                      </div>
+                      <input
+                        type="email"
+                        required
+                        value={formData.email}
+                        onChange={(e) => updateFormData('email', e.target.value)}
+                        className="block w-full rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] py-2.5 pl-10 pr-3 text-sm text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
+                        placeholder="jean@entreprise.com"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                      WhatsApp <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Phone className="h-5 w-5 text-[#4B5563]" />
+                      </div>
+                      <input
+                        type="tel"
+                        required
+                        value={formData.phone}
+                        onChange={(e) => updateFormData('phone', e.target.value)}
+                        className="block w-full rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] py-2.5 pl-10 pr-3 text-sm text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
+                        placeholder="+225XXXXXXXXXX"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {currentStep === 2 && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                      Nom de l'entreprise <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Building2 className="h-5 w-5 text-[#4B5563]" />
+                      </div>
+                      <input
+                        type="text"
+                        required
+                        value={formData.company}
+                        onChange={(e) => updateFormData('company', e.target.value)}
+                        className="block w-full rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] py-2.5 pl-10 pr-3 text-sm text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
+                        placeholder="Mon Entreprise"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                    <div>
+                      <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                        Secteur d'activité <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Briefcase className="h-5 w-5 text-[#4B5563]" />
+                        </div>
+                        <select
+                          required
+                          title="Secteur d'activité"
+                          aria-label="Secteur d'activité"
+                          value={formData.industry}
+                          onChange={(e) => updateFormData('industry', e.target.value)}
+                          className="block w-full rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] py-2.5 pl-10 pr-3 text-sm text-white focus:border-[#6366F1] focus:ring-[#6366F1]"
+                        >
+                          <option value="" disabled>Sélectionnez un secteur</option>
+                          <option value="BTP">BTP</option>
+                          <option value="Commerce">Commerce</option>
+                          <option value="Services">Services</option>
+                          <option value="Consulting">Consulting</option>
+                          <option value="ONG">ONG</option>
+                          <option value="Autre">Autre</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                        Nombre d'employés <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Users className="h-5 w-5 text-[#4B5563]" />
+                        </div>
+                        <select
+                          required
+                          title="Nombre d'employés"
+                          aria-label="Nombre d'employés"
+                          value={formData.employees}
+                          onChange={(e) => updateFormData('employees', e.target.value)}
+                          className="block w-full rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] py-2.5 pl-10 pr-3 text-sm text-white focus:border-[#6366F1] focus:ring-[#6366F1]"
+                        >
+                          <option value="" disabled>Sélectionnez une taille</option>
+                          <option value="1-5">1-5</option>
+                          <option value="6-20">6-20</option>
+                          <option value="21-50">21-50</option>
+                          <option value="50+">50+</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                      Description de l'entreprise
+                    </label>
+                    <textarea
+                      rows={2}
+                      value={formData.companyDescription}
+                      onChange={(e) => updateFormData('companyDescription', e.target.value)}
+                      className="block w-full resize-none rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] px-3 py-2.5 text-sm text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
+                      placeholder="Décrivez brièvement l'activité, les services ou le positionnement de votre entreprise."
                     />
                   </div>
                 </div>
+              )}
 
-                <div>
-                  <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
-                    Nom de l'entreprise <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Building2 className="h-5 w-5 text-[#4B5563]" />
+              {currentStep === 3 && (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  <div>
+                    <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                      Mot de passe <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Lock className="h-5 w-5 text-[#4B5563]" />
+                      </div>
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        required
+                        value={formData.password}
+                        onChange={(e) => updateFormData('password', e.target.value)}
+                        className="block w-full rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] py-2.5 pl-10 pr-10 text-sm text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
+                        placeholder="Min 8 caractères"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute inset-y-0 right-0 pr-3 flex items-center text-[#4B5563] hover:text-[#9CA3AF]"
+                      >
+                        {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      </button>
                     </div>
-                    <input
-                      type="text"
-                      required
-                      value={formData.company}
-                      onChange={(e) => updateFormData('company', e.target.value)}
-                      className="block w-full pl-10 pr-3 py-3 border border-[#2d2d3d] rounded-xl focus:ring-[#6366F1] focus:border-[#6366F1] text-sm bg-[#0A0A0F] text-white placeholder-[#4B5563]"
-                      placeholder="Mon Entreprise"
-                    />
+                    <div className="mt-2 flex gap-1">
+                      <div className={`h-1 w-1/3 rounded-full transition-colors ${!formData.password ? 'bg-gray-200' : strength >= 1 ? (strength === 1 ? 'bg-red-500' : strength === 2 ? 'bg-yellow-500' : 'bg-[#48bb78]') : 'bg-gray-200'}`}></div>
+                      <div className={`h-1 w-1/3 rounded-full transition-colors ${!formData.password ? 'bg-gray-200' : strength >= 2 ? (strength === 2 ? 'bg-yellow-500' : 'bg-[#48bb78]') : 'bg-gray-200'}`}></div>
+                      <div className={`h-1 w-1/3 rounded-full transition-colors ${!formData.password ? 'bg-gray-200' : strength >= 3 ? 'bg-[#48bb78]' : 'bg-gray-200'}`}></div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                      Confirmation <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                        <Lock className="h-5 w-5 text-[#4B5563]" />
+                      </div>
+                      <input
+                        type={showPassword ? "text" : "password"}
+                        required
+                        value={formData.confirmPassword}
+                        onChange={(e) => updateFormData('confirmPassword', e.target.value)}
+                        className="block w-full rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] py-2.5 pl-10 pr-3 text-sm text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
+                        placeholder="Confirmez le mot de passe"
+                      />
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
-                    Secteur d'activité <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Briefcase className="h-5 w-5 text-[#4B5563]" />
-                    </div>
-                    <select
-                      required
-                      value={formData.industry}
-                      onChange={(e) => updateFormData('industry', e.target.value)}
-                      className="block w-full pl-10 pr-3 py-3 border border-[#2d2d3d] rounded-xl focus:ring-[#6366F1] focus:border-[#6366F1] text-sm bg-[#0A0A0F] text-white"
-                    >
-                      <option value="" disabled>Sélectionnez un secteur</option>
-                      <option value="BTP">BTP</option>
-                      <option value="Commerce">Commerce</option>
-                      <option value="Services">Services</option>
-                      <option value="Consulting">Consulting</option>
-                      <option value="ONG">ONG</option>
-                      <option value="Autre">Autre</option>
-                    </select>
-                  </div>
-                </div>
+              <div className="pt-2 flex gap-2">
+                {currentStep > 1 && (
+                  <button
+                    type="button"
+                    onClick={goToPrevStep}
+                    className="w-full rounded-xl border border-[#2d2d3d] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/5"
+                  >
+                    Précédent
+                  </button>
+                )}
 
-                <div>
-                  <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
-                    Nombre d'employés <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Users className="h-5 w-5 text-[#4B5563]" />
-                    </div>
-                    <select
-                      required
-                      value={formData.employees}
-                      onChange={(e) => updateFormData('employees', e.target.value)}
-                      className="block w-full pl-10 pr-3 py-3 border border-[#2d2d3d] rounded-xl focus:ring-[#6366F1] focus:border-[#6366F1] text-sm bg-[#0A0A0F] text-white"
-                    >
-                      <option value="" disabled>Sélectionnez une taille</option>
-                      <option value="1-5">1-5</option>
-                      <option value="6-20">6-20</option>
-                      <option value="21-50">21-50</option>
-                      <option value="50+">50+</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <div>
-                  <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
-                    Mot de passe <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Lock className="h-5 w-5 text-[#4B5563]" />
-                    </div>
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      required
-                      value={formData.password}
-                      onChange={(e) => updateFormData('password', e.target.value)}
-                      className="block w-full pl-10 pr-10 py-3 border border-[#2d2d3d] rounded-xl focus:ring-[#6366F1] focus:border-[#6366F1] text-sm bg-[#0A0A0F] text-white placeholder-[#4B5563]"
-                      placeholder="Min 8 caractères"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-[#4B5563] hover:text-[#9CA3AF]"
-                    >
-                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                    </button>
-                  </div>
-                  <div className="mt-2 flex gap-1">
-                    <div className={`h-1 w-1/3 rounded-full transition-colors ${!formData.password ? 'bg-gray-200' : strength >= 1 ? (strength === 1 ? 'bg-red-500' : strength === 2 ? 'bg-yellow-500' : 'bg-[#48bb78]') : 'bg-gray-200'}`}></div>
-                    <div className={`h-1 w-1/3 rounded-full transition-colors ${!formData.password ? 'bg-gray-200' : strength >= 2 ? (strength === 2 ? 'bg-yellow-500' : 'bg-[#48bb78]') : 'bg-gray-200'}`}></div>
-                    <div className={`h-1 w-1/3 rounded-full transition-colors ${!formData.password ? 'bg-gray-200' : strength >= 3 ? 'bg-[#48bb78]' : 'bg-gray-200'}`}></div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
-                    Confirmation <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                      <Lock className="h-5 w-5 text-[#4B5563]" />
-                    </div>
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      required
-                      value={formData.confirmPassword}
-                      onChange={(e) => updateFormData('confirmPassword', e.target.value)}
-                      className="block w-full pl-10 pr-3 py-3 border border-[#2d2d3d] rounded-xl focus:ring-[#6366F1] focus:border-[#6366F1] text-sm bg-[#0A0A0F] text-white placeholder-[#4B5563]"
-                      placeholder="Confirmez le mot de passe"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-4">
-                <button
-                  type="submit"
-                  disabled={isLoading}
-                  className="w-full bg-[#6366F1] hover:bg-indigo-500 text-white px-6 py-4 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-lg shadow-[0_0_15px_rgba(99,102,241,0.4)]"
-                >
-                  {isLoading ? 'Création en cours...' : 'Créer mon compte'} <ArrowRight size={20} />
-                </button>
+                {currentStep < 3 ? (
+                  <button
+                    type="button"
+                    onClick={goToNextStep}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#6366F1] px-6 py-3 text-base font-bold text-white shadow-[0_0_15px_rgba(99,102,241,0.4)] transition-colors hover:bg-indigo-500"
+                  >
+                    Suivant <ArrowRight size={20} />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#6366F1] px-6 py-3 text-base font-bold text-white shadow-[0_0_15px_rgba(99,102,241,0.4)] transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isLoading ? 'Création en cours...' : 'Créer mon compte'} <ArrowRight size={20} />
+                  </button>
+                )}
               </div>
             </form>
           </>
@@ -524,7 +815,7 @@ export default function Signup() {
 
       {/* Footer Link */}
       {!isSuccess && (
-        <div className="mt-8 text-center">
+        <div className="mt-6 text-center">
           <p className="text-sm text-[#9CA3AF]">
             Déjà inscrit ? <Link to="/login" className="font-bold text-[#6366F1] hover:text-indigo-400">Connectez-vous</Link>
           </p>

@@ -10,10 +10,16 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { prisma } from "./prismaClient";
 import { sanitizeFolder } from "./_r2";
 import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } from "./storageUtils";
+import { registerMongoApi } from "./mongoApi";
 
 async function startServer() {
   const app = express();
   const PORT = 3000;
+  const corsOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173,http://127.0.0.1:5173")
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
+  const paddeWebhookSecret = process.env.PADDE_WEBHOOK_SECRET || "";
   const r2AccountId = process.env.R2_ACCOUNT_ID || "";
   const r2AccessKeyId = process.env.R2_ACCESS_KEY_ID || "";
   const r2SecretAccessKey = process.env.R2_SECRET_ACCESS_KEY || "";
@@ -28,8 +34,26 @@ async function startServer() {
     );
   }
 
-  app.use(cors());
+  app.use(
+    cors({
+      origin(origin, callback) {
+        // Autorise les appels serveur-serveur et les fronts explicitement listés.
+        if (!origin || corsOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+        return callback(new Error("Origine CORS non autorisée."));
+      },
+      methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    })
+  );
+  app.use((_, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("X-Frame-Options", "DENY");
+    next();
+  });
   app.use(express.json());
+  registerMongoApi(app);
 
   const s3 = canUseR2
     ? new S3Client({
@@ -201,6 +225,13 @@ async function startServer() {
   // Webhook PADDE-CI — persistance MongoDB via Prisma (collection `padde_ci_audits`)
   app.post("/api/webhooks/padde-ci", async (req, res) => {
     try {
+      if (paddeWebhookSecret) {
+        const provided = String(req.headers["x-webhook-secret"] || "");
+        if (!provided || provided !== paddeWebhookSecret) {
+          return res.status(401).json({ success: false, error: "Webhook non autorisé." });
+        }
+      }
+
       if (!process.env.DATABASE_URL) {
         return res.status(503).json({
           success: false,
@@ -272,7 +303,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+    app.get(/.*/, (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

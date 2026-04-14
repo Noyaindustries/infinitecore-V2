@@ -35,6 +35,8 @@ const AdminTickets = lazy(() => import('./pages/admin/Tickets'));
 const AdminDossiers = lazy(() => import('./pages/admin/Dossiers'));
 const AdminMessagerie = lazy(() => import('./pages/admin/Messagerie'));
 const AdminInstances = lazy(() => import('./pages/admin/Instances'));
+const AdminPartners = lazy(() => import('./pages/admin/Partners'));
+const AdminLeads = lazy(() => import('./pages/admin/Leads'));
 const ClientDashboard = lazy(() => import('./pages/client/Dashboard'));
 const ClientDocuments = lazy(() => import('./pages/client/Documents'));
 const ClientChat = lazy(() => import('./pages/client/Chat'));
@@ -63,7 +65,7 @@ const PartnerClients = lazy(() => import('./pages/partner/Clients'));
 const PartnerCommissions = lazy(() => import('./pages/partner/Commissions'));
 const PartnerResources = lazy(() => import('./pages/partner/Resources'));
 const PartnerProfile = lazy(() => import('./pages/partner/Profile'));
-const ModuleLogin = lazy(() => import('./pages/module/Login'));
+const PartnerReferrals = lazy(() => import('./pages/partner/Referrals'));
 const ModuleDashboard = lazy(() => import('./pages/module/Dashboard'));
 
 function App() {
@@ -99,12 +101,11 @@ function App() {
             <Route path="/cookies" element={<Cookies />} />
 
             <Route path="/login" element={<Login />} />
-            <Route path="/staff/login" element={<Login isStaff={true} />} />
             <Route path="/signup" element={<Signup />} />
           </Route>
           
           {/* Module Routes */}
-          <Route path="/module/:id/login" element={<ModuleLogin />} />
+          <Route path="/module/:id/login" element={<Navigate to="/login" replace />} />
           <Route path="/module/:id/dashboard" element={<ModuleDashboard />} />
           
           {/* Super Admin Routes (Admin Général) */}
@@ -131,9 +132,12 @@ function App() {
               <Route path="clients" element={<AdminClients />} />
               <Route path="operations" element={<Operations />} />
               <Route path="finance" element={<AdminFinance />} />
+              <Route path="tickets" element={<AdminTickets />} />
               <Route path="messagerie" element={<AdminMessagerie />} />
               <Route path="dossiers" element={<AdminDossiers />} />
               <Route path="instances" element={<AdminInstances />} />
+              <Route path="partners" element={<AdminPartners />} />
+              <Route path="leads" element={<AdminLeads />} />
               <Route path="audits-padde" element={<PaddeCiAudits />} />
             </Route>
           </Route>
@@ -167,6 +171,7 @@ function App() {
             <Route path="/partenaire" element={<PartnerLayout />}>
               <Route index element={<PartnerDashboard />} />
               <Route path="clients" element={<PartnerClients />} />
+              <Route path="filleuls" element={<PartnerReferrals />} />
               <Route path="commissions" element={<PartnerCommissions />} />
               <Route path="ressources" element={<PartnerResources />} />
               <Route path="profil" element={<PartnerProfile />} />

@@ -1,7 +1,7 @@
 import {
   collection,
   doc,
-  addDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   onSnapshot,
@@ -26,9 +26,18 @@ export interface Lead {
   partnerName: string;
   firstName?: string;
   lastName?: string;
+  email?: string;
+  jobTitle?: string;
   companyName: string;
+  companyDescription?: string;
+  city?: string;
   sector?: string;
+  employeesRange?: string;
+  estimatedBudget?: string;
+  urgency?: 'faible' | 'moyenne' | 'haute';
   whatsapp: string;
+  phone?: string;
+  note?: string;
   status: LeadStatus;
   commissionAmount?: number;
   commissionPaid?: boolean;
@@ -42,12 +51,17 @@ const COL = 'leads';
 
 export const leadService = {
   async createLead(data: Omit<Lead, 'id' | 'createdAt'>) {
-    const docRef = await addDoc(collection(db, COL), {
-      ...data,
+    const colRef = collection(db, COL);
+    const docRef = doc(colRef);
+    const sanitizedData = Object.fromEntries(
+      Object.entries(data).filter(([, value]) => value !== undefined)
+    );
+    await setDoc(docRef, {
+      id: docRef.id,
+      ...sanitizedData,
       status: 'soumis',
       createdAt: new Date().toISOString(),
     });
-    await updateDoc(docRef, { id: docRef.id });
     return docRef.id;
   },
 

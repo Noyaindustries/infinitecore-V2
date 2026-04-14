@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Lock, Mail, ArrowRight } from 'lucide-react';
 import { GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
 import { useAuth } from '../../components/FirebaseProvider';
 import { useStore } from '../../store/useStore';
@@ -28,16 +28,71 @@ function homePathForRole(role: string | undefined): string {
 
 export default function Login({ isStaff = false }: { isStaff?: boolean }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, userData, isAuthReady } = useAuth();
   const addClient = useStore((s) => s.addClient);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [referrerName, setReferrerName] = useState<string | null>(null);
+  const [referrerId, setReferrerId] = useState<string | null>(null);
+
+  const getPartnerLabel = (data: { firstName?: string; lastName?: string; email?: string }, fallbackId: string) => {
+    const fullName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
+    return fullName || data.email || `Partenaire ${fallbackId}`;
+  };
 
   React.useEffect(() => {
     if (!isAuthReady || !user || !userData) return;
     navigate(homePathForRole(userData.role), { replace: true });
   }, [isAuthReady, user, userData, navigate]);
+
+  React.useEffect(() => {
+    if (isStaff) return;
+    const params = new URLSearchParams(location.search);
+    const ref = params.get('ref');
+    if (!ref) {
+      setReferralCode(null);
+      setReferrerId(null);
+      setReferrerName(null);
+      return;
+    }
+    setReferralCode(ref);
+
+    const fetchPartner = async () => {
+      try {
+        const partnerById = await getDoc(doc(db, 'users', ref));
+        if (partnerById.exists()) {
+          const data = partnerById.data() as { firstName?: string; lastName?: string; email?: string };
+          setReferrerId(partnerById.id);
+          setReferrerName(getPartnerLabel(data, partnerById.id));
+          return;
+        }
+
+        const partnerByReferralCode = await getDocs(query(collection(db, 'users'), where('referralCode', '==', ref)));
+        if (!partnerByReferralCode.empty) {
+          const match = partnerByReferralCode.docs[0];
+          const data = match.data() as { firstName?: string; lastName?: string; email?: string };
+          setReferrerId(match.id);
+          setReferrerName(getPartnerLabel(data, match.id));
+          return;
+        }
+
+        const partnerByLegacyCode = await getDocs(query(collection(db, 'users'), where('partnerCode', '==', ref)));
+        if (!partnerByLegacyCode.empty) {
+          const match = partnerByLegacyCode.docs[0];
+          const data = match.data() as { firstName?: string; lastName?: string; email?: string };
+          setReferrerId(match.id);
+          setReferrerName(getPartnerLabel(data, match.id));
+        }
+      } catch (error) {
+        console.error('[Login] unable to resolve referral code:', error);
+      }
+    };
+
+    void fetchPartner();
+  }, [isStaff, location.search]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -110,7 +165,9 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
             phone: u.phoneNumber || '',
             role: isAdminEmail ? 'admin' : 'client',
             companyId,
-            referredBy: null,
+            referredBy: referralCode || null,
+            referredByPartnerId: referrerId || null,
+            referredByPartnerName: referrerName?.trim() || null,
             createdAt: new Date().toISOString(),
           });
         } catch (error) {

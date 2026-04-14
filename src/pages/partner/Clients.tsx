@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, User, X, Phone, Building2, Send, Search, Trash2, Clock, Briefcase } from 'lucide-react';
+import { Plus, User, X, Phone, Building2, Send, Search, Trash2, Clock, Briefcase, Sparkles, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../components/FirebaseProvider';
 import { leadService, Lead, LeadStatus } from '../../services/leadService';
@@ -7,6 +7,25 @@ import { notificationService } from '../../services/notificationService';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { collection, doc, getDocs, onSnapshot, query, setDoc, where } from 'firebase/firestore';
+import { db } from '../../firebase';
+
+type ReferredSignup = {
+  id: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+  company?: string;
+  companyName?: string;
+  createdAt?: string;
+  role?: string;
+  referredBy?: string;
+  referredByPartnerId?: string;
+};
+
+const normalizePartnerCode = (code: string) => code.toUpperCase().replace('PART-USR', 'PART-INF');
+const buildPartnerCode = (uid?: string) => `PART-${(uid || '').substring(0, 6).toUpperCase().replace('USR', 'INF')}`;
 
 const STATUS_LABELS: Record<LeadStatus, string> = {
   soumis: 'Soumis',
@@ -19,6 +38,18 @@ const STATUS_LABELS: Record<LeadStatus, string> = {
 };
 
 const STATUS_ORDER: LeadStatus[] = ['soumis', 'contacte', 'en_demo', 'proposition', 'signe', 'gagne'];
+const SECTOR_OPTIONS = ['BTP', 'Commerce', 'Services', 'Consulting', 'ONG', 'Autre'] as const;
+const EMPLOYEE_RANGE_OPTIONS = ['1-5', '6-20', '21-50', '51-200', '200+'] as const;
+const URGENCY_OPTIONS = [
+  { value: 'faible', label: 'Faible' },
+  { value: 'moyenne', label: 'Moyenne' },
+  { value: 'haute', label: 'Haute' },
+] as const;
+const FORM_STEPS = [
+  { id: 1, label: 'Contact' },
+  { id: 2, label: 'Entreprise' },
+  { id: 3, label: 'Priorite' },
+] as const;
 
 function ProgressBar({ status }: { status: LeadStatus }) {
   if (status === 'perdu') {
@@ -46,20 +77,110 @@ function formatFCFA(n: number) {
 export default function PartnerClients() {
   const { user, userData } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [referredSignups, setReferredSignups] = useState<ReferredSignup[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<LeadStatus | 'all'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ firstName: '', lastName: '', companyName: '', sector: '', whatsapp: '' });
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [form, setForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    jobTitle: '',
+    companyName: '',
+    companyDescription: '',
+    city: '',
+    sector: '',
+    employeesRange: '',
+    urgency: 'moyenne' as 'faible' | 'moyenne' | 'haute',
+    whatsapp: '',
+    note: '',
+  });
+
+  const resetForm = () => {
+    setCurrentStep(1);
+    setForm({
+      firstName: '',
+      lastName: '',
+      email: '',
+      jobTitle: '',
+      companyName: '',
+      companyDescription: '',
+      city: '',
+      sector: '',
+      employeesRange: '',
+      urgency: 'moyenne',
+      whatsapp: '',
+      note: '',
+    });
+  };
+
+  const validateStep = (step: 1 | 2 | 3): boolean => {
+    if (step === 1) {
+      if (!form.firstName.trim() || !form.lastName.trim() || !form.whatsapp.trim()) {
+        toast.error('Renseignez prénom, nom et WhatsApp.');
+        return false;
+      }
+      if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+        toast.error('Le format de l’email est invalide.');
+        return false;
+      }
+      return true;
+    }
+    if (step === 2) {
+      if (!form.companyName.trim() || !form.city.trim() || !form.sector.trim() || !form.employeesRange.trim()) {
+        toast.error('Complétez les informations entreprise.');
+        return false;
+      }
+      return true;
+    }
+    return true;
+  };
+
+  const isFormReadyForSubmit = (): boolean => {
+    if (!form.firstName.trim() || !form.lastName.trim() || !form.companyName.trim() || !form.sector.trim() || !form.city.trim() || !form.employeesRange.trim() || !form.whatsapp.trim()) {
+      return false;
+    }
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      return false;
+    }
+    return true;
+  };
+
+  const attemptCloseForm = () => {
+    if (currentStep < 3) {
+      toast.error('Terminez au moins jusqu’à la dernière étape avant de fermer.');
+      return;
+    }
+    if (!isFormReadyForSubmit()) {
+      toast.error('Complétez les champs requis avant de fermer le formulaire.');
+      return;
+    }
+    setIsModalOpen(false);
+    resetForm();
+  };
+
+  const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
+    if (e.key !== 'Enter') return;
+    if (e.target instanceof HTMLTextAreaElement) return;
+    e.preventDefault();
+    if (currentStep < 3 && validateStep(currentStep)) {
+      setCurrentStep((prev) => (prev === 1 ? 2 : 3));
+    }
+  };
 
   const partnerName = userData?.firstName
     ? `${userData.firstName} ${userData.lastName || ''}`.trim()
     : 'Partenaire';
+  const partnerUid = String(userData?.uid || user?.uid || '');
+  const referralCode = normalizePartnerCode(userData?.referralCode || buildPartnerCode(partnerUid));
+  const partnerCodeLegacy = normalizePartnerCode(String(userData?.partnerCode || ''));
 
   useEffect(() => {
-    if (!user) return;
-    const unsub = leadService.subscribeToPartnerLeads(user.uid, (data) => {
+    if (!partnerUid) return;
+    const unsub = leadService.subscribeToPartnerLeads(partnerUid, (data) => {
       // Client-side sort: newest first
       const sorted = [...data].sort((a, b) => 
         new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()
@@ -75,37 +196,145 @@ export default function PartnerClients() {
       unsub();
       clearTimeout(timer);
     };
-  }, [user]);
+  }, [partnerUid]);
+
+  useEffect(() => {
+    if (!partnerUid) {
+      setReferredSignups([]);
+      return;
+    }
+    const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
+      const referralKeys = new Set<string>([
+        referralCode,
+        normalizePartnerCode(String(userData?.referralCode || '')),
+        normalizePartnerCode(buildPartnerCode(partnerUid)),
+        partnerCodeLegacy,
+        String(partnerUid || '').toUpperCase(),
+      ].filter(Boolean));
+
+      const signups = snapshot.docs
+        .map((d) => ({ id: d.id, ...(d.data() as ReferredSignup) }))
+        .filter((row) => {
+          const role = String(row.role || '').toLowerCase();
+          if (role !== 'client') return false;
+          const byPartnerId = row.referredByPartnerId === partnerUid;
+          const byReferralCode = referralKeys.has(normalizePartnerCode(String(row.referredBy || '')));
+          const byLegacyUid = String(row.referredBy || '') === String(partnerUid || '');
+          return byPartnerId || byReferralCode || byLegacyUid;
+        })
+        .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      setReferredSignups(signups);
+    });
+    return () => unsub();
+  }, [partnerUid, referralCode, partnerCodeLegacy, userData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.companyName.trim() || !form.whatsapp.trim()) {
+    if (currentStep < 3) {
+      if (!validateStep(currentStep)) return;
+      setCurrentStep((prev) => (prev === 1 ? 2 : 3));
+      return;
+    }
+    if (!form.firstName.trim() || !form.lastName.trim() || !form.companyName.trim() || !form.sector.trim() || !form.city.trim() || !form.employeesRange.trim() || !form.whatsapp.trim()) {
       toast.error('Veuillez remplir tous les champs.');
       return;
     }
-    if (!user) return;
+    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      toast.error('Le format de l’email est invalide.');
+      return;
+    }
+    if (!partnerUid) return;
     setSubmitting(true);
     try {
-      await leadService.createLead({
-        partnerId: user.uid,
+      const leadId = await leadService.createLead({
+        partnerId: partnerUid,
         partnerName,
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
+        email: form.email.trim() || undefined,
+        jobTitle: form.jobTitle.trim() || undefined,
         companyName: form.companyName.trim(),
+        companyDescription: form.companyDescription.trim() || undefined,
+        city: form.city.trim(),
         sector: form.sector,
+        employeesRange: form.employeesRange,
+        urgency: form.urgency,
         whatsapp: form.whatsapp.trim(),
+        phone: form.whatsapp.trim(),
+        note: form.note.trim() || undefined,
         status: 'soumis',
       });
-      await notificationService.createNotification(
-        'admin_general',
-        'Nouveau lead partenaire',
-        `${partnerName} a soumis un contact : ${form.firstName.trim()} ${form.lastName.trim()} (${form.companyName.trim()}) — Secteur: ${form.sector} — WhatsApp: ${form.whatsapp.trim()}`,
-        'order',
-        { partnerId: user.uid }
-      );
-      toast.success('Contact soumis — l\'équipe Commando prend le relais !');
+
+      const notificationTitle = 'Nouveau lead partenaire';
+      const notificationMessage = `${partnerName} a soumis un contact : ${form.firstName.trim()} ${form.lastName.trim()} (${form.companyName.trim()}, ${form.city.trim()}) — Secteur: ${form.sector} — Taille: ${form.employeesRange} — Urgence: ${form.urgency} — WhatsApp: ${form.whatsapp.trim()}${form.email.trim() ? ` — Email: ${form.email.trim()}` : ''}${form.companyDescription.trim() ? ` — Description: ${form.companyDescription.trim()}` : ''}`;
+      const notificationMetadata = { partnerId: partnerUid };
+
+      // Diffuse au Commando/Admin pour que les formulaires partenaires arrivent bien dans leur espace.
+      let relayToOtherSpacesOk = true;
+      try {
+        const usersSnap = await getDocs(collection(db, 'users'));
+        const recipients = new Set<string>();
+
+        for (const d of usersSnap.docs) {
+          const data = d.data() as { uid?: string; role?: string };
+          const role = String(data.role || '').toLowerCase();
+          if (role === 'commando' || role === 'admin') {
+            recipients.add(data.uid || d.id);
+          }
+        }
+
+        if (recipients.size > 0) {
+          await Promise.all(
+            Array.from(recipients).map((recipientId) =>
+              notificationService.createNotification(
+                recipientId,
+                notificationTitle,
+                notificationMessage,
+                'order',
+                notificationMetadata
+              )
+            )
+          );
+        } else {
+          await notificationService.createNotification(
+            'admin_general',
+            notificationTitle,
+            notificationMessage,
+            'order',
+            notificationMetadata
+          );
+        }
+
+        // Injecte aussi une carte dans le pipeline commando (collection tasks),
+        // car l'espace commando affiche tasks/orders et non la collection leads.
+        const taskId = `TSK-${crypto.randomUUID().split('-')[0].toUpperCase()}`;
+        await setDoc(doc(db, 'tasks', taskId), {
+          id: taskId,
+          leadId,
+          userId: Array.from(recipients)[0] || 'system',
+          title: `Lead partenaire: ${form.companyName.trim()}`,
+          client: `${form.firstName.trim()} ${form.lastName.trim()}`.trim() || form.companyName.trim(),
+          columnId: 'nouveau',
+          isOrder: false,
+          source: 'partner_lead',
+          partnerId: partnerUid,
+          partnerName,
+          leadCompany: form.companyName.trim(),
+          leadPhone: form.whatsapp.trim(),
+          createdAt: new Date().toISOString(),
+        });
+      } catch (notifyError) {
+        relayToOtherSpacesOk = false;
+        console.error('[PartnerClients] notify commando/admin failed:', notifyError);
+      }
+
+      if (relayToOtherSpacesOk) {
+        toast.success('Contact soumis — l\'équipe Commando prend le relais !');
+      } else {
+        toast.error('Contact enregistré, mais la transmission vers les autres espaces a échoué.');
+      }
       setIsModalOpen(false);
-      setForm({ firstName: '', lastName: '', companyName: '', sector: '', whatsapp: '' });
+      resetForm();
     } catch (err) {
       console.error('[PartnerClients] submit:', err);
       toast.error('Erreur lors de la soumission.');
@@ -148,7 +377,10 @@ export default function PartnerClients() {
           </p>
         </div>
         <button
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            resetForm();
+            setIsModalOpen(true);
+          }}
           className="flex items-center gap-2 px-5 py-2.5 bg-noya-blue text-noya-black rounded-xl font-bold hover:scale-[1.02] transition-all shadow-[0_4px_15px_rgba(110,167,234,0.3)]"
         >
           <Plus size={18} /> Nouveau contact
@@ -168,6 +400,8 @@ export default function PartnerClients() {
           />
         </div>
         <select
+          title="Filtrer par statut"
+          aria-label="Filtrer par statut"
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value as any)}
           className="px-3 py-2 border border-border bg-noya-sidebar rounded-xl text-sm text-text-primary focus:ring-2 focus:ring-noya-blue outline-none"
@@ -177,6 +411,39 @@ export default function PartnerClients() {
             <option key={s} value={s}>{STATUS_LABELS[s]}</option>
           ))}
         </select>
+      </div>
+
+      <div className="rounded-xl border border-white/5 bg-noya-sidebar p-4">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-bold text-text-primary">Inscriptions via mon lien</h2>
+          <span className="rounded-full border border-noya-blue/30 bg-noya-blue/10 px-2.5 py-1 text-[11px] font-bold text-noya-blue">
+            {referredSignups.length}
+          </span>
+        </div>
+        {referredSignups.length === 0 ? (
+          <p className="text-sm text-text-secondary">Aucune inscription rattachée à votre lien pour le moment.</p>
+        ) : (
+          <div className="space-y-2">
+            {referredSignups.map((signup) => (
+              <div key={signup.id} className="flex items-start justify-between gap-3 rounded-lg border border-white/5 bg-white/5 p-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-text-primary">
+                    {`${signup.firstName || ''} ${signup.lastName || ''}`.trim() || signup.email || 'Nouveau client'}
+                  </p>
+                  <p className="mt-0.5 truncate text-xs text-text-secondary">
+                    {signup.companyName || signup.company || 'Entreprise non renseignée'} · {signup.phone || 'Téléphone non renseigné'}
+                  </p>
+                  <span className="mt-1 inline-flex items-center rounded-full border border-noya-blue/30 bg-noya-blue/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-noya-blue">
+                    Parrainé · {partnerName}
+                  </span>
+                </div>
+                <span className="shrink-0 text-xs text-text-secondary">
+                  {signup.createdAt ? format(new Date(signup.createdAt), 'dd MMM', { locale: fr }) : '—'}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Lead list */}
@@ -192,7 +459,10 @@ export default function PartnerClients() {
           </p>
           {leads.length === 0 && (
             <button
-              onClick={() => setIsModalOpen(true)}
+              onClick={() => {
+                resetForm();
+                setIsModalOpen(true);
+              }}
               className="mt-2 px-6 py-2 bg-noya-blue text-noya-black rounded-xl text-sm font-bold hover:scale-105 transition-all shadow-lg"
             >
               Soumettre mon premier contact
@@ -240,6 +510,9 @@ export default function PartnerClients() {
                     {lead.firstName} {lead.lastName}
                   </p>
                   <p className="text-xs text-text-secondary font-medium">{lead.companyName}</p>
+                  <span className="mt-1 inline-flex items-center rounded-full border border-noya-blue/30 bg-noya-blue/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-noya-blue">
+                    Parrainé · {lead.partnerName || partnerName}
+                  </span>
                 </div>
               </div>
 
@@ -292,135 +565,202 @@ export default function PartnerClients() {
       {/* Submit modal */}
       <AnimatePresence>
         {isModalOpen && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-1 backdrop-blur-[3px] sm:p-2">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-white rounded-2xl shadow-2xl w-full max-w-md"
+              className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-white/15 bg-linear-to-br from-[#0D1320] via-[#0F1728] to-[#111C2F] shadow-[0_35px_90px_rgba(0,0,0,0.65)]"
             >
-              <div className="flex items-center justify-between px-6 py-5 border-b border-white/5 bg-noya-black/20">
+              <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-linear-to-r from-noya-blue/25 via-noya-purple/15 to-noya-green/20" />
+              <div className="pointer-events-none absolute -left-20 top-10 h-40 w-40 rounded-full bg-noya-blue/15 blur-3xl" />
+              <div className="pointer-events-none absolute -right-20 top-12 h-44 w-44 rounded-full bg-noya-green/10 blur-3xl" />
+              <div className="relative border-b border-white/10 bg-black/20 px-4 py-3 pr-12">
                 <div>
-                  <h2 className="text-xl font-bold text-text-primary">Nouveau contact PME</h2>
-                  <p className="text-xs text-text-secondary mt-1">Le Commando Noya contactera ce prospect en votre nom.</p>
+                  <span className="inline-flex items-center gap-2 rounded-full border border-noya-blue/40 bg-noya-blue/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-noya-blue">
+                    <Sparkles size={12} />
+                    Lead Prestige
+                  </span>
+                  <h2 className="mt-1.5 text-lg font-black tracking-tight text-text-primary">Nouveau contact PME</h2>
+                  <p className="mt-0.5 text-[10px] text-text-secondary">Formulaire qualifie pour prise en charge prioritaire Commando.</p>
                 </div>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 text-text-secondary hover:text-text-primary hover:bg-white/5 rounded-full transition-colors">
+                <button
+                  title="Fermer le formulaire"
+                  aria-label="Fermer le formulaire"
+                  onClick={attemptCloseForm}
+                  className="absolute right-3 top-3 rounded-full p-1.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-text-primary"
+                >
                   <X size={20} />
                 </button>
               </div>
 
-              <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-text-primary mb-1">
-                      Prénom <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/50" />
-                      <input
-                        type="text"
-                        value={form.firstName}
-                        onChange={(e) => setForm(f => ({ ...f, firstName: e.target.value }))}
-                        placeholder="Jean"
-                        className="w-full pl-9 pr-4 py-2.5 bg-noya-black border border-white/10 rounded-xl text-text-primary focus:ring-2 focus:ring-noya-blue outline-none text-sm shadow-inner"
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-text-secondary mb-1">
-                      Nom <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/50" />
-                      <input
-                        type="text"
-                        value={form.lastName}
-                        onChange={(e) => setForm(f => ({ ...f, lastName: e.target.value }))}
-                        placeholder="Dupont"
-                        className="w-full pl-9 pr-4 py-2.5 border border-border bg-noya-black text-text-primary rounded-xl focus:ring-2 focus:ring-noya-blue outline-none text-sm"
-                        required
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">
-                    Nom de l'entreprise / PME <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <Building2 size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/50" />
-                    <input
-                      type="text"
-                      value={form.companyName}
-                      onChange={(e) => setForm(f => ({ ...f, companyName: e.target.value }))}
-                      placeholder="Ex: TechCorp SARL"
-                      className="w-full pl-9 pr-4 py-2.5 border border-border bg-noya-black text-text-primary rounded-xl focus:ring-2 focus:ring-noya-blue outline-none text-sm"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">
-                    Secteur d'activité <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <Briefcase size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/50" />
-                    <select
-                      value={form.sector}
-                      onChange={(e) => setForm(f => ({ ...f, sector: e.target.value }))}
-                      className="w-full pl-9 pr-4 py-2.5 border border-border bg-noya-black text-text-primary rounded-xl focus:ring-2 focus:ring-noya-blue outline-none text-sm appearance-none cursor-pointer"
-                      required
+              <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="relative space-y-2.5 p-3">
+                <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
+                  {FORM_STEPS.map((step) => (
+                    <button
+                      key={step.id}
+                      type="button"
+                      disabled={step.id > currentStep}
+                      onClick={() => setCurrentStep(step.id as 1 | 2 | 3)}
+                      className={`rounded-lg px-2 py-1 text-[10px] font-bold transition-colors ${
+                        currentStep === step.id ? 'bg-noya-blue text-noya-black' : 'text-text-secondary'
+                      } ${step.id > currentStep ? 'opacity-50' : 'hover:bg-white/10'}`}
                     >
-                      <option value="" disabled className="bg-noya-sidebar">Sélectionnez un secteur</option>
-                      <option value="BTP" className="bg-noya-sidebar">BTP</option>
-                      <option value="Commerce" className="bg-noya-sidebar">Commerce</option>
-                      <option value="Services" className="bg-noya-sidebar">Services</option>
-                      <option value="Consulting" className="bg-noya-sidebar">Consulting</option>
-                      <option value="ONG" className="bg-noya-sidebar">ONG</option>
-                      <option value="Autre" className="bg-noya-sidebar">Autre</option>
-                    </select>
-                  </div>
+                      {step.label}
+                    </button>
+                  ))}
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-text-secondary mb-1">
-                    Numéro WhatsApp <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative">
-                    <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/50" />
-                    <input
-                      type="tel"
-                      value={form.whatsapp}
-                      onChange={(e) => setForm(f => ({ ...f, whatsapp: e.target.value }))}
-                      placeholder="+225 07 00 00 00 00"
-                      className="w-full pl-9 pr-4 py-2.5 border border-white/10 bg-noya-black text-text-primary rounded-xl focus:ring-2 focus:ring-noya-blue outline-none text-sm shadow-inner"
-                      required
-                    />
-                  </div>
+                {currentStep === 1 ? (
+                  <section className="space-y-2 rounded-2xl border border-white/10 bg-white/4 p-2.5">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-noya-blue">Identite du contact</h3>
+                    <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-text-primary">Prénom <span className="text-red-500">*</span></label>
+                        <div className="relative">
+                          <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/50" />
+                          <input type="text" value={form.firstName} onChange={(e) => setForm((f) => ({ ...f, firstName: e.target.value }))} placeholder="Jean" className="w-full rounded-xl border border-white/10 bg-black/35 py-1.5 pl-9 pr-4 text-sm text-text-primary shadow-inner outline-none transition-colors focus:border-noya-blue/60 focus:ring-2 focus:ring-noya-blue/30" required />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-text-secondary">Nom <span className="text-red-500">*</span></label>
+                        <div className="relative">
+                          <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/50" />
+                          <input type="text" value={form.lastName} onChange={(e) => setForm((f) => ({ ...f, lastName: e.target.value }))} placeholder="Dupont" className="w-full rounded-xl border border-white/10 bg-black/35 py-1.5 pl-9 pr-4 text-sm text-text-primary shadow-inner outline-none transition-colors focus:border-noya-blue/60 focus:ring-2 focus:ring-noya-blue/30" required />
+                        </div>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 gap-2.5 md:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-text-secondary">Email (optionnel)</label>
+                        <input type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="contact@entreprise.com" className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-1.5 text-sm text-text-primary shadow-inner outline-none transition-colors focus:border-noya-blue/60 focus:ring-2 focus:ring-noya-blue/30" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-text-secondary">WhatsApp <span className="text-red-500">*</span></label>
+                        <div className="relative">
+                          <Phone size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/50" />
+                          <input type="tel" value={form.whatsapp} onChange={(e) => setForm((f) => ({ ...f, whatsapp: e.target.value }))} placeholder="+225 07 00 00 00 00" className="w-full rounded-xl border border-white/10 bg-black/35 py-1.5 pl-9 pr-4 text-sm text-text-primary shadow-inner outline-none transition-colors focus:border-noya-blue/60 focus:ring-2 focus:ring-noya-blue/30" required />
+                        </div>
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
+
+                {currentStep === 2 ? (
+                  <section className="space-y-2 rounded-2xl border border-white/10 bg-white/4 p-2.5">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-noya-blue">Entreprise</h3>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-text-secondary">Nom de l'entreprise / PME <span className="text-red-500">*</span></label>
+                      <div className="relative">
+                        <Building2 size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-secondary/50" />
+                        <input type="text" value={form.companyName} onChange={(e) => setForm((f) => ({ ...f, companyName: e.target.value }))} placeholder="Ex: TechCorp SARL" className="w-full rounded-xl border border-white/10 bg-black/35 py-1.5 pl-9 pr-4 text-sm text-text-primary shadow-inner outline-none transition-colors focus:border-noya-blue/60 focus:ring-2 focus:ring-noya-blue/30" required />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-text-secondary">Description de l'entreprise</label>
+                      <textarea
+                        rows={2}
+                        value={form.companyDescription}
+                        onChange={(e) => setForm((f) => ({ ...f, companyDescription: e.target.value }))}
+                        placeholder="Activite principale, positionnement, clients cibles..."
+                        className="w-full resize-none rounded-xl border border-white/10 bg-black/35 px-4 py-1.5 text-sm text-text-primary shadow-inner outline-none transition-colors focus:border-noya-blue/60 focus:ring-2 focus:ring-noya-blue/30"
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 gap-2.5 md:grid-cols-3">
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-text-secondary">Ville <span className="text-red-500">*</span></label>
+                        <input type="text" value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} placeholder="Abidjan" className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-1.5 text-sm text-text-primary shadow-inner outline-none transition-colors focus:border-noya-blue/60 focus:ring-2 focus:ring-noya-blue/30" required />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-text-secondary">Secteur <span className="text-red-500">*</span></label>
+                        <select title="Secteur d'activité" value={form.sector} onChange={(e) => setForm((f) => ({ ...f, sector: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-1.5 text-sm text-text-primary shadow-inner outline-none transition-colors focus:border-noya-blue/60 focus:ring-2 focus:ring-noya-blue/30" required>
+                          <option value="" disabled className="bg-noya-sidebar">Secteur</option>
+                          {SECTOR_OPTIONS.map((option) => (<option key={option} value={option} className="bg-noya-sidebar">{option}</option>))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-sm font-medium text-text-secondary">Taille <span className="text-red-500">*</span></label>
+                        <select title="Taille d'entreprise" value={form.employeesRange} onChange={(e) => setForm((f) => ({ ...f, employeesRange: e.target.value }))} className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-1.5 text-sm text-text-primary shadow-inner outline-none transition-colors focus:border-noya-blue/60 focus:ring-2 focus:ring-noya-blue/30" required>
+                          <option value="" disabled className="bg-noya-sidebar">Taille</option>
+                          {EMPLOYEE_RANGE_OPTIONS.map((option) => (<option key={option} value={option} className="bg-noya-sidebar">{option}</option>))}
+                        </select>
+                      </div>
+                    </div>
+                  </section>
+                ) : null}
+
+                {currentStep === 3 ? (
+                  <section className="space-y-2 rounded-2xl border border-white/10 bg-white/4 p-2.5">
+                    <h3 className="text-xs font-black uppercase tracking-[0.2em] text-noya-blue">Priorite et contexte</h3>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-text-secondary">Fonction (optionnel)</label>
+                      <input type="text" value={form.jobTitle} onChange={(e) => setForm((f) => ({ ...f, jobTitle: e.target.value }))} placeholder="DG, Responsable RH..." className="w-full rounded-xl border border-white/10 bg-black/35 px-4 py-1.5 text-sm text-text-primary shadow-inner outline-none transition-colors focus:border-noya-blue/60 focus:ring-2 focus:ring-noya-blue/30" />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-text-secondary">Niveau d'urgence</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {URGENCY_OPTIONS.map((option) => (
+                          <button key={option.value} type="button" onClick={() => setForm((f) => ({ ...f, urgency: option.value }))} className={`rounded-lg border px-2 py-1.5 text-xs font-semibold transition-colors ${
+                            form.urgency === option.value ? 'border-noya-blue bg-noya-blue/25 text-noya-blue shadow-[0_0_12px_rgba(110,167,234,0.25)]' : 'border-white/10 text-text-secondary hover:bg-white/5'
+                          }`}>
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-sm font-medium text-text-secondary">Contexte (optionnel)</label>
+                      <textarea rows={2} value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} placeholder="Ex: besoin de devis rapide, projet en cours de validation..." className="w-full resize-none rounded-xl border border-white/10 bg-black/35 px-4 py-1.5 text-sm text-text-primary shadow-inner outline-none transition-colors focus:border-noya-blue/60 focus:ring-2 focus:ring-noya-blue/30" />
+                    </div>
+                  </section>
+                ) : null}
+
+                <div className="flex items-center gap-2 rounded-xl border border-noya-green/25 bg-noya-green/10 px-3 py-1 text-xs text-noya-green">
+                  <ShieldCheck size={14} />
+                  Vos donnees sont reservees au traitement commercial interne.
                 </div>
 
-                <div className="flex gap-3 pt-4">
+                <div className="flex gap-2 pt-1">
                   <button
                     type="button"
-                    onClick={() => setIsModalOpen(false)}
-                    className="flex-1 px-4 py-3 border border-white/10 text-text-secondary rounded-xl font-medium text-sm hover:bg-white/5 transition-colors"
+                    onClick={attemptCloseForm}
+                    className="flex-1 rounded-xl border border-white/10 px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-white/5"
                   >
                     Annuler
                   </button>
-                  <button
-                    type="submit"
-                    disabled={submitting}
-                    className="flex-1 px-4 py-3 bg-noya-blue text-noya-black rounded-xl font-bold text-sm hover:scale-[1.02] transition-all disabled:opacity-50 flex items-center justify-center gap-2 shadow-[0_4px_15px_rgba(110,167,234,0.3)]"
-                  >
-                    {submitting ? (
-                      <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
-                    ) : (
-                      <><Send size={16} /> Soumettre au Commando</>
-                    )}
-                  </button>
+                  {currentStep > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => setCurrentStep((prev) => (prev === 3 ? 2 : 1))}
+                      className="flex-1 rounded-xl border border-white/10 px-4 py-2 text-sm font-medium text-text-primary transition-colors hover:bg-white/5"
+                    >
+                      Précédent
+                    </button>
+                  ) : null}
+                  {currentStep < 3 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!validateStep(currentStep)) return;
+                        setCurrentStep((prev) => (prev === 1 ? 2 : 3));
+                      }}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-linear-to-r from-noya-blue via-[#7cb7f1] to-[#9bd6ff] px-4 py-2 text-sm font-black text-noya-black shadow-[0_8px_24px_rgba(110,167,234,0.45)] transition-all hover:scale-[1.015]"
+                    >
+                      Continuer
+                    </button>
+                  ) : (
+                    <button
+                      type="submit"
+                      disabled={submitting}
+                      className="flex flex-1 items-center justify-center gap-2 rounded-xl bg-linear-to-r from-noya-blue via-[#7cb7f1] to-[#9bd6ff] px-4 py-2 text-sm font-black text-noya-black shadow-[0_8px_24px_rgba(110,167,234,0.45)] transition-all hover:scale-[1.015] disabled:opacity-50"
+                    >
+                      {submitting ? (
+                        <div className="w-4 h-4 border-2 border-black/30 border-t-black rounded-full animate-spin" />
+                      ) : (
+                        <><Send size={16} /> Soumettre au Commando</>
+                      )}
+                    </button>
+                  )}
                 </div>
               </form>
             </motion.div>
