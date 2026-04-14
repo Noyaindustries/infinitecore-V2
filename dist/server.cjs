@@ -133,8 +133,20 @@ function mimeFromStorageKey(keyOrPath) {
 // mongoApi.ts
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
+var import_nodemailer = __toESM(require("nodemailer"), 1);
 var import_crypto = require("crypto");
 var AUTH_HEADER_PREFIX = "Bearer ";
+var JWT_ISSUER = process.env.JWT_ISSUER || "infinitecore-api";
+var JWT_AUDIENCE = process.env.JWT_AUDIENCE || "infinitecore-web";
+var SAFE_COLLECTION_SEGMENT = /^[A-Za-z0-9_-]{1,120}$/;
+var SAFE_DOC_ID = /^[A-Za-z0-9._:-]{1,180}$/;
+var SAFE_FIELD_NAME = /^[A-Za-z0-9_.-]{1,120}$/;
+var MAX_FILTERS = 12;
+var MAX_ORDERS = 6;
+var AUTH_RATE_WINDOW_MS = 15 * 60 * 1e3;
+var AUTH_RATE_MAX_FAILURES = 8;
+var AUTH_RATE_BLOCK_MS = 20 * 60 * 1e3;
+var RESET_TOKEN_TTL_MS = 30 * 60 * 1e3;
 var USER_FIELDS = [
   "uid",
   "email",
@@ -147,6 +159,48 @@ var USER_FIELDS = [
   "photoURL",
   "createdAt"
 ];
+var authFailureBuckets = /* @__PURE__ */ new Map();
+var smtpTransport = null;
+function getResetAppBaseUrl() {
+  return (process.env.APP_BASE_URL || "http://localhost:5173").replace(/\/$/, "");
+}
+function getSmtpTransport() {
+  if (smtpTransport) return smtpTransport;
+  const host = process.env.SMTP_HOST?.trim();
+  const port = Number(process.env.SMTP_PORT || 587);
+  const user = process.env.SMTP_USER?.trim();
+  const pass = process.env.SMTP_PASS?.trim();
+  if (!host || !Number.isFinite(port) || !user || !pass) return null;
+  smtpTransport = import_nodemailer.default.createTransport({
+    host,
+    port,
+    secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true",
+    auth: { user, pass }
+  });
+  return smtpTransport;
+}
+async function sendResetPasswordEmail(input) {
+  const transporter = getSmtpTransport();
+  const resetLink = `${getResetAppBaseUrl()}/reset-password?email=${encodeURIComponent(input.to)}&token=${encodeURIComponent(input.token)}`;
+  if (!transporter) {
+    return { delivered: false, previewLink: resetLink };
+  }
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER || "no-reply@infinitecore.local",
+    to: input.to,
+    subject: "Reinitialisation de votre mot de passe",
+    text: `Bonjour,
+
+Utilisez ce lien pour reinitialiser votre mot de passe:
+${resetLink}
+
+Ce lien expire dans 30 minutes.
+Si vous n'etes pas a l'origine de cette demande, ignorez cet email.
+`,
+    html: `<p>Bonjour,</p><p>Utilisez ce lien pour reinitialiser votre mot de passe :</p><p><a href="${resetLink}">${resetLink}</a></p><p>Ce lien expire dans 30 minutes.</p><p>Si vous n'etes pas a l'origine de cette demande, ignorez cet email.</p>`
+  });
+  return { delivered: true };
+}
 function getJwtSecret() {
   const envSecret = process.env.JWT_SECRET?.trim();
   if (envSecret) return envSecret;
@@ -156,7 +210,12 @@ function getJwtSecret() {
   return "dev-secret-change-me";
 }
 function signAuthToken(payload) {
-  return import_jsonwebtoken.default.sign(payload, getJwtSecret(), { expiresIn: "7d" });
+  return import_jsonwebtoken.default.sign(payload, getJwtSecret(), {
+    expiresIn: "7d",
+    algorithm: "HS256",
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE
+  });
 }
 function readAuthToken(req) {
   const raw = req.headers.authorization;
@@ -167,12 +226,116 @@ function parseAuth(req) {
   const token = readAuthToken(req);
   if (!token) return null;
   try {
-    return import_jsonwebtoken.default.verify(token, getJwtSecret());
+    const decoded = import_jsonwebtoken.default.verify(token, getJwtSecret(), {
+      algorithms: ["HS256"],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE
+    });
+    if (!decoded || typeof decoded.uid !== "string" || typeof decoded.email !== "string" || typeof decoded.role !== "string") {
+      return null;
+    }
+    return decoded;
   } catch {
     return null;
   }
 }
 var VALID_ROLES = /* @__PURE__ */ new Set(["admin", "commando", "developer", "partner", "client"]);
+var VALID_OPERATORS = /* @__PURE__ */ new Set(["==", "!=", ">", ">=", "<", "<="]);
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
+}
+function isStrongPassword(password) {
+  if (password.length < 12 || password.length > 128) return false;
+  return /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
+}
+function sha256Hex(input) {
+  return (0, import_crypto.createHash)("sha256").update(input).digest("hex");
+}
+function normalizeIp(raw) {
+  return raw.trim().replace(/^::ffff:/, "") || "unknown";
+}
+function getClientIp(req) {
+  const xff = req.headers["x-forwarded-for"];
+  if (typeof xff === "string" && xff.trim()) {
+    return normalizeIp(xff.split(",")[0] || "");
+  }
+  if (Array.isArray(xff) && xff[0]) {
+    return normalizeIp(String(xff[0]));
+  }
+  return normalizeIp(req.socket.remoteAddress || "");
+}
+function authBucketKey(req, email) {
+  return `${getClientIp(req)}|${email || "unknown"}`;
+}
+function isAuthTemporarilyBlocked(key) {
+  const now = Date.now();
+  const bucket2 = authFailureBuckets.get(key);
+  if (!bucket2) return false;
+  if (bucket2.blockedUntil > now) return true;
+  if (bucket2.windowEndsAt < now) {
+    authFailureBuckets.delete(key);
+  }
+  return false;
+}
+function registerAuthFailure(key) {
+  const now = Date.now();
+  const bucket2 = authFailureBuckets.get(key);
+  if (!bucket2 || bucket2.windowEndsAt < now) {
+    authFailureBuckets.set(key, {
+      failures: 1,
+      windowEndsAt: now + AUTH_RATE_WINDOW_MS,
+      blockedUntil: 0
+    });
+    return;
+  }
+  bucket2.failures += 1;
+  if (bucket2.failures >= AUTH_RATE_MAX_FAILURES) {
+    bucket2.blockedUntil = now + AUTH_RATE_BLOCK_MS;
+  }
+}
+function clearAuthFailures(key) {
+  authFailureBuckets.delete(key);
+}
+function isPrimitiveQueryValue(value) {
+  return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+function isSafeCollectionPath(path4) {
+  const parts = path4.split("/");
+  return parts.length > 0 && parts.every((segment) => SAFE_COLLECTION_SEGMENT.test(segment));
+}
+function isSafeDocId(docId) {
+  return SAFE_DOC_ID.test(docId);
+}
+function sanitizeFilters(raw) {
+  if (!Array.isArray(raw)) return [];
+  if (raw.length > MAX_FILTERS) return null;
+  const filters = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") return null;
+    const field = String(item.field || "").trim();
+    const operator = item.operator;
+    const value = item.value;
+    if (!SAFE_FIELD_NAME.test(field) || !VALID_OPERATORS.has(operator) || !isPrimitiveQueryValue(value)) {
+      return null;
+    }
+    filters.push({ field, operator, value });
+  }
+  return filters;
+}
+function sanitizeOrders(raw) {
+  if (!Array.isArray(raw)) return [];
+  if (raw.length > MAX_ORDERS) return null;
+  const orders = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") return null;
+    const field = String(item.field || "").trim();
+    const directionRaw = String(item.direction || "asc").toLowerCase();
+    if (!SAFE_FIELD_NAME.test(field)) return null;
+    if (directionRaw !== "asc" && directionRaw !== "desc") return null;
+    orders.push({ field, direction: directionRaw });
+  }
+  return orders;
+}
 async function resolveAuthPayload(raw) {
   const account = await prisma.userAccount.findUnique({
     where: { uid: raw.uid },
@@ -448,23 +611,67 @@ function registerMongoApi(app) {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
+  app.patch("/api/auth/profile", async (req, res) => {
+    try {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      const rawDisplayName = req.body?.displayName;
+      const rawPhotoURL = req.body?.photoURL;
+      const displayName = typeof rawDisplayName === "string" ? rawDisplayName.trim().slice(0, 120) : void 0;
+      const photoURL = typeof rawPhotoURL === "string" ? rawPhotoURL.trim().slice(0, 500) : void 0;
+      const [firstName = "", ...last] = (displayName || "").split(/\s+/).filter(Boolean);
+      const lastName = last.join(" ");
+      const account = await prisma.userAccount.update({
+        where: { uid: auth.uid },
+        data: {
+          ...displayName !== void 0 ? { firstName, lastName } : {},
+          ...photoURL !== void 0 ? { photoURL: photoURL || null } : {}
+        }
+      });
+      await ensureUserDocumentFromAccount(account);
+      return res.status(200).json({
+        success: true,
+        user: {
+          uid: account.uid,
+          email: account.email,
+          displayName: [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email,
+          photoURL: account.photoURL || null
+        }
+      });
+    } catch (error) {
+      console.error("[auth/profile:update]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
   app.post("/api/auth/register", async (req, res) => {
     try {
       const email = String(req.body?.email || "").trim().toLowerCase();
+      const authKey = authBucketKey(req, email);
+      if (isAuthTemporarilyBlocked(authKey)) {
+        return res.status(429).json({ success: false, error: "Trop de tentatives. R\xE9essayez plus tard." });
+      }
       const password = String(req.body?.password || "");
       const firstName = String(req.body?.firstName || "").trim();
       const lastName = String(req.body?.lastName || "").trim();
       const companyId = req.body?.companyId ? String(req.body.companyId) : null;
       const referredBy = req.body?.referredBy ? String(req.body.referredBy) : null;
       const phone = req.body?.phone ? String(req.body.phone) : null;
-      if (!email || !password) {
+      if (!email || !password || !isValidEmail(email)) {
+        registerAuthFailure(authKey);
         return res.status(400).json({ success: false, error: "Email et mot de passe requis." });
       }
-      if (password.length < 8) {
-        return res.status(400).json({ success: false, error: "Mot de passe trop court (8 minimum)." });
+      if (!isStrongPassword(password)) {
+        registerAuthFailure(authKey);
+        return res.status(400).json({
+          success: false,
+          error: "Mot de passe insuffisant (12+ caract\xE8res, majuscule, minuscule, chiffre et symbole)."
+        });
       }
       const existing = await prisma.userAccount.findUnique({ where: { email } });
-      if (existing) return res.status(409).json({ success: false, error: "Cet email existe d\xE9j\xE0." });
+      if (existing) {
+        registerAuthFailure(authKey);
+        return res.status(409).json({ success: false, error: "Cet email existe d\xE9j\xE0." });
+      }
       const uid = `usr_${(0, import_crypto.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
       const passwordHash = await import_bcryptjs.default.hash(password, 10);
       const account = await prisma.userAccount.create({
@@ -484,6 +691,7 @@ function registerMongoApi(app) {
       });
       await ensureUserDocumentFromAccount(account);
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+      clearAuthFailures(authKey);
       return res.status(201).json({
         success: true,
         token,
@@ -501,18 +709,28 @@ function registerMongoApi(app) {
   app.post("/api/auth/login", async (req, res) => {
     try {
       const email = String(req.body?.email || "").trim().toLowerCase();
+      const authKey = authBucketKey(req, email);
+      if (isAuthTemporarilyBlocked(authKey)) {
+        return res.status(429).json({ success: false, error: "Trop de tentatives. R\xE9essayez plus tard." });
+      }
       const password = String(req.body?.password || "");
-      if (!email || !password) {
+      if (!email || !password || !isValidEmail(email)) {
+        registerAuthFailure(authKey);
         return res.status(400).json({ success: false, error: "Email et mot de passe requis." });
       }
       const account = await prisma.userAccount.findUnique({ where: { email } });
       if (!account || !account.passwordHash) {
+        registerAuthFailure(authKey);
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
       const valid = await import_bcryptjs.default.compare(password, account.passwordHash);
-      if (!valid) return res.status(401).json({ success: false, error: "Identifiants invalides." });
+      if (!valid) {
+        registerAuthFailure(authKey);
+        return res.status(401).json({ success: false, error: "Identifiants invalides." });
+      }
       await ensureUserDocumentFromAccount(account);
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+      clearAuthFailures(authKey);
       return res.status(200).json({
         success: true,
         token,
@@ -533,8 +751,15 @@ function registerMongoApi(app) {
   app.post("/api/auth/google", async (req, res) => {
     try {
       const email = String(req.body?.email || "").trim().toLowerCase();
+      const authKey = authBucketKey(req, email);
+      if (isAuthTemporarilyBlocked(authKey)) {
+        return res.status(429).json({ success: false, error: "Trop de tentatives. R\xE9essayez plus tard." });
+      }
       const displayName = String(req.body?.displayName || "").trim();
-      if (!email) return res.status(400).json({ success: false, error: "Email requis." });
+      if (!email || !isValidEmail(email)) {
+        registerAuthFailure(authKey);
+        return res.status(400).json({ success: false, error: "Email requis." });
+      }
       let account = await prisma.userAccount.findUnique({ where: { email } });
       if (!account) {
         const [firstName = "", ...last] = displayName.split(" ");
@@ -553,6 +778,7 @@ function registerMongoApi(app) {
       }
       await ensureUserDocumentFromAccount(account);
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+      clearAuthFailures(authKey);
       return res.status(200).json({
         success: true,
         token,
@@ -578,8 +804,14 @@ function registerMongoApi(app) {
       const password = String(req.body?.password || "");
       const requestedRole = String(req.body?.role || "client").trim().toLowerCase();
       const role = VALID_ROLES.has(requestedRole) ? requestedRole : "client";
-      if (!email) return res.status(400).json({ success: false, error: "Email requis." });
+      if (!email || !isValidEmail(email)) return res.status(400).json({ success: false, error: "Email requis." });
       const generatedPassword = password || (0, import_crypto.randomUUID)().replace(/-/g, "").slice(0, 16);
+      if (password && !isStrongPassword(password)) {
+        return res.status(400).json({
+          success: false,
+          error: "Mot de passe insuffisant (12+ caract\xE8res, majuscule, minuscule, chiffre et symbole)."
+        });
+      }
       const existing = await prisma.userAccount.findUnique({ where: { email } });
       if (existing) {
         return res.status(409).json({ success: false, error: "Cet email est d\xE9j\xE0 utilis\xE9." });
@@ -603,17 +835,118 @@ function registerMongoApi(app) {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
+  app.post("/api/auth/password-reset/request", async (req, res) => {
+    try {
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      if (!email || !isValidEmail(email)) {
+        return res.status(200).json({
+          success: true,
+          message: "Si ce compte existe, les instructions de r\xE9initialisation ont \xE9t\xE9 enregistr\xE9es."
+        });
+      }
+      const account = await prisma.userAccount.findUnique({
+        where: { email },
+        select: { uid: true, email: true, provider: true }
+      });
+      if (!account || account.provider === "google") {
+        return res.status(200).json({
+          success: true,
+          message: "Si ce compte existe, les instructions de r\xE9initialisation ont \xE9t\xE9 enregistr\xE9es."
+        });
+      }
+      const resetToken = (0, import_crypto.randomBytes)(32).toString("hex");
+      const resetDocId = account.uid;
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      const expiresAtIso = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
+      await upsertDataDocument(
+        "auth_password_resets",
+        resetDocId,
+        {
+          uid: account.uid,
+          email: account.email,
+          tokenHash: sha256Hex(resetToken),
+          requestedAt: nowIso,
+          expiresAt: expiresAtIso,
+          used: false
+        },
+        false
+      );
+      const mailResult = await sendResetPasswordEmail({ to: account.email, token: resetToken });
+      return res.status(200).json({
+        success: true,
+        message: "Si ce compte existe, les instructions de r\xE9initialisation ont \xE9t\xE9 enregistr\xE9es.",
+        ...process.env.NODE_ENV !== "production" ? { resetTokenPreview: resetToken } : {},
+        ...process.env.NODE_ENV !== "production" && !mailResult.delivered ? { resetLinkPreview: mailResult.previewLink } : {}
+      });
+    } catch (error) {
+      console.error("[auth/password-reset/request]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app.post("/api/auth/password-reset/confirm", async (req, res) => {
+    try {
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      const token = String(req.body?.token || "").trim();
+      const newPassword = String(req.body?.newPassword || "");
+      if (!email || !token || !newPassword || !isValidEmail(email) || !isStrongPassword(newPassword)) {
+        return res.status(400).json({ success: false, error: "Param\xE8tres de r\xE9initialisation invalides." });
+      }
+      const account = await prisma.userAccount.findUnique({
+        where: { email },
+        select: { uid: true, email: true, provider: true }
+      });
+      if (!account || account.provider === "google") {
+        return res.status(400).json({ success: false, error: "Token invalide ou expir\xE9." });
+      }
+      const resetRow = await prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath: "auth_password_resets", docId: account.uid } }
+      });
+      const resetData = coerceRecord(resetRow?.data);
+      const tokenHash = typeof resetData.tokenHash === "string" ? resetData.tokenHash : "";
+      const expiresAt = typeof resetData.expiresAt === "string" ? resetData.expiresAt : "";
+      const used = Boolean(resetData.used);
+      if (!tokenHash || !expiresAt || used) {
+        return res.status(400).json({ success: false, error: "Token invalide ou expir\xE9." });
+      }
+      const expiresAtMs = Date.parse(expiresAt);
+      if (!Number.isFinite(expiresAtMs) || expiresAtMs < Date.now()) {
+        return res.status(400).json({ success: false, error: "Token invalide ou expir\xE9." });
+      }
+      if (sha256Hex(token) !== tokenHash) {
+        return res.status(400).json({ success: false, error: "Token invalide ou expir\xE9." });
+      }
+      const passwordHash = await import_bcryptjs.default.hash(newPassword, 12);
+      await prisma.userAccount.update({
+        where: { uid: account.uid },
+        data: { passwordHash }
+      });
+      await upsertDataDocument(
+        "auth_password_resets",
+        account.uid,
+        {
+          ...resetData,
+          used: true,
+          usedAt: (/* @__PURE__ */ new Date()).toISOString()
+        },
+        false
+      );
+      return res.status(200).json({ success: true, message: "Mot de passe r\xE9initialis\xE9 avec succ\xE8s." });
+    } catch (error) {
+      console.error("[auth/password-reset/confirm]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
   app.post("/api/data/query", async (req, res) => {
     try {
       const auth = await requireAuth(req, res);
       if (!auth) return;
       const collectionPath = normalizeCollectionPath(String(req.body?.collectionPath || ""));
-      const filters = Array.isArray(req.body?.filters) ? req.body.filters : [];
-      const orders = Array.isArray(req.body?.orders) ? req.body.orders : [];
+      const filters = sanitizeFilters(req.body?.filters);
+      const orders = sanitizeOrders(req.body?.orders);
       const max = Number(req.body?.limit);
       const take = Number.isFinite(max) && max > 0 ? Math.min(max, 5e3) : void 0;
-      if (!collectionPath) {
-        return res.status(400).json({ success: false, error: "collectionPath requis." });
+      if (!collectionPath || !isSafeCollectionPath(collectionPath) || filters === null || orders === null) {
+        return res.status(400).json({ success: false, error: "Param\xE8tres de requ\xEAte invalides." });
       }
       const authz = assertDataQueryAuthorized(auth, collectionPath, filters);
       if (authz.ok === false) {
@@ -644,8 +977,8 @@ function registerMongoApi(app) {
       if (!auth) return;
       const collectionPath = normalizeCollectionPath(String(req.query.collectionPath || ""));
       const docId = String(req.query.docId || "").trim();
-      if (!collectionPath || !docId) {
-        return res.status(400).json({ success: false, error: "collectionPath et docId requis." });
+      if (!collectionPath || !docId || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId)) {
+        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
       }
       const authz = assertDataDocAuthorized(auth, "read", collectionPath, docId);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
@@ -670,7 +1003,9 @@ function registerMongoApi(app) {
       const merge = Boolean(req.body?.merge);
       const incoming = coerceRecord(req.body?.data);
       const docId = String(req.body?.docId || "").trim() || (0, import_crypto.randomUUID)().replace(/-/g, "");
-      if (!collectionPath) return res.status(400).json({ success: false, error: "collectionPath requis." });
+      if (!collectionPath || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId)) {
+        return res.status(400).json({ success: false, error: "collectionPath ou docId invalides." });
+      }
       const authz = assertDataDocAuthorized(auth, "write", collectionPath, docId, incoming);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
       await upsertDataDocument(collectionPath, docId, incoming, merge);
@@ -688,8 +1023,8 @@ function registerMongoApi(app) {
       const docId = String(req.body?.docId || "").trim();
       const updates = coerceRecord(req.body?.data);
       const deleteKeys = Array.isArray(req.body?.deleteKeys) ? req.body.deleteKeys : [];
-      if (!collectionPath || !docId) {
-        return res.status(400).json({ success: false, error: "collectionPath et docId requis." });
+      if (!collectionPath || !docId || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId) || !deleteKeys.every((key) => SAFE_FIELD_NAME.test(String(key)))) {
+        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
       }
       const authz = assertDataDocAuthorized(auth, "write", collectionPath, docId, updates);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
@@ -717,8 +1052,8 @@ function registerMongoApi(app) {
       if (!auth) return;
       const collectionPath = normalizeCollectionPath(String(req.query.collectionPath || ""));
       const docId = String(req.query.docId || "").trim();
-      if (!collectionPath || !docId) {
-        return res.status(400).json({ success: false, error: "collectionPath et docId requis." });
+      if (!collectionPath || !docId || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId)) {
+        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
       }
       const authz = assertDataDocAuthorized(auth, "write", collectionPath, docId);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
@@ -734,6 +1069,44 @@ function registerMongoApi(app) {
 }
 
 // server.ts
+var ALLOWED_UPLOAD_MIME_TYPES = /* @__PURE__ */ new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "text/plain",
+  "text/csv",
+  "application/octet-stream"
+]);
+var ALLOWED_UPLOAD_EXTENSIONS = /* @__PURE__ */ new Set([
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".txt",
+  ".csv"
+]);
+function isAllowedUpload(file) {
+  const ext = import_path3.default.extname(file.originalname || "").toLowerCase();
+  if (!ALLOWED_UPLOAD_EXTENSIONS.has(ext)) return false;
+  if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimetype || "")) return false;
+  return true;
+}
+function secureSecretEquals(expected, provided) {
+  const expectedBuf = Buffer.from(expected);
+  const providedBuf = Buffer.from(provided);
+  if (expectedBuf.length !== providedBuf.length) return false;
+  return (0, import_crypto2.timingSafeEqual)(expectedBuf, providedBuf);
+}
 async function startServer() {
   const app = (0, import_express.default)();
   const PORT = 3e3;
@@ -768,7 +1141,7 @@ async function startServer() {
     res.setHeader("X-Frame-Options", "DENY");
     next();
   });
-  app.use(import_express.default.json());
+  app.use(import_express.default.json({ limit: "1mb", strict: true }));
   registerMongoApi(app);
   const s3 = canUseR2 ? new import_client_s32.S3Client({
     region: "auto",
@@ -787,6 +1160,12 @@ async function startServer() {
     try {
       if (!req.file) {
         return res.status(400).json({ success: false, error: "Aucun fichier re\xE7u." });
+      }
+      if (!isAllowedUpload(req.file)) {
+        return res.status(415).json({
+          success: false,
+          error: "Type de fichier non autoris\xE9. Formats accept\xE9s: PDF, Office, JPG/PNG/WEBP, TXT/CSV."
+        });
       }
       const folderRaw = typeof req.body?.folder === "string" ? req.body.folder : "misc";
       const folder = sanitizeFolder(folderRaw);
@@ -918,7 +1297,7 @@ async function startServer() {
     try {
       if (paddeWebhookSecret) {
         const provided = String(req.headers["x-webhook-secret"] || "");
-        if (!provided || provided !== paddeWebhookSecret) {
+        if (!provided || !secureSecretEquals(paddeWebhookSecret, provided)) {
           return res.status(401).json({ success: false, error: "Webhook non autoris\xE9." });
         }
       }

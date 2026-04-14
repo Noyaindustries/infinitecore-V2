@@ -35,5 +35,21 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "include": [
+    "src/**/*",
+    "server.ts",
+    "mongoApi.ts",
+    "prismaClient.ts",
+    "_r2.ts",
+    "storageUtils.ts",
+    "scripts/**/*",
+    "tests/**/*"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    ".local-uploads",
+    "infinitecore-V2"
+  ]
 }

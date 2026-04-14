@@ -168,10 +168,46 @@ export async function signOut(_auth: Auth) {
 }
 
 export async function sendPasswordResetEmail(_auth: Auth, _email: string) {
+  const email = String(_email || "").trim().toLowerCase();
+  if (!email) return Promise.resolve();
+  const data = await apiRequest<{ success: boolean; resetTokenPreview?: string }>("/api/auth/password-reset/request", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+  if (data.resetTokenPreview && typeof window !== "undefined") {
+    // En dev, on expose un aperçu du token pour tester le flux sans provider mail.
+    console.info("[password-reset][dev] token:", data.resetTokenPreview);
+  }
   return Promise.resolve();
 }
 
+export async function confirmPasswordReset(
+  _auth: Auth,
+  email: string,
+  token: string,
+  newPassword: string
+) {
+  await apiRequest<{ success: boolean; message?: string }>("/api/auth/password-reset/confirm", {
+    method: "POST",
+    body: JSON.stringify({
+      email: String(email || "").trim().toLowerCase(),
+      token: String(token || "").trim(),
+      newPassword: String(newPassword || ""),
+    }),
+  });
+}
+
 export async function updateProfile(user: User, updates: { displayName?: string | null; photoURL?: string | null }) {
+  await apiRequest<{
+    success: boolean;
+    user: { uid: string; email: string; displayName?: string | null; photoURL?: string | null };
+  }>("/api/auth/profile", {
+    method: "PATCH",
+    body: JSON.stringify({
+      displayName: updates.displayName ?? user.displayName,
+      photoURL: updates.photoURL ?? user.photoURL,
+    }),
+  });
   authState.currentUser = {
     ...user,
     displayName: updates.displayName ?? user.displayName,

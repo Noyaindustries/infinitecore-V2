@@ -25,6 +25,7 @@ const PolitiqueConfidentialite = lazy(() => import('./pages/marketing/PolitiqueC
 const FAQ = lazy(() => import('./pages/marketing/FAQ'));
 const Login = lazy(() => import('./pages/auth/Login'));
 const Signup = lazy(() => import('./pages/auth/Signup'));
+const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'));
 const MarketingPage = lazy(() => import('./pages/marketing/MarketingPage'));
 const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'));
 const KanbanPipeline = lazy(() => import('./pages/admin/KanbanPipeline'));
@@ -102,6 +103,7 @@ function App() {
 
             <Route path="/login" element={<Login />} />
             <Route path="/signup" element={<Signup />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
           </Route>
           
           {/* Module Routes */}

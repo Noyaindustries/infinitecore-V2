@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Lock, Mail, ArrowRight } from 'lucide-react';
-import { GoogleAuthProvider, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
+import { GoogleAuthProvider, sendPasswordResetEmail, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore';
 import { auth, db } from '../../firebase';
 import { useAuth } from '../../components/FirebaseProvider';
@@ -37,6 +37,7 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [referrerName, setReferrerName] = useState<string | null>(null);
   const [referrerId, setReferrerId] = useState<string | null>(null);
+  const [resettingPassword, setResettingPassword] = useState(false);
 
   const getPartnerLabel = (data: { firstName?: string; lastName?: string; email?: string }, fallbackId: string) => {
     const fullName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
@@ -197,6 +198,25 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
     }
   };
 
+  const handlePasswordReset = async () => {
+    const targetEmail = (email || window.prompt('Entrez votre e-mail de réinitialisation') || '').trim();
+    if (!targetEmail) {
+      toast.error('Veuillez renseigner une adresse e-mail.');
+      return;
+    }
+    setResettingPassword(true);
+    try {
+      await sendPasswordResetEmail(auth, targetEmail);
+      toast.success(
+        'Si ce compte existe, les instructions de réinitialisation ont été enregistrées. (En dev: voir la console navigateur)'
+      );
+    } catch {
+      toast.error('Impossible de préparer la réinitialisation pour le moment.');
+    } finally {
+      setResettingPassword(false);
+    }
+  };
+
   return (
     <div className="flex min-h-[calc(100dvh-66px)] flex-col justify-center py-8 px-4 sm:min-h-[calc(100dvh-70px)] sm:px-6 md:min-h-[calc(100dvh-78px)] lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
@@ -301,6 +321,22 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
                 placeholder="••••••••"
               />
             </div>
+            <div className="mt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => void handlePasswordReset()}
+                disabled={loading || resettingPassword}
+                className="text-xs font-medium text-[#F27D26] hover:text-[#e06b15] disabled:opacity-60"
+              >
+                {resettingPassword ? 'Préparation…' : 'Mot de passe oublié ?'}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-500">
+              Vous avez déjà un token ?{" "}
+              <Link to="/reset-password" className="font-medium text-[#F27D26] hover:text-[#e06b15]">
+                Réinitialiser maintenant
+              </Link>
+            </p>
           </div>
           <button
             type="submit"

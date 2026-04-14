@@ -4,13 +4,55 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { createReadStream, promises as fs } from "fs";
 import multer from "multer";
-import { randomUUID } from "crypto";
+import { randomUUID, timingSafeEqual } from "crypto";
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { prisma } from "./prismaClient";
 import { sanitizeFolder } from "./_r2";
 import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } from "./storageUtils";
 import { registerMongoApi } from "./mongoApi";
+
+const ALLOWED_UPLOAD_MIME_TYPES = new Set([
+  "application/pdf",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "text/plain",
+  "text/csv",
+  "application/octet-stream",
+]);
+
+const ALLOWED_UPLOAD_EXTENSIONS = new Set([
+  ".pdf",
+  ".doc",
+  ".docx",
+  ".xls",
+  ".xlsx",
+  ".jpg",
+  ".jpeg",
+  ".png",
+  ".webp",
+  ".txt",
+  ".csv",
+]);
+
+function isAllowedUpload(file: Express.Multer.File) {
+  const ext = path.extname(file.originalname || "").toLowerCase();
+  if (!ALLOWED_UPLOAD_EXTENSIONS.has(ext)) return false;
+  if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimetype || "")) return false;
+  return true;
+}
+
+function secureSecretEquals(expected: string, provided: string) {
+  const expectedBuf = Buffer.from(expected);
+  const providedBuf = Buffer.from(provided);
+  if (expectedBuf.length !== providedBuf.length) return false;
+  return timingSafeEqual(expectedBuf, providedBuf);
+}
 
 async function startServer() {
   const app = express();
@@ -52,7 +94,7 @@ async function startServer() {
     res.setHeader("X-Frame-Options", "DENY");
     next();
   });
-  app.use(express.json());
+  app.use(express.json({ limit: "1mb", strict: true }));
   registerMongoApi(app);
 
   const s3 = canUseR2
@@ -75,6 +117,12 @@ async function startServer() {
     try {
       if (!req.file) {
         return res.status(400).json({ success: false, error: "Aucun fichier reçu." });
+      }
+      if (!isAllowedUpload(req.file)) {
+        return res.status(415).json({
+          success: false,
+          error: "Type de fichier non autorisé. Formats acceptés: PDF, Office, JPG/PNG/WEBP, TXT/CSV.",
+        });
       }
 
       const folderRaw = typeof req.body?.folder === "string" ? req.body.folder : "misc";
@@ -227,7 +275,7 @@ async function startServer() {
     try {
       if (paddeWebhookSecret) {
         const provided = String(req.headers["x-webhook-secret"] || "");
-        if (!provided || provided !== paddeWebhookSecret) {
+        if (!provided || !secureSecretEquals(paddeWebhookSecret, provided)) {
           return res.status(401).json({ success: false, error: "Webhook non autorisé." });
         }
       }

@@ -613,13 +613,13 @@ export default function Finance() {
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-surface-tertiary/50 text-text-muted text-[10px] font-black uppercase tracking-[0.1em] border-b border-border-subtle">
+              <tr className="bg-surface-tertiary/50 text-text-muted text-[10px] font-black uppercase tracking-widest border-b border-border-subtle">
                 <th className="p-4 md:p-6 font-black hidden sm:table-cell">ID Flux</th>
                 <th className="p-4 md:p-6 font-black">Désignation</th>
                 <th className="p-4 md:p-6 font-black hidden lg:table-cell">Vecteur</th>
                 <th className="p-4 md:p-6 font-black hidden md:table-cell">Horodatage</th>
                 <th className="p-4 md:p-6 font-black text-right">Montant</th>
-                <th className="p-4 md:p-6 font-black min-w-[8.5rem]">Cycle facture</th>
+                <th className="p-4 md:p-6 font-black min-w-34">Cycle facture</th>
                 <th className="p-4 md:p-6 font-black w-px whitespace-nowrap">Actions</th>
                 <th className="p-4 md:p-6 font-black w-px whitespace-nowrap">Émission</th>
                 <th className="p-4 md:p-6 font-black">Statut</th>
@@ -664,7 +664,7 @@ export default function Finance() {
                       {factureStep === null ? (
                         <span className="text-[10px] font-medium text-text-muted">—</span>
                       ) : (
-                        <div className="flex flex-col gap-2 max-w-[12.5rem]">
+                        <div className="flex flex-col gap-2 max-w-50">
                           <label className="sr-only" htmlFor={`facture-cycle-${p.id}`}>
                             Cycle facture pour {p.description || p.id}
                           </label>
@@ -718,7 +718,7 @@ export default function Finance() {
                       </button>
                     </td>
                     <td className="p-4 md:p-6 align-top">
-                      <div className="flex flex-col items-stretch gap-1.5 max-w-[9.5rem]">
+                      <div className="flex flex-col items-stretch gap-1.5 max-w-38">
                         <button
                           type="button"
                           disabled={generatingPaymentId === p.id}

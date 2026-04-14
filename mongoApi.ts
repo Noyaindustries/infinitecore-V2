@@ -1,7 +1,8 @@
 import type { Express, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import { randomUUID } from "crypto";
+import nodemailer, { type Transporter } from "nodemailer";
+import { createHash, randomBytes, randomUUID } from "crypto";
 import { prisma } from "./prismaClient";
 
 export type AuthPayload = {
@@ -24,6 +25,17 @@ type QueryOrder = {
 type DataOperation = "read" | "write";
 
 const AUTH_HEADER_PREFIX = "Bearer ";
+const JWT_ISSUER = process.env.JWT_ISSUER || "infinitecore-api";
+const JWT_AUDIENCE = process.env.JWT_AUDIENCE || "infinitecore-web";
+const SAFE_COLLECTION_SEGMENT = /^[A-Za-z0-9_-]{1,120}$/;
+const SAFE_DOC_ID = /^[A-Za-z0-9._:-]{1,180}$/;
+const SAFE_FIELD_NAME = /^[A-Za-z0-9_.-]{1,120}$/;
+const MAX_FILTERS = 12;
+const MAX_ORDERS = 6;
+const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000;
+const AUTH_RATE_MAX_FAILURES = 8;
+const AUTH_RATE_BLOCK_MS = 20 * 60 * 1000;
+const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 const USER_FIELDS = [
   "uid",
   "email",
@@ -36,6 +48,44 @@ const USER_FIELDS = [
   "photoURL",
   "createdAt",
 ] as const;
+const authFailureBuckets = new Map<string, { failures: number; windowEndsAt: number; blockedUntil: number }>();
+let smtpTransport: Transporter | null = null;
+
+function getResetAppBaseUrl() {
+  return (process.env.APP_BASE_URL || "http://localhost:5173").replace(/\/$/, "");
+}
+
+function getSmtpTransport(): Transporter | null {
+  if (smtpTransport) return smtpTransport;
+  const host = process.env.SMTP_HOST?.trim();
+  const port = Number(process.env.SMTP_PORT || 587);
+  const user = process.env.SMTP_USER?.trim();
+  const pass = process.env.SMTP_PASS?.trim();
+  if (!host || !Number.isFinite(port) || !user || !pass) return null;
+  smtpTransport = nodemailer.createTransport({
+    host,
+    port,
+    secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true",
+    auth: { user, pass },
+  });
+  return smtpTransport;
+}
+
+async function sendResetPasswordEmail(input: { to: string; token: string }) {
+  const transporter = getSmtpTransport();
+  const resetLink = `${getResetAppBaseUrl()}/reset-password?email=${encodeURIComponent(input.to)}&token=${encodeURIComponent(input.token)}`;
+  if (!transporter) {
+    return { delivered: false as const, previewLink: resetLink };
+  }
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER || "no-reply@infinitecore.local",
+    to: input.to,
+    subject: "Reinitialisation de votre mot de passe",
+    text: `Bonjour,\n\nUtilisez ce lien pour reinitialiser votre mot de passe:\n${resetLink}\n\nCe lien expire dans 30 minutes.\nSi vous n'etes pas a l'origine de cette demande, ignorez cet email.\n`,
+    html: `<p>Bonjour,</p><p>Utilisez ce lien pour reinitialiser votre mot de passe :</p><p><a href="${resetLink}">${resetLink}</a></p><p>Ce lien expire dans 30 minutes.</p><p>Si vous n'etes pas a l'origine de cette demande, ignorez cet email.</p>`,
+  });
+  return { delivered: true as const };
+}
 
 function getJwtSecret() {
   const envSecret = process.env.JWT_SECRET?.trim();
@@ -47,7 +97,12 @@ function getJwtSecret() {
 }
 
 function signAuthToken(payload: AuthPayload) {
-  return jwt.sign(payload, getJwtSecret(), { expiresIn: "7d" });
+  return jwt.sign(payload, getJwtSecret(), {
+    expiresIn: "7d",
+    algorithm: "HS256",
+    issuer: JWT_ISSUER,
+    audience: JWT_AUDIENCE,
+  });
 }
 
 function readAuthToken(req: Request): string | null {
@@ -60,13 +115,131 @@ function parseAuth(req: Request): AuthPayload | null {
   const token = readAuthToken(req);
   if (!token) return null;
   try {
-    return jwt.verify(token, getJwtSecret()) as AuthPayload;
+    const decoded = jwt.verify(token, getJwtSecret(), {
+      algorithms: ["HS256"],
+      issuer: JWT_ISSUER,
+      audience: JWT_AUDIENCE,
+    }) as AuthPayload;
+    if (!decoded || typeof decoded.uid !== "string" || typeof decoded.email !== "string" || typeof decoded.role !== "string") {
+      return null;
+    }
+    return decoded;
   } catch {
     return null;
   }
 }
 
 const VALID_ROLES = new Set(["admin", "commando", "developer", "partner", "client"]);
+const VALID_OPERATORS = new Set<QueryFilter["operator"]>(["==", "!=", ">", ">=", "<", "<="]);
+
+function isValidEmail(email: string) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
+}
+
+function isStrongPassword(password: string) {
+  if (password.length < 12 || password.length > 128) return false;
+  return /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
+}
+
+function sha256Hex(input: string) {
+  return createHash("sha256").update(input).digest("hex");
+}
+
+function normalizeIp(raw: string) {
+  return raw.trim().replace(/^::ffff:/, "") || "unknown";
+}
+
+function getClientIp(req: Request) {
+  const xff = req.headers["x-forwarded-for"];
+  if (typeof xff === "string" && xff.trim()) {
+    return normalizeIp(xff.split(",")[0] || "");
+  }
+  if (Array.isArray(xff) && xff[0]) {
+    return normalizeIp(String(xff[0]));
+  }
+  return normalizeIp(req.socket.remoteAddress || "");
+}
+
+function authBucketKey(req: Request, email: string) {
+  return `${getClientIp(req)}|${email || "unknown"}`;
+}
+
+function isAuthTemporarilyBlocked(key: string) {
+  const now = Date.now();
+  const bucket = authFailureBuckets.get(key);
+  if (!bucket) return false;
+  if (bucket.blockedUntil > now) return true;
+  if (bucket.windowEndsAt < now) {
+    authFailureBuckets.delete(key);
+  }
+  return false;
+}
+
+function registerAuthFailure(key: string) {
+  const now = Date.now();
+  const bucket = authFailureBuckets.get(key);
+  if (!bucket || bucket.windowEndsAt < now) {
+    authFailureBuckets.set(key, {
+      failures: 1,
+      windowEndsAt: now + AUTH_RATE_WINDOW_MS,
+      blockedUntil: 0,
+    });
+    return;
+  }
+  bucket.failures += 1;
+  if (bucket.failures >= AUTH_RATE_MAX_FAILURES) {
+    bucket.blockedUntil = now + AUTH_RATE_BLOCK_MS;
+  }
+}
+
+function clearAuthFailures(key: string) {
+  authFailureBuckets.delete(key);
+}
+
+function isPrimitiveQueryValue(value: unknown) {
+  return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+
+function isSafeCollectionPath(path: string) {
+  const parts = path.split("/");
+  return parts.length > 0 && parts.every((segment) => SAFE_COLLECTION_SEGMENT.test(segment));
+}
+
+function isSafeDocId(docId: string) {
+  return SAFE_DOC_ID.test(docId);
+}
+
+function sanitizeFilters(raw: unknown): QueryFilter[] | null {
+  if (!Array.isArray(raw)) return [];
+  if (raw.length > MAX_FILTERS) return null;
+  const filters: QueryFilter[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") return null;
+    const field = String((item as QueryFilter).field || "").trim();
+    const operator = (item as QueryFilter).operator;
+    const value = (item as QueryFilter).value;
+    if (!SAFE_FIELD_NAME.test(field) || !VALID_OPERATORS.has(operator) || !isPrimitiveQueryValue(value)) {
+      return null;
+    }
+    filters.push({ field, operator, value });
+  }
+  return filters;
+}
+
+function sanitizeOrders(raw: unknown): QueryOrder[] | null {
+  if (!Array.isArray(raw)) return [];
+  if (raw.length > MAX_ORDERS) return null;
+  const orders: QueryOrder[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") return null;
+    const field = String((item as QueryOrder).field || "").trim();
+    const directionRaw = String((item as QueryOrder).direction || "asc").toLowerCase();
+    if (!SAFE_FIELD_NAME.test(field)) return null;
+    if (directionRaw !== "asc" && directionRaw !== "desc") return null;
+    orders.push({ field, direction: directionRaw });
+  }
+  return orders;
+}
 
 async function resolveAuthPayload(raw: AuthPayload): Promise<AuthPayload | null> {
   const account = await prisma.userAccount.findUnique({
@@ -420,9 +593,50 @@ export function registerMongoApi(app: Express) {
     }
   });
 
+  app.patch("/api/auth/profile", async (req: Request, res: Response) => {
+    try {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      const rawDisplayName = req.body?.displayName;
+      const rawPhotoURL = req.body?.photoURL;
+      const displayName = typeof rawDisplayName === "string" ? rawDisplayName.trim().slice(0, 120) : undefined;
+      const photoURL = typeof rawPhotoURL === "string" ? rawPhotoURL.trim().slice(0, 500) : undefined;
+
+      const [firstName = "", ...last] = (displayName || "").split(/\s+/).filter(Boolean);
+      const lastName = last.join(" ");
+
+      const account = await prisma.userAccount.update({
+        where: { uid: auth.uid },
+        data: {
+          ...(displayName !== undefined ? { firstName, lastName } : {}),
+          ...(photoURL !== undefined ? { photoURL: photoURL || null } : {}),
+        },
+      });
+
+      await ensureUserDocumentFromAccount(account);
+
+      return res.status(200).json({
+        success: true,
+        user: {
+          uid: account.uid,
+          email: account.email,
+          displayName: [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email,
+          photoURL: account.photoURL || null,
+        },
+      });
+    } catch (error) {
+      console.error("[auth/profile:update]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
   app.post("/api/auth/register", async (req: Request, res: Response) => {
     try {
       const email = String(req.body?.email || "").trim().toLowerCase();
+      const authKey = authBucketKey(req, email);
+      if (isAuthTemporarilyBlocked(authKey)) {
+        return res.status(429).json({ success: false, error: "Trop de tentatives. Réessayez plus tard." });
+      }
       const password = String(req.body?.password || "");
       const firstName = String(req.body?.firstName || "").trim();
       const lastName = String(req.body?.lastName || "").trim();
@@ -430,15 +644,23 @@ export function registerMongoApi(app: Express) {
       const referredBy = req.body?.referredBy ? String(req.body.referredBy) : null;
       const phone = req.body?.phone ? String(req.body.phone) : null;
 
-      if (!email || !password) {
+      if (!email || !password || !isValidEmail(email)) {
+        registerAuthFailure(authKey);
         return res.status(400).json({ success: false, error: "Email et mot de passe requis." });
       }
-      if (password.length < 8) {
-        return res.status(400).json({ success: false, error: "Mot de passe trop court (8 minimum)." });
+      if (!isStrongPassword(password)) {
+        registerAuthFailure(authKey);
+        return res.status(400).json({
+          success: false,
+          error: "Mot de passe insuffisant (12+ caractères, majuscule, minuscule, chiffre et symbole).",
+        });
       }
 
       const existing = await prisma.userAccount.findUnique({ where: { email } });
-      if (existing) return res.status(409).json({ success: false, error: "Cet email existe déjà." });
+      if (existing) {
+        registerAuthFailure(authKey);
+        return res.status(409).json({ success: false, error: "Cet email existe déjà." });
+      }
 
       const uid = `usr_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
       const passwordHash = await bcrypt.hash(password, 10);
@@ -460,6 +682,7 @@ export function registerMongoApi(app: Express) {
 
       await ensureUserDocumentFromAccount(account);
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+      clearAuthFailures(authKey);
 
       return res.status(201).json({
         success: true,
@@ -479,22 +702,32 @@ export function registerMongoApi(app: Express) {
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {
       const email = String(req.body?.email || "").trim().toLowerCase();
+      const authKey = authBucketKey(req, email);
+      if (isAuthTemporarilyBlocked(authKey)) {
+        return res.status(429).json({ success: false, error: "Trop de tentatives. Réessayez plus tard." });
+      }
       const password = String(req.body?.password || "");
 
-      if (!email || !password) {
+      if (!email || !password || !isValidEmail(email)) {
+        registerAuthFailure(authKey);
         return res.status(400).json({ success: false, error: "Email et mot de passe requis." });
       }
 
       const account = await prisma.userAccount.findUnique({ where: { email } });
       if (!account || !account.passwordHash) {
+        registerAuthFailure(authKey);
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
 
       const valid = await bcrypt.compare(password, account.passwordHash);
-      if (!valid) return res.status(401).json({ success: false, error: "Identifiants invalides." });
+      if (!valid) {
+        registerAuthFailure(authKey);
+        return res.status(401).json({ success: false, error: "Identifiants invalides." });
+      }
 
       await ensureUserDocumentFromAccount(account);
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+      clearAuthFailures(authKey);
 
       return res.status(200).json({
         success: true,
@@ -518,8 +751,15 @@ export function registerMongoApi(app: Express) {
   app.post("/api/auth/google", async (req: Request, res: Response) => {
     try {
       const email = String(req.body?.email || "").trim().toLowerCase();
+      const authKey = authBucketKey(req, email);
+      if (isAuthTemporarilyBlocked(authKey)) {
+        return res.status(429).json({ success: false, error: "Trop de tentatives. Réessayez plus tard." });
+      }
       const displayName = String(req.body?.displayName || "").trim();
-      if (!email) return res.status(400).json({ success: false, error: "Email requis." });
+      if (!email || !isValidEmail(email)) {
+        registerAuthFailure(authKey);
+        return res.status(400).json({ success: false, error: "Email requis." });
+      }
 
       let account = await prisma.userAccount.findUnique({ where: { email } });
       if (!account) {
@@ -540,6 +780,7 @@ export function registerMongoApi(app: Express) {
 
       await ensureUserDocumentFromAccount(account);
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+      clearAuthFailures(authKey);
 
       return res.status(200).json({
         success: true,
@@ -568,8 +809,14 @@ export function registerMongoApi(app: Express) {
       const password = String(req.body?.password || "");
       const requestedRole = String(req.body?.role || "client").trim().toLowerCase();
       const role = VALID_ROLES.has(requestedRole) ? requestedRole : "client";
-      if (!email) return res.status(400).json({ success: false, error: "Email requis." });
+      if (!email || !isValidEmail(email)) return res.status(400).json({ success: false, error: "Email requis." });
       const generatedPassword = password || randomUUID().replace(/-/g, "").slice(0, 16);
+      if (password && !isStrongPassword(password)) {
+        return res.status(400).json({
+          success: false,
+          error: "Mot de passe insuffisant (12+ caractères, majuscule, minuscule, chiffre et symbole).",
+        });
+      }
 
       const existing = await prisma.userAccount.findUnique({ where: { email } });
       if (existing) {
@@ -597,18 +844,132 @@ export function registerMongoApi(app: Express) {
     }
   });
 
+  app.post("/api/auth/password-reset/request", async (req: Request, res: Response) => {
+    try {
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      if (!email || !isValidEmail(email)) {
+        return res.status(200).json({
+          success: true,
+          message: "Si ce compte existe, les instructions de réinitialisation ont été enregistrées.",
+        });
+      }
+
+      const account = await prisma.userAccount.findUnique({
+        where: { email },
+        select: { uid: true, email: true, provider: true },
+      });
+
+      // Réponse constante pour éviter l’énumération d’emails.
+      if (!account || account.provider === "google") {
+        return res.status(200).json({
+          success: true,
+          message: "Si ce compte existe, les instructions de réinitialisation ont été enregistrées.",
+        });
+      }
+
+      const resetToken = randomBytes(32).toString("hex");
+      const resetDocId = account.uid;
+      const nowIso = new Date().toISOString();
+      const expiresAtIso = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
+
+      await upsertDataDocument(
+        "auth_password_resets",
+        resetDocId,
+        {
+          uid: account.uid,
+          email: account.email,
+          tokenHash: sha256Hex(resetToken),
+          requestedAt: nowIso,
+          expiresAt: expiresAtIso,
+          used: false,
+        },
+        false
+      );
+
+      const mailResult = await sendResetPasswordEmail({ to: account.email, token: resetToken });
+
+      return res.status(200).json({
+        success: true,
+        message: "Si ce compte existe, les instructions de réinitialisation ont été enregistrées.",
+        ...(process.env.NODE_ENV !== "production" ? { resetTokenPreview: resetToken } : {}),
+        ...(process.env.NODE_ENV !== "production" && !mailResult.delivered ? { resetLinkPreview: mailResult.previewLink } : {}),
+      });
+    } catch (error) {
+      console.error("[auth/password-reset/request]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
+  app.post("/api/auth/password-reset/confirm", async (req: Request, res: Response) => {
+    try {
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      const token = String(req.body?.token || "").trim();
+      const newPassword = String(req.body?.newPassword || "");
+      if (!email || !token || !newPassword || !isValidEmail(email) || !isStrongPassword(newPassword)) {
+        return res.status(400).json({ success: false, error: "Paramètres de réinitialisation invalides." });
+      }
+
+      const account = await prisma.userAccount.findUnique({
+        where: { email },
+        select: { uid: true, email: true, provider: true },
+      });
+      if (!account || account.provider === "google") {
+        return res.status(400).json({ success: false, error: "Token invalide ou expiré." });
+      }
+
+      const resetRow = await prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath: "auth_password_resets", docId: account.uid } },
+      });
+      const resetData = coerceRecord(resetRow?.data);
+      const tokenHash = typeof resetData.tokenHash === "string" ? resetData.tokenHash : "";
+      const expiresAt = typeof resetData.expiresAt === "string" ? resetData.expiresAt : "";
+      const used = Boolean(resetData.used);
+      if (!tokenHash || !expiresAt || used) {
+        return res.status(400).json({ success: false, error: "Token invalide ou expiré." });
+      }
+      const expiresAtMs = Date.parse(expiresAt);
+      if (!Number.isFinite(expiresAtMs) || expiresAtMs < Date.now()) {
+        return res.status(400).json({ success: false, error: "Token invalide ou expiré." });
+      }
+      if (sha256Hex(token) !== tokenHash) {
+        return res.status(400).json({ success: false, error: "Token invalide ou expiré." });
+      }
+
+      const passwordHash = await bcrypt.hash(newPassword, 12);
+      await prisma.userAccount.update({
+        where: { uid: account.uid },
+        data: { passwordHash },
+      });
+      await upsertDataDocument(
+        "auth_password_resets",
+        account.uid,
+        {
+          ...resetData,
+          used: true,
+          usedAt: new Date().toISOString(),
+        },
+        false
+      );
+
+      return res.status(200).json({ success: true, message: "Mot de passe réinitialisé avec succès." });
+    } catch (error) {
+      console.error("[auth/password-reset/confirm]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
   app.post("/api/data/query", async (req: Request, res: Response) => {
     try {
       const auth = await requireAuth(req, res);
       if (!auth) return;
       const collectionPath = normalizeCollectionPath(String(req.body?.collectionPath || ""));
-      const filters = (Array.isArray(req.body?.filters) ? req.body.filters : []) as QueryFilter[];
-      const orders = (Array.isArray(req.body?.orders) ? req.body.orders : []) as QueryOrder[];
+      const filters = sanitizeFilters(req.body?.filters);
+      const orders = sanitizeOrders(req.body?.orders);
       const max = Number(req.body?.limit);
       const take = Number.isFinite(max) && max > 0 ? Math.min(max, 5000) : undefined;
 
-      if (!collectionPath) {
-        return res.status(400).json({ success: false, error: "collectionPath requis." });
+      if (!collectionPath || !isSafeCollectionPath(collectionPath) || filters === null || orders === null) {
+        return res.status(400).json({ success: false, error: "Paramètres de requête invalides." });
       }
       const authz = assertDataQueryAuthorized(auth, collectionPath, filters);
       if (authz.ok === false) {
@@ -642,8 +1003,8 @@ export function registerMongoApi(app: Express) {
       if (!auth) return;
       const collectionPath = normalizeCollectionPath(String(req.query.collectionPath || ""));
       const docId = String(req.query.docId || "").trim();
-      if (!collectionPath || !docId) {
-        return res.status(400).json({ success: false, error: "collectionPath et docId requis." });
+      if (!collectionPath || !docId || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId)) {
+        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
       }
       const authz = assertDataDocAuthorized(auth, "read", collectionPath, docId);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
@@ -670,7 +1031,9 @@ export function registerMongoApi(app: Express) {
       const merge = Boolean(req.body?.merge);
       const incoming = coerceRecord(req.body?.data);
       const docId = String(req.body?.docId || "").trim() || randomUUID().replace(/-/g, "");
-      if (!collectionPath) return res.status(400).json({ success: false, error: "collectionPath requis." });
+      if (!collectionPath || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId)) {
+        return res.status(400).json({ success: false, error: "collectionPath ou docId invalides." });
+      }
       const authz = assertDataDocAuthorized(auth, "write", collectionPath, docId, incoming);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
 
@@ -690,8 +1053,14 @@ export function registerMongoApi(app: Express) {
       const docId = String(req.body?.docId || "").trim();
       const updates = coerceRecord(req.body?.data);
       const deleteKeys = Array.isArray(req.body?.deleteKeys) ? (req.body.deleteKeys as string[]) : [];
-      if (!collectionPath || !docId) {
-        return res.status(400).json({ success: false, error: "collectionPath et docId requis." });
+      if (
+        !collectionPath ||
+        !docId ||
+        !isSafeCollectionPath(collectionPath) ||
+        !isSafeDocId(docId) ||
+        !deleteKeys.every((key) => SAFE_FIELD_NAME.test(String(key)))
+      ) {
+        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
       }
       const authz = assertDataDocAuthorized(auth, "write", collectionPath, docId, updates);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
@@ -724,8 +1093,8 @@ export function registerMongoApi(app: Express) {
       if (!auth) return;
       const collectionPath = normalizeCollectionPath(String(req.query.collectionPath || ""));
       const docId = String(req.query.docId || "").trim();
-      if (!collectionPath || !docId) {
-        return res.status(400).json({ success: false, error: "collectionPath et docId requis." });
+      if (!collectionPath || !docId || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId)) {
+        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
       }
       const authz = assertDataDocAuthorized(auth, "write", collectionPath, docId);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });

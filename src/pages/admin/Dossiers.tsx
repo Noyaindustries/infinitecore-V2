@@ -152,7 +152,13 @@ function UploadModal({ client, stepType, onClose, commandoName, commandoId }: Up
               Cible : {client.firstName ? `${client.firstName} ${client.lastName || ''}`.trim() : client.email}
             </p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer la fenêtre d'upload"
+            title="Fermer"
+            className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary"
+          >
             <X size={20} />
           </button>
         </div>
@@ -169,25 +175,34 @@ function UploadModal({ client, stepType, onClose, commandoName, commandoId }: Up
               ) : null}
             </label>
             <input
+              id={`dossier-file-${stepType}`}
               type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
               className="hidden"
               accept={fileInputAccept}
+              title={`Sélectionner un fichier pour l'étape ${meta.label}`}
             />
             {file ? (
               <div className="flex items-center gap-4 px-5 py-4 bg-noya-blue/5 border border-noya-blue/20 rounded-2xl shadow-inner">
-                <FileText size={20} className="text-noya-blue flex-shrink-0" />
+                <FileText size={20} className="text-noya-blue shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-[11px] font-black text-text-primary uppercase tracking-tight truncate">{file.name}</p>
                   <p className="text-[10px] font-bold text-noya-blue uppercase tracking-widest">{formatFileSize(file.size)}</p>
                 </div>
-                <button onClick={() => setFile(null)} className="p-2 text-text-muted hover:text-red-500 transition-colors">
+                <button
+                  type="button"
+                  onClick={() => setFile(null)}
+                  aria-label="Retirer le fichier sélectionné"
+                  title="Retirer le fichier"
+                  className="p-2 text-text-muted hover:text-red-500 transition-colors"
+                >
                   <X size={16} />
                 </button>
               </div>
             ) : (
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full border-2 border-dashed border-border-medium bg-surface-primary/30 rounded-2xl py-12 flex flex-col items-center gap-3 text-text-muted hover:border-noya-blue/50 hover:bg-noya-blue/5 transition-all group"
               >
@@ -234,6 +249,7 @@ function UploadModal({ client, stepType, onClose, commandoName, commandoId }: Up
               Annuler
             </button>
             <button
+              type="button"
               onClick={handleUpload}
               disabled={!file || uploading}
               className="flex-1 px-6 py-4 bg-noya-orange text-noya-black rounded-2xl font-black uppercase text-[10px] tracking-widest hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 shadow-lg shadow-noya-orange/20 flex items-center justify-center gap-3"
@@ -329,7 +345,13 @@ function GeneralUploadModal({ client, onClose, commandoName, commandoId }: { cli
               Cible : {client.firstName ? `${client.firstName} ${client.lastName || ''}`.trim() : client.email}
             </p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer la fenêtre d'archive"
+            title="Fermer"
+            className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary"
+          >
             <X size={20} />
           </button>
         </div>
@@ -340,8 +362,10 @@ function GeneralUploadModal({ client, onClose, commandoName, commandoId }: { cli
               Type de document <span className="text-noya-orange">*</span>
             </label>
             <select
+              id="general-doc-type"
               value={type}
               onChange={(e) => setType(e.target.value)}
+              title="Type de document"
               className="w-full px-4 py-3 bg-surface-primary border border-border-subtle rounded-xl text-sm text-text-primary focus:ring-2 focus:ring-noya-blue outline-none transition-all shadow-inner font-medium"
             >
               <option value="livrables">Livrable Infinite</option>
@@ -356,24 +380,33 @@ function GeneralUploadModal({ client, onClose, commandoName, commandoId }: { cli
               Vecteur Archive <span className="text-noya-orange">*</span>
             </label>
             <input
+              id="general-doc-file"
               type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
               className="hidden"
+              title="Sélectionner un document"
             />
             {file ? (
               <div className="flex items-center gap-3 px-4 py-3 bg-blue-50 border border-blue-200 rounded-xl">
-                <FileText size={18} className="text-blue-600 flex-shrink-0" />
+                <FileText size={18} className="text-blue-600 shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-blue-900 truncate">{file.name}</p>
                   <p className="text-xs text-blue-600">{formatFileSize(file.size)}</p>
                 </div>
-                <button onClick={() => setFile(null)} className="p-1 text-blue-400 hover:text-red-500">
+                <button
+                  type="button"
+                  onClick={() => setFile(null)}
+                  aria-label="Retirer le document sélectionné"
+                  title="Retirer le document"
+                  className="p-1 text-blue-400 hover:text-red-500"
+                >
                   <X size={14} />
                 </button>
               </div>
             ) : (
               <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
                 className="w-full border-2 border-dashed border-gray-200 rounded-xl py-8 flex flex-col items-center gap-2 text-gray-400 hover:border-blue-300 hover:bg-blue-50 transition-colors"
               >
@@ -402,6 +435,7 @@ function GeneralUploadModal({ client, onClose, commandoName, commandoId }: { cli
               Annuler
             </button>
             <button
+              type="button"
               onClick={handleUpload}
               disabled={!file || uploading}
               className="flex-1 px-4 py-2.5 bg-[#1E3A5F] text-white rounded-xl font-semibold text-sm hover:bg-blue-900 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
@@ -549,7 +583,7 @@ export default function AdminDossiers() {
 
       <div className="flex flex-col lg:flex-row gap-6">
         {/* Client list */}
-        <div className="lg:w-80 flex-shrink-0 space-y-4">
+        <div className="lg:w-80 shrink-0 space-y-4">
           <div className="relative group">
             <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-text-dim group-focus-within:text-noya-blue transition-colors" />
             <input
@@ -594,7 +628,7 @@ export default function AdminDossiers() {
                       className={`w-full px-5 py-4 text-left hover:bg-surface-tertiary transition-all flex items-center justify-between gap-4 group ${isSelected ? 'bg-surface-tertiary border-l-4 border-noya-blue' : 'border-l-4 border-transparent'}`}
                     >
                       <div className="flex items-center gap-4 min-w-0">
-                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs uppercase flex-shrink-0 shadow-inner overflow-hidden transition-all ${isSelected ? 'bg-noya-blue text-white shadow-noya-blue/20' : 'bg-surface-tertiary text-text-muted border border-border-subtle group-hover:bg-surface-elevated'}`}>
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-black text-xs uppercase shrink-0 shadow-inner overflow-hidden transition-all ${isSelected ? 'bg-noya-blue text-white shadow-noya-blue/20' : 'bg-surface-tertiary text-text-muted border border-border-subtle group-hover:bg-surface-elevated'}`}>
                           {client.firstName?.[0] || client.email?.[0] || 'C'}
                         </div>
                         <div className="min-w-0">
@@ -604,7 +638,7 @@ export default function AdminDossiers() {
                           <p className="text-[10px] text-text-muted font-bold truncate tracking-widest uppercase opacity-60">{client.email}</p>
                         </div>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
                         {hasPending && <span className="w-2 h-2 rounded-full bg-noya-orange animate-pulse shadow-[0_0_5px_rgba(255,179,50,0.5)]" />}
                         {cValidated > 0 && (
                           <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg border shadow-inner ${cValidated === STEP_ORDER.length ? 'bg-noya-green/10 text-noya-green border-noya-green/20' : 'bg-surface-tertiary text-text-muted border-border-subtle'}`}>
@@ -682,6 +716,7 @@ export default function AdminDossiers() {
                           )}
                         </div>
                         <button
+                          type="button"
                           onClick={() => setUploadModal({ client: selectedClient, stepType })}
                           className="flex items-center gap-2 text-[9px] font-black uppercase tracking-widest px-3 py-2 bg-noya-blue text-white rounded-xl hover:scale-[1.02] active:scale-95 transition-all shadow-lg shadow-noya-blue/20"
                         >
@@ -701,7 +736,7 @@ export default function AdminDossiers() {
                             {allClientStepsForType.map((s) => (
                               <div key={s.id} className="flex items-center justify-between gap-4 p-3 rounded-xl bg-surface-primary border border-border-subtle group/item hover:bg-surface-tertiary transition-all shadow-inner">
                                 <div className="flex items-center gap-3 min-w-0">
-                                  <FileText size={16} className="text-text-muted opacity-50 flex-shrink-0" />
+                                  <FileText size={16} className="text-text-muted opacity-50 shrink-0" />
                                   <div className="min-w-0">
                                     <p className="text-[11px] font-black text-text-primary uppercase tracking-tight truncate group-hover/item:text-noya-blue transition-colors">{s.fileName}</p>
                                     <p className="text-[10px] text-text-muted font-bold uppercase tracking-widest mt-1">
@@ -713,7 +748,7 @@ export default function AdminDossiers() {
                                     {s.note && <p className="text-[10px] text-noya-blue italic mt-1.5 border-l-2 border-noya-blue/20 pl-2 leading-relaxed">{s.note}</p>}
                                   </div>
                                 </div>
-                                <div className="flex items-center gap-2 flex-shrink-0">
+                                <div className="flex items-center gap-2 shrink-0">
                                   <span className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-md border shadow-inner ${STATUS_COLORS[s.status].replace('bg-', 'bg-opacity-10 border-')}`}>
                                     {STATUS_LABELS[s.status]}
                                   </span>
@@ -745,6 +780,7 @@ export default function AdminDossiers() {
                     <p className="text-[10px] text-text-muted font-bold uppercase tracking-widest mt-1">Livrables techniques, facturation, documents institutionnels</p>
                   </div>
                   <button
+                    type="button"
                     onClick={() => setGeneralUploadModal(selectedClient)}
                     className="flex items-center gap-3 text-[10px] font-black uppercase tracking-widest px-6 py-3 bg-surface-tertiary border border-border-subtle text-text-primary rounded-2xl hover:bg-noya-blue/10 hover:border-noya-blue/30 transition-all shadow-sm"
                   >
@@ -780,11 +816,23 @@ export default function AdminDossiers() {
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center gap-3 flex-shrink-0">
-                            <a href={doc.url} target="_blank" rel="noopener noreferrer" className="p-3 text-text-muted hover:text-noya-blue hover:bg-noya-blue/10 rounded-xl transition-all shadow-sm border border-transparent hover:border-noya-blue/20">
+                          <div className="flex items-center gap-3 shrink-0">
+                            <a
+                              href={doc.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={`Télécharger ${doc.name}`}
+                              className="p-3 text-text-muted hover:text-noya-blue hover:bg-noya-blue/10 rounded-xl transition-all shadow-sm border border-transparent hover:border-noya-blue/20"
+                            >
                               <Download size={18} />
                             </a>
-                            <button onClick={() => handleDeleteGeneralDoc(doc)} className="p-3 text-text-dim hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all shadow-sm border border-transparent hover:border-red-500/20">
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteGeneralDoc(doc)}
+                              aria-label={`Supprimer ${doc.name}`}
+                              title="Supprimer le document"
+                              className="p-3 text-text-dim hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all shadow-sm border border-transparent hover:border-red-500/20"
+                            >
                               <Trash2 size={18} />
                             </button>
                           </div>
