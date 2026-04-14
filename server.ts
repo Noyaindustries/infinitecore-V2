@@ -7,8 +7,7 @@ import multer from "multer";
 import { randomUUID } from "crypto";
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { db } from "./src/firebase";
-import { collection, doc, setDoc } from "firebase/firestore";
+import { prisma } from "./prismaClient";
 import { sanitizeFolder } from "./_r2";
 import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } from "./storageUtils";
 
@@ -199,16 +198,25 @@ async function startServer() {
     }
   });
 
-  // Webhook for PADDE-CI
+  // Webhook PADDE-CI — persistance MongoDB via Prisma (collection `padde_ci_audits`)
   app.post("/api/webhooks/padde-ci", async (req, res) => {
     try {
-      const data = req.body;
+      if (!process.env.DATABASE_URL) {
+        return res.status(503).json({
+          success: false,
+          error: "Base de données non configurée : définissez DATABASE_URL (MongoDB) pour Prisma.",
+        });
+      }
 
+      const data = req.body;
       const auditId = `PADDE-${Math.floor(1000 + Math.random() * 9000)}`;
-      await setDoc(doc(db, 'padde_audits', auditId), {
-        ...data,
-        createdAt: new Date().toISOString(),
-        processed: false
+
+      await prisma.paddeCiAudit.create({
+        data: {
+          id: auditId,
+          payload: data ?? {},
+          processed: false,
+        },
       });
 
       res.status(200).json({ success: true, message: "Demande d'audit reçue et traitée avec succès." });
@@ -218,34 +226,32 @@ async function startServer() {
     }
   });
 
-  // GET Webhook for PADDE-CI (to view audits in admin.html)
+  // GET audits PADDE-CI (ex. admin.html) — lecture MongoDB
   app.get("/api/webhooks/padde-ci", async (req, res) => {
     try {
-      const { getDocs, query, collection, where } = await import("firebase/firestore");
-      const q = query(
-        collection(db, 'tasks'),
-        where('title', '>=', 'Audit PADDE-CI'),
-        where('title', '<=', 'Audit PADDE-CI\uf8ff')
-      );
+      if (!process.env.DATABASE_URL) {
+        return res.status(503).json({ success: false, error: "Base de données non configurée (DATABASE_URL)." });
+      }
 
-      const snapshot = await getDocs(q);
-      const audits = snapshot.docs.map(doc => {
-        const data = doc.data();
-        // Extract original data from description if possible, or just return basic info
-        let originalData: any = {};
-        try {
-          const description = data.description || '';
-          const detailsMatch = description.match(/Détails complets:\n([\s\S]*)$/);
-          if (detailsMatch && detailsMatch[1]) {
-            originalData = JSON.parse(detailsMatch[1]);
-          }
-        } catch (e) { }
+      const rows = await prisma.paddeCiAudit.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 500,
+      });
+
+      const audits = rows.map((row) => {
+        const payload = row.payload as Record<string, unknown> | null | undefined;
+        const typeFromPayload =
+          typeof payload?.type === "string"
+            ? payload.type
+            : typeof payload?.type_audit === "string"
+              ? (payload.type_audit as string)
+              : "audit-inconnu";
 
         return {
-          id: doc.id,
-          type_audit: originalData?.type || 'audit-inconnu',
-          date: data.createdAt,
-          donnees_completes: originalData || {}
+          id: row.id,
+          type_audit: typeFromPayload,
+          date: row.createdAt.toISOString(),
+          donnees_completes: payload ?? {},
         };
       });
 

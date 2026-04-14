@@ -11,15 +11,43 @@ import {
 import { db } from '../firebase';
 import { handleFirestoreError, OperationType } from '../utils/firestoreErrorHandler';
 
+/** Cycle de vie facture (prestations / lignes gérées depuis Finance) */
+export type FactureEtape = 'generation' | 'paiement_en_cours' | 'paye';
+
+export function resolveFactureEtape(p: Payment): FactureEtape | null {
+  if (p.status === 'failed') return null;
+  const ex = p.factureEtape;
+  if (ex === 'generation' || ex === 'paiement_en_cours' || ex === 'paye') return ex;
+  if (p.invoiceNumber) {
+    return p.status === 'succeeded' ? 'paye' : 'paiement_en_cours';
+  }
+  if (p.status === 'succeeded') return 'paye';
+  return 'generation';
+}
+
 export interface Payment {
   id: string;
-  userId: string;
+  /** Portail client (paiements Stripe) */
+  userId?: string;
+  /** Lignes créées depuis l’admin Finance */
+  clientId?: string;
+  clientEmail?: string;
   amount: number;
   currency: string;
   status: 'pending' | 'succeeded' | 'failed';
   stripeId?: string;
   description?: string;
   createdAt: string;
+  /** Numéro officiel attribué lors de la génération depuis Finance (équipe) */
+  invoiceNumber?: string;
+  invoiceIssuedAt?: string;
+  /** Commande portail liée (prestations créées depuis Finance) */
+  linkedOrderId?: string;
+  updatedAt?: string;
+  /** Cycle facture : génération → en cours de paiement (facture émise) → payé */
+  factureEtape?: FactureEtape;
+  /** Quand la facture est passée à « payé » (encaissement confirmé) */
+  invoicePaidAt?: string;
 }
 
 const PAYMENTS_COLLECTION = 'payments';

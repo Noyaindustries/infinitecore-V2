@@ -51,7 +51,7 @@ const modules: Record<string, ModuleData> = {
         icon: ShieldCheck
       }
     ],
-    connections: ["Finance (factures auto)", "RH (contacts équipe)", "Projects (suivi mission)"],
+        connections: ["Finance (factures émises par l’équipe)", "RH (contacts équipe)", "Projects (suivi mission)"],
     accentColor: "#F97316", // text-orange-500
     icon: Users,
     customizationOptions: [

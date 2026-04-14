@@ -50,6 +50,200 @@
     radial-gradient(ellipse 50% 40% at 100% 0%, rgba(180, 140, 60, 0.06), transparent 45%);
 }
 
+/* ——— Infinite Commando — espace /admin, direction ultra-premium ——— */
+.commando-space {
+  background-color: var(--color-luxe-ink);
+  background-image:
+    radial-gradient(ellipse 125% 95% at 50% -38%, rgba(201, 169, 98, 0.16), transparent 58%),
+    radial-gradient(ellipse 52% 58% at 0% 28%, rgba(110, 167, 234, 0.1), transparent 52%),
+    radial-gradient(ellipse 48% 52% at 100% 88%, rgba(255, 179, 50, 0.07), transparent 48%),
+    linear-gradient(168deg, #0c121f 0%, #06080d 45%, #03050a 100%);
+  background-attachment: fixed;
+}
+
+.light .commando-space {
+  background-color: var(--color-surface-primary);
+  background-image:
+    radial-gradient(ellipse 105% 72% at 50% -22%, rgba(201, 169, 98, 0.1), transparent 54%),
+    radial-gradient(ellipse 52% 48% at 0% 45%, rgba(37, 99, 235, 0.07), transparent 50%),
+    linear-gradient(168deg, #ffffff 0%, #f1f5f9 100%);
+  background-attachment: fixed;
+}
+
+.commando-sidebar-panel {
+  background: linear-gradient(
+    174deg,
+    rgba(14, 20, 36, 0.98) 0%,
+    rgba(8, 12, 24, 0.97) 48%,
+    rgba(6, 8, 13, 0.99) 100%
+  );
+  box-shadow:
+    inset -1px 0 0 rgba(228, 212, 165, 0.07),
+    16px 0 56px -32px rgba(0, 0, 0, 0.78);
+}
+
+.light .commando-sidebar-panel {
+  background: linear-gradient(174deg, rgba(255, 255, 255, 0.99) 0%, rgba(248, 250, 252, 0.98) 100%);
+  box-shadow:
+    inset -1px 0 0 rgba(15, 23, 42, 0.06),
+    12px 0 40px -28px rgba(15, 23, 42, 0.1);
+}
+
+.commando-nav-active {
+  background: linear-gradient(92deg, rgba(201, 169, 98, 0.16) 0%, rgba(110, 167, 234, 0.08) 100%);
+  border: 1px solid rgba(201, 169, 98, 0.32);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 10px 28px -14px rgba(201, 169, 98, 0.18);
+}
+
+.light .commando-nav-active {
+  background: linear-gradient(92deg, rgba(201, 169, 98, 0.12) 0%, rgba(37, 99, 235, 0.06) 100%);
+  border-color: rgba(154, 123, 60, 0.28);
+}
+
+.commando-header-bar {
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  background: linear-gradient(180deg, rgba(10, 16, 32, 0.86) 0%, rgba(10, 16, 32, 0.72) 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+  box-shadow:
+    0 1px 0 rgba(201, 169, 98, 0.14),
+    0 12px 40px -28px rgba(0, 0, 0, 0.45);
+}
+
+.light .commando-header-bar {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(248, 250, 252, 0.9) 100%);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 1px 0 rgba(201, 169, 98, 0.2),
+    0 8px 32px -24px rgba(15, 23, 42, 0.08);
+}
+
+.commando-main-well {
+  background: radial-gradient(ellipse 80% 55% at 50% 0%, rgba(110, 167, 234, 0.04), transparent 62%);
+  /* Réserve l’emplacement de la barre à droite pour limiter les sauts de mise en page */
+  scrollbar-gutter: stable;
+}
+
+.light .commando-main-well {
+  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(37, 99, 235, 0.04), transparent 60%);
+}
+
+.commando-dashboard-hero-mesh {
+  background:
+    radial-gradient(ellipse 70% 55% at 20% 0%, rgba(201, 169, 98, 0.14), transparent 55%),
+    radial-gradient(ellipse 50% 45% at 100% 100%, rgba(110, 167, 234, 0.1), transparent 50%);
+}
+
+.light .commando-dashboard-hero-mesh {
+  background:
+    radial-gradient(ellipse 70% 55% at 20% 0%, rgba(201, 169, 98, 0.09), transparent 55%),
+    radial-gradient(ellipse 50% 45% at 100% 100%, rgba(37, 99, 235, 0.06), transparent 50%);
+}
+
+/* Tableau de bord Commando — cadre & cartes ultra-luxe */
+.commando-luxe-hero-shell {
+  position: relative;
+  border-radius: 1.25rem;
+  box-shadow:
+    0 0 0 1px rgba(228, 212, 165, 0.14),
+    0 48px 120px -52px rgba(0, 0, 0, 0.92),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.commando-luxe-hero-shell::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    118deg,
+    rgba(201, 169, 98, 0.22) 0%,
+    transparent 32%,
+    transparent 68%,
+    rgba(110, 167, 234, 0.18) 100%
+  );
+  opacity: 0.32;
+  animation: commandoHeroAura 16s ease-in-out infinite;
+}
+
+.light .commando-luxe-hero-shell::after {
+  opacity: 0.18;
+  background: linear-gradient(
+    118deg,
+    rgba(201, 169, 98, 0.14) 0%,
+    transparent 40%,
+    transparent 60%,
+    rgba(37, 99, 235, 0.1) 100%
+  );
+}
+
+@keyframes commandoHeroAura {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 0.48;
+  }
+}
+
+.commando-luxe-stat-slab {
+  position: relative;
+  overflow: hidden;
+  border-radius: 1rem;
+  border: 1px solid rgba(228, 212, 165, 0.12);
+  background: linear-gradient(165deg, rgba(10, 16, 32, 0.75) 0%, rgba(6, 8, 13, 0.55) 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 20px 48px -36px rgba(0, 0, 0, 0.75);
+}
+
+.light .commando-luxe-stat-slab {
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.92) 0%, rgba(248, 250, 252, 0.85) 100%);
+  border-color: rgba(15, 23, 42, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 16px 40px -28px rgba(15, 23, 42, 0.1);
+}
+
+.commando-luxe-stat-slab::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(201, 169, 98, 0.5) 45%, rgba(110, 167, 234, 0.35) 55%, transparent);
+  opacity: 0.85;
+}
+
+.commando-luxe-module-card {
+  position: relative;
+}
+
+.commando-luxe-module-card::before {
+  content: "";
+  position: absolute;
+  left: 1rem;
+  right: 1rem;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(228, 212, 165, 0.35) 50%, transparent);
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+
+.commando-luxe-module-card:hover::before {
+  opacity: 1;
+}
+
+.commando-luxe-ornament-diamond {
+  width: 5px;
+  height: 5px;
+  transform: rotate(45deg);
+  background: linear-gradient(135deg, var(--color-luxe-champagne-bright), var(--color-luxe-champagne));
+  box-shadow: 0 0 12px rgba(201, 169, 98, 0.45);
+}
+
 /* Fenêtre : pas de piste grise système à droite (scroll souris / tactile inchangé) */
 html {
   scroll-behavior: smooth;
@@ -118,26 +312,102 @@ p {
   line-height: 1.6;
 }
 
+/* Barre de défilement droite (et horizontale) — lisible, thème Infinite / luxe */
 .custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
+  width: 10px;
+  height: 8px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-track {
+.custom-scrollbar::-webkit-scrollbar-corner {
   background: transparent;
 }
 
+.custom-scrollbar::-webkit-scrollbar-track {
+  margin: 6px 0;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.04) 35%,
+    rgba(201, 169, 98, 0.08) 50%,
+    rgba(255, 255, 255, 0.04) 65%,
+    transparent 100%
+  );
+  border-radius: 999px;
+}
+
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background-image: linear-gradient(
+    180deg,
+    rgba(228, 212, 165, 0.55) 0%,
+    rgba(201, 169, 98, 0.38) 42%,
+    rgba(110, 167, 234, 0.32) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    0 0 14px rgba(201, 169, 98, 0.12);
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(110, 167, 234, 0.45);
+  background-image: linear-gradient(
+    180deg,
+    rgba(228, 212, 165, 0.85) 0%,
+    rgba(201, 169, 98, 0.55) 45%,
+    rgba(110, 167, 234, 0.5) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.28),
+    0 0 18px rgba(110, 167, 234, 0.2);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:active {
+  background-image: linear-gradient(
+    180deg,
+    rgba(201, 169, 98, 0.95) 0%,
+    rgba(110, 167, 234, 0.55) 100%
+  );
 }
 
 .custom-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.14) transparent;
+  scrollbar-color: rgba(201, 169, 98, 0.55) rgba(255, 255, 255, 0.06);
+}
+
+.light .custom-scrollbar::-webkit-scrollbar-track {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(15, 23, 42, 0.04) 40%,
+    rgba(154, 123, 60, 0.1) 50%,
+    rgba(15, 23, 42, 0.04) 60%,
+    transparent 100%
+  );
+}
+
+.light .custom-scrollbar::-webkit-scrollbar-thumb {
+  background-image: linear-gradient(
+    180deg,
+    rgba(176, 141, 68, 0.65) 0%,
+    rgba(154, 123, 60, 0.45) 50%,
+    rgba(37, 99, 235, 0.35) 100%
+  );
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.35),
+    0 0 10px rgba(154, 123, 60, 0.15);
+}
+
+.light .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background-image: linear-gradient(
+    180deg,
+    rgba(176, 141, 68, 0.88) 0%,
+    rgba(37, 99, 235, 0.5) 100%
+  );
+}
+
+.light .custom-scrollbar {
+  scrollbar-color: rgba(154, 123, 60, 0.65) rgba(15, 23, 42, 0.08);
 }
 
 /* Glassmorphism effects */
@@ -176,11 +446,6 @@ table {
   input, select, textarea {
     font-size: 16px; /* Prevents iOS zoom on focus */
   }
-}
-
-/* Horizontal scrollbar styling for tables on mobile */
-.custom-scrollbar::-webkit-scrollbar {
-  height: 4px; /* For horizontal scrollbar */
 }
 
 /* Safe area handling for notched phones */

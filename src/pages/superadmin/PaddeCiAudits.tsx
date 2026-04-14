@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { 
   CheckCircle, 
   Clock, 
@@ -16,6 +17,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import { db } from '../../firebase';
+import { useAuth } from '../../components/FirebaseProvider';
 import { collection, onSnapshot, query, orderBy, where, doc, updateDoc, setDoc } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import toast from 'react-hot-toast';
@@ -32,6 +34,9 @@ interface PaddeAudit {
 }
 
 export default function PaddeCiAudits() {
+  const location = useLocation();
+  const isCommandoSpace = location.pathname.startsWith('/admin');
+  const { userData } = useAuth();
   const [audits, setAudits] = useState<PaddeAudit[]>([]);
   const [selected, setSelected] = useState<PaddeAudit | null>(null);
   const [isValidating, setIsValidating] = useState<string | null>(null);
@@ -59,18 +64,28 @@ export default function PaddeCiAudits() {
         validatedAt: new Date().toISOString()
       });
 
+      const actorLabel = isCommandoSpace
+        ? (userData?.firstName
+            ? `${userData.firstName} ${userData.lastName || ''}`.trim()
+            : 'Infinite Commando')
+        : 'le SuperAdmin';
+
       const notifRef = doc(collection(db, 'notifications'));
       await setDoc(notifRef, {
         id: notifRef.id,
         userId: 'system',
         title: 'Audit PADDE-CI pris en charge',
-        message: `L'audit pour "${audit.clientName}" a été validé et pris en charge par le SuperAdmin.`,
+        message: `L'audit pour "${audit.clientName}" a été validé et pris en charge par ${actorLabel}.`,
         type: 'order',
         read: false,
         createdAt: new Date().toISOString()
       });
 
-      toast.success('Audit validé — Dossier transmis au commando.');
+      toast.success(
+        isCommandoSpace
+          ? 'Audit validé — mission intégrée au pipeline Noya.'
+          : 'Audit validé — Dossier transmis au commando.'
+      );
       setSelected(null);
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, 'orders');
@@ -94,8 +109,8 @@ export default function PaddeCiAudits() {
     return 'bg-white/5 text-text-secondary border-white/10';
   };
 
-  const filtered = audits.filter(a => 
-    a.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+  const filtered = audits.filter(a =>
+    (a.clientName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     a.id.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
@@ -104,7 +119,11 @@ export default function PaddeCiAudits() {
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-black text-text-primary tracking-tight uppercase">Audits PADDE-CI</h1>
-          <p className="text-text-secondary mt-1 font-medium italic opacity-70">Extraction des flux de données provenant de padde-ci.com</p>
+          <p className="text-text-secondary mt-1 font-medium italic opacity-70">
+            {isCommandoSpace
+              ? 'Réception des commandes padde-ci.com — Infinite Commando (même flux que le SuperAdmin).'
+              : 'Extraction des flux de données provenant de padde-ci.com'}
+          </p>
         </div>
         <div className="flex gap-4">
           <div className="bg-noya-sidebar px-4 py-2 rounded-xl border border-white/5 shadow-sm flex items-center gap-3">
@@ -217,7 +236,7 @@ export default function PaddeCiAudits() {
                               {isValidating === audit.id ? (
                                 <div className="w-3 h-3 border-2 border-noya-blue rounded-full animate-spin" />
                               ) : (
-                                'Indexer'
+                                isCommandoSpace ? 'Prise en charge' : 'Indexer'
                               )}
                             </button>
                           )}
@@ -333,7 +352,9 @@ export default function PaddeCiAudits() {
                     ) : (
                       <>
                         <ClipboardCheck size={20} />
-                        Valider et Transférer au Commando
+                        {isCommandoSpace
+                          ? 'Valider et intégrer au pipeline'
+                          : 'Valider et Transférer au Commando'}
                       </>
                     )}
                   </button>

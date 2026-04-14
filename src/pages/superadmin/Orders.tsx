@@ -123,7 +123,7 @@ export default function SuperAdminOrders() {
         id: notifRef.id,
         userId: order.userId,
         title: 'Facture disponible',
-        message: `La facture pour votre commande "${order.serviceName}" a été générée et envoyée par email.`,
+        message: `Votre commande "${order.serviceName}" est validée. La facture officielle sera établie par l’équipe Infinite Core et transmise sur les canaux convenus (e-mail ou espace client).`,
         type: 'billing',
         read: false,
         createdAt: new Date().toISOString()

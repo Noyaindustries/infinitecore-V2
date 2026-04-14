@@ -20,6 +20,18 @@ export default function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
     return <Navigate to="/login" replace />;
   }
 
+  if (allowedRoles && !userData) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-6 text-center">
+        <p className="text-sm font-medium text-gray-700 max-w-md">
+          Profil utilisateur introuvable dans la base. Un document <code className="font-mono text-xs">users/{'{votre UID}'}</code> avec un
+          champ <code className="font-mono text-xs">role</code> (ex. <code className="font-mono text-xs">commando</code> ou{' '}
+          <code className="font-mono text-xs">admin</code>) est requis pour accéder à cet espace.
+        </p>
+      </div>
+    );
+  }
+
   if (allowedRoles && userData && !allowedRoles.includes(userData.role)) {
     // User is logged in but doesn't have the right role
     if (userData.role === 'admin') {

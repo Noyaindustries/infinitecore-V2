@@ -8,7 +8,7 @@ import {
   isMarketingPublicZone,
 } from '../lib/workspaceSpaces';
 
-type SwitcherVariant = 'noya-dark' | 'surface';
+type SwitcherVariant = 'noya-dark' | 'surface' | 'profile';
 
 const variantStyles: Record<
   SwitcherVariant,
@@ -27,6 +27,14 @@ const variantStyles: Record<
     link: 'flex items-center gap-2 rounded-lg px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary',
     linkActive: 'bg-noya-orange/10 text-noya-orange border border-noya-orange/20',
     icon: 'text-noya-orange',
+  },
+  profile: {
+    wrap: 'px-3 py-2',
+    title: 'mb-2 flex items-center gap-2 px-0.5 text-[9px] font-black uppercase tracking-widest text-text-dim',
+    link: 'flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-text-secondary transition-colors hover:bg-white/5 hover:text-text-primary',
+    linkActive:
+      'border border-luxe-champagne/30 bg-luxe-champagne/10 text-luxe-champagne-bright shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]',
+    icon: 'text-luxe-champagne/90',
   },
 };
 

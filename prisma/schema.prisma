@@ -1,0 +1,21 @@
+// Schéma MongoDB — Prisma (serveur Node).
+// Les collections Firestore du client React ne sont pas remplacées ici : migrer progressivement via /api.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+/// Réception webhook PADDE-CI (ex-Firestore `padde_audits` côté serveur).
+model PaddeCiAudit {
+  id        String   @id @map("_id")
+  payload   Json
+  createdAt DateTime @default(now())
+  processed Boolean  @default(false)
+
+  @@map("padde_ci_audits")
+}

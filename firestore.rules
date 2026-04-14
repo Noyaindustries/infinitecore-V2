@@ -15,16 +15,21 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function getUserData() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    /**
+     * Rôle du profil `users/{uid}` — chaîne vide si le document n’existe pas.
+     * Ne jamais lire `.data` sur un get sans `exists`, sinon l’évaluation des règles échoue (permission-denied).
+     */
+    function userRole() {
+      let u = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return u.exists ? u.data.role : '';
     }
 
     function isSuperAdmin() {
-      return isAuthenticated() && getUserData().role == 'admin';
+      return isAuthenticated() && userRole() == 'admin';
     }
 
     function isCommando() {
-      return isAuthenticated() && getUserData().role == 'commando';
+      return isAuthenticated() && userRole() == 'commando';
     }
 
     function isAdmin() {
@@ -33,7 +38,7 @@ service cloud.firestore {
 
     function isStaff() {
       return isAuthenticated() &&
-        getUserData().role in ['admin', 'commando', 'developer', 'partner'];
+        userRole() in ['admin', 'commando', 'developer', 'partner'];
     }
 
     function isValidDateString(dateStr) {
@@ -75,6 +80,11 @@ service cloud.firestore {
     match /settings/{document=**} {
       allow read: if true;
       allow write: if isSuperAdmin();
+    }
+
+    // Paramètres factures + compteur (commando / admin général)
+    match /admin_config/{docId} {
+      allow read, write: if isAdmin();
     }
 
     match /padde_audits/{auditId} {

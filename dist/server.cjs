@@ -32,32 +32,15 @@ var import_crypto = require("crypto");
 var import_client_s32 = require("@aws-sdk/client-s3");
 var import_s3_request_presigner2 = require("@aws-sdk/s3-request-presigner");
 
-// src/firebase.ts
-var import_app = require("firebase/app");
-var import_auth = require("firebase/auth");
-var import_firestore = require("firebase/firestore");
-
-// firebase-applet-config.json
-var firebase_applet_config_default = {
-  projectId: "noya-industries-platform",
-  appId: "1:994757523169:web:307dab266ab318dedae9a0",
-  apiKey: "AIzaSyBmSQsOxI4IJ7kSDn8z23gl6wZCgfzmGRU",
-  authDomain: "noya-industries-platform.firebaseapp.com",
-  firestoreDatabaseId: "ai-studio-42406826-d231-4e61-bda4-7369948f2694",
-  storageBucket: "noya-industries-platform.firebasestorage.app",
-  messagingSenderId: "994757523169",
-  measurementId: ""
-};
-
-// src/firebase.ts
-var app = (0, import_app.initializeApp)(firebase_applet_config_default);
-var db = (0, import_firestore.initializeFirestore)(app, {
-  experimentalForceLongPolling: true
-}, firebase_applet_config_default.firestoreDatabaseId);
-var auth = (0, import_auth.getAuth)(app);
-
-// server.ts
-var import_firestore2 = require("firebase/firestore");
+// prismaClient.ts
+var import_client = require("@prisma/client");
+var globalForPrisma = globalThis;
+var prisma = globalForPrisma.prisma ?? new import_client.PrismaClient({
+  log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"]
+});
+if (process.env.NODE_ENV !== "production") {
+  globalForPrisma.prisma = prisma;
+}
 
 // _r2.ts
 var import_client_s3 = require("@aws-sdk/client-s3");
@@ -127,7 +110,7 @@ function mimeFromStorageKey(keyOrPath) {
 
 // server.ts
 async function startServer() {
-  const app2 = (0, import_express.default)();
+  const app = (0, import_express.default)();
   const PORT = 3e3;
   const r2AccountId = process.env.R2_ACCOUNT_ID || "";
   const r2AccessKeyId = process.env.R2_ACCESS_KEY_ID || "";
@@ -141,8 +124,8 @@ async function startServer() {
       "[upload] Variables R2 absentes \u2014 mode d\xE9veloppement : fichiers dans .local-uploads/ (non utilis\xE9 en prod sans R2)."
     );
   }
-  app2.use((0, import_cors.default)());
-  app2.use(import_express.default.json());
+  app.use((0, import_cors.default)());
+  app.use(import_express.default.json());
   const s3 = canUseR2 ? new import_client_s32.S3Client({
     region: "auto",
     endpoint: r2Endpoint,
@@ -156,7 +139,7 @@ async function startServer() {
     limits: { fileSize: 50 * 1024 * 1024 }
     // 50MB
   });
-  app2.post("/api/files/upload", upload.single("file"), async (req, res) => {
+  app.post("/api/files/upload", upload.single("file"), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ success: false, error: "Aucun fichier re\xE7u." });
@@ -206,7 +189,7 @@ async function startServer() {
       return res.status(500).json({ success: false, error: msg });
     }
   });
-  app2.delete("/api/files", async (req, res) => {
+  app.delete("/api/files", async (req, res) => {
     try {
       const safePath = normalizePublicIdQuery(String(req.query.publicId || ""));
       if (!safePath) {
@@ -237,7 +220,7 @@ async function startServer() {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app2.get("/api/files/download", async (req, res) => {
+  app.get("/api/files/download", async (req, res) => {
     try {
       const safePath = normalizePublicIdQuery(String(req.query.publicId || ""));
       if (!safePath) {
@@ -287,14 +270,22 @@ async function startServer() {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app2.post("/api/webhooks/padde-ci", async (req, res) => {
+  app.post("/api/webhooks/padde-ci", async (req, res) => {
     try {
+      if (!process.env.DATABASE_URL) {
+        return res.status(503).json({
+          success: false,
+          error: "Base de donn\xE9es non configur\xE9e : d\xE9finissez DATABASE_URL (MongoDB) pour Prisma."
+        });
+      }
       const data = req.body;
       const auditId = `PADDE-${Math.floor(1e3 + Math.random() * 9e3)}`;
-      await (0, import_firestore2.setDoc)((0, import_firestore2.doc)(db, "padde_audits", auditId), {
-        ...data,
-        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-        processed: false
+      await prisma.paddeCiAudit.create({
+        data: {
+          id: auditId,
+          payload: data ?? {},
+          processed: false
+        }
       });
       res.status(200).json({ success: true, message: "Demande d'audit re\xE7ue et trait\xE9e avec succ\xE8s." });
     } catch (error) {
@@ -302,31 +293,23 @@ async function startServer() {
       res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app2.get("/api/webhooks/padde-ci", async (req, res) => {
+  app.get("/api/webhooks/padde-ci", async (req, res) => {
     try {
-      const { getDocs, query, collection: collection2, where } = await import("firebase/firestore");
-      const q = query(
-        collection2(db, "tasks"),
-        where("title", ">=", "Audit PADDE-CI"),
-        where("title", "<=", "Audit PADDE-CI\uF8FF")
-      );
-      const snapshot = await getDocs(q);
-      const audits = snapshot.docs.map((doc2) => {
-        const data = doc2.data();
-        let originalData = {};
-        try {
-          const description = data.description || "";
-          const detailsMatch = description.match(/Détails complets:\n([\s\S]*)$/);
-          if (detailsMatch && detailsMatch[1]) {
-            originalData = JSON.parse(detailsMatch[1]);
-          }
-        } catch (e) {
-        }
+      if (!process.env.DATABASE_URL) {
+        return res.status(503).json({ success: false, error: "Base de donn\xE9es non configur\xE9e (DATABASE_URL)." });
+      }
+      const rows = await prisma.paddeCiAudit.findMany({
+        orderBy: { createdAt: "desc" },
+        take: 500
+      });
+      const audits = rows.map((row) => {
+        const payload = row.payload;
+        const typeFromPayload = typeof payload?.type === "string" ? payload.type : typeof payload?.type_audit === "string" ? payload.type_audit : "audit-inconnu";
         return {
-          id: doc2.id,
-          type_audit: originalData?.type || "audit-inconnu",
-          date: data.createdAt,
-          donnees_completes: originalData || {}
+          id: row.id,
+          type_audit: typeFromPayload,
+          date: row.createdAt.toISOString(),
+          donnees_completes: payload ?? {}
         };
       });
       res.status(200).json(audits);
@@ -340,15 +323,15 @@ async function startServer() {
       server: { middlewareMode: true },
       appType: "spa"
     });
-    app2.use(vite.middlewares);
+    app.use(vite.middlewares);
   } else {
     const distPath = import_path2.default.join(process.cwd(), "dist");
-    app2.use(import_express.default.static(distPath));
-    app2.get("*all", (req, res) => {
+    app.use(import_express.default.static(distPath));
+    app.get("*all", (req, res) => {
       res.sendFile(import_path2.default.join(distPath, "index.html"));
     });
   }
-  app2.listen(PORT, "0.0.0.0", () => {
+  app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

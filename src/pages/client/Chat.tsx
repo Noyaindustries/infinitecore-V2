@@ -219,10 +219,12 @@ export default function ClientChat() {
 
   const renderMessage = (msg: Message) => {
     const isMe = msg.senderRole === 'client';
-    const bubbleBase = 'max-w-[min(85%,28rem)] rounded-2xl px-4 py-3 text-sm shadow-md';
+    const bubbleBase =
+      'max-w-[min(85%,28rem)] rounded-2xl px-4 py-3 text-sm shadow-md transition-shadow duration-200';
+    /** Vous : orange atténué + texte blanc. Équipe : fond sombre uni + une bordure gauche discrète. */
     const bubbleColor = isMe
-      ? 'rounded-br-md bg-linear-to-br from-noya-blue to-[#5a8fd4] text-white shadow-[0_8px_28px_-8px_rgba(110,167,234,0.45)]'
-      : 'rounded-bl-md border border-white/[0.08] bg-[#0c1018]/95 text-text-primary shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)]';
+      ? 'rounded-br-md bg-orange-600/45 text-white shadow-md'
+      : 'rounded-bl-md border border-border-subtle border-l-4 border-l-text-muted/40 bg-surface-secondary text-text-primary shadow-sm';
 
     const content = () => {
       if (msg.type === 'file' && msg.fileUrl) {
@@ -233,13 +235,17 @@ export default function ClientChat() {
             rel="noopener noreferrer"
             className={`flex items-center gap-3 ${isMe ? 'text-white' : 'text-text-primary'}`}
           >
-            <div className={`rounded-xl p-2 ${isMe ? 'bg-white/15' : 'bg-noya-blue/12'}`}>
-              <FileText size={20} className={isMe ? 'text-white' : 'text-noya-blue'} aria-hidden />
+            <div
+              className={`rounded-xl p-2 ${
+                isMe ? 'bg-white/20' : 'bg-surface-tertiary'
+              }`}
+            >
+              <FileText size={20} className={isMe ? 'text-white' : 'text-text-muted'} aria-hidden />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate font-medium">{msg.fileName}</p>
+              <p className={`truncate font-medium ${isMe ? 'text-white' : ''}`}>{msg.fileName}</p>
               {msg.fileSize ? (
-                <p className={`text-xs ${isMe ? 'text-white/75' : 'text-text-muted'}`}>{formatFileSize(msg.fileSize)}</p>
+                <p className={`text-xs ${isMe ? 'text-white' : 'text-text-muted'}`}>{formatFileSize(msg.fileSize)}</p>
               ) : null}
             </div>
             <Download size={16} className="shrink-0 opacity-80" aria-hidden />
@@ -251,24 +257,24 @@ export default function ClientChat() {
         return (
           <div>
             {isPadde ? (
-              <div className={`mb-2 flex items-center gap-2 font-semibold ${isMe ? 'text-amber-100' : 'text-noya-orange'}`}>
+              <div className={`mb-2 flex items-center gap-2 font-semibold ${isMe ? 'text-white' : 'text-noya-orange'}`}>
                 <Zap size={16} aria-hidden />
                 <span>Audit PADDE-CI</span>
                 <span
-                  className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${isMe ? 'bg-amber-400/25 text-amber-50' : 'bg-noya-orange/15 text-noya-orange'}`}
+                  className={`rounded px-1.5 py-0.5 text-[10px] font-bold uppercase ${isMe ? 'bg-white/20 text-white' : 'bg-noya-orange/15 text-noya-orange'}`}
                 >
                   Gratuit
                 </span>
               </div>
             ) : (
-              <div className={`mb-2 flex items-center gap-2 font-semibold ${isMe ? 'text-blue-100' : 'text-noya-blue'}`}>
+              <div className={`mb-2 flex items-center gap-2 font-semibold ${isMe ? 'text-white' : 'text-noya-blue'}`}>
                 <ShoppingBag size={16} aria-hidden /> Demande de service
               </div>
             )}
-            <p className="font-bold">{msg.orderDetails.serviceName}</p>
-            <p className={`mt-1 font-mono text-xs ${isMe ? 'text-blue-100/90' : 'text-text-muted'}`}>{msg.orderDetails.orderId}</p>
+            <p className={`font-bold ${isMe ? 'text-white' : ''}`}>{msg.orderDetails.serviceName}</p>
+            <p className={`mt-1 font-mono text-xs ${isMe ? 'text-white' : 'text-text-muted'}`}>{msg.orderDetails.orderId}</p>
             {isPadde ? (
-              <p className={`mt-2 text-xs ${isMe ? 'text-amber-100/90' : 'text-text-secondary'}`}>
+              <p className={`mt-2 text-xs ${isMe ? 'text-white' : 'text-text-secondary'}`}>
                 Votre demande est prise en charge — l&apos;équipe vous répond ici.
               </p>
             ) : null}
@@ -277,32 +283,32 @@ export default function ClientChat() {
       }
       if (msg.type === 'invoice') {
         return (
-          <div className="flex items-center gap-2">
+          <div className={`flex items-center gap-2 ${isMe ? 'text-white' : ''}`}>
             <Receipt size={16} aria-hidden /> <span className="font-medium">{msg.text}</span>
           </div>
         );
       }
       if (msg.type === 'contract') {
         return (
-          <div className="flex items-center gap-2">
+          <div className={`flex items-center gap-2 ${isMe ? 'text-white' : ''}`}>
             <FileSignature size={16} aria-hidden /> <span className="font-medium">{msg.text}</span>
           </div>
         );
       }
-      return <p className="whitespace-pre-wrap leading-relaxed">{msg.text}</p>;
+      return <p className={`whitespace-pre-wrap leading-relaxed ${isMe ? 'text-white' : ''}`}>{msg.text}</p>;
     };
 
     return (
       <div key={msg.id} className={`mb-3 flex ${isMe ? 'justify-end' : 'justify-start'}`}>
         {!isMe ? (
-          <div className="mr-2 mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-luxe-champagne/30 bg-linear-to-br from-luxe-champagne/20 to-noya-blue/10 text-[10px] font-bold tracking-wide text-luxe-champagne-bright">
+          <div className="mr-2 mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border-subtle bg-surface-tertiary text-[10px] font-bold tracking-wide text-text-secondary">
             IC
           </div>
         ) : null}
         <div className={`${bubbleColor} ${bubbleBase}`}>
-          {!isMe ? <p className="mb-1.5 text-xs font-semibold text-luxe-champagne-bright">{msg.senderName}</p> : null}
+          {!isMe ? <p className="mb-1.5 text-xs font-semibold text-text-primary">{msg.senderName}</p> : null}
           {content()}
-          <p className={`mt-2 text-right text-[10px] ${isMe ? 'text-white/70' : 'text-text-muted'}`}>{formatTimeShort(msg.createdAt)}</p>
+          <p className={`mt-2 text-right text-[10px] ${isMe ? 'text-white' : 'text-text-muted'}`}>{formatTimeShort(msg.createdAt)}</p>
         </div>
       </div>
     );
@@ -319,15 +325,14 @@ export default function ClientChat() {
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6 pb-4">
       {/* Intro */}
-      <div className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-linear-to-br from-[#0c101c] via-[#080c14] to-[#05080f] p-5 shadow-[0_32px_64px_-28px_rgba(0,0,0,0.65),0_0_0_1px_rgba(201,169,98,0.1)] sm:p-6">
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-luxe-champagne/30 to-transparent" aria-hidden />
+      <div className="relative overflow-hidden rounded-2xl border border-border-subtle bg-surface-secondary p-5 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex gap-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-luxe-champagne/25 bg-luxe-champagne/10 text-luxe-champagne-bright">
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-border-subtle bg-surface-tertiary text-text-secondary">
               <MessageCircle className="h-6 w-6" strokeWidth={1.5} aria-hidden />
             </div>
             <div>
-              <div className="mb-1.5 inline-flex items-center gap-2 rounded-full border border-luxe-champagne/25 bg-luxe-champagne/[0.07] px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-luxe-champagne-bright">
+              <div className="mb-1.5 inline-flex items-center gap-2 rounded-full border border-border-subtle bg-surface-tertiary px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
                 Messagerie privée
               </div>
               <h1 className="font-display text-2xl font-medium tracking-[0.02em] text-text-primary sm:text-3xl">Équipe Infinite Core</h1>
@@ -339,14 +344,14 @@ export default function ClientChat() {
           <div className="flex shrink-0 flex-wrap gap-2">
             <Link
               to="/dashboard"
-              className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:border-luxe-champagne/30 hover:text-text-primary sm:text-sm"
+              className="inline-flex items-center gap-2 rounded-xl border border-border-subtle px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:border-border-medium hover:bg-surface-tertiary hover:text-text-primary sm:text-sm"
             >
               <LayoutDashboard className="h-4 w-4" aria-hidden />
               Mon espace
             </Link>
             <Link
               to="/dashboard/profil"
-              className="inline-flex items-center gap-2 rounded-xl border border-white/10 px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:border-luxe-champagne/30 hover:text-text-primary sm:text-sm"
+              className="inline-flex items-center gap-2 rounded-xl border border-border-subtle px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:border-border-medium hover:bg-surface-tertiary hover:text-text-primary sm:text-sm"
             >
               <User className="h-4 w-4" aria-hidden />
               Mon profil
@@ -356,16 +361,16 @@ export default function ClientChat() {
       </div>
 
       {/* Fil de discussion */}
-      <div className="flex min-h-[min(520px,calc(100dvh-14rem))] flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#060910]/60 shadow-[0_24px_48px_-28px_rgba(0,0,0,0.55)]">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/[0.06] bg-[#080c14]/90 px-4 py-3 backdrop-blur-md sm:px-5">
+      <div className="flex min-h-[min(520px,calc(100dvh-14rem))] flex-col overflow-hidden rounded-2xl border border-border-subtle bg-surface-primary shadow-md">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border-subtle bg-surface-secondary px-4 py-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-noya-blue/15 text-sm font-bold text-noya-blue ring-1 ring-noya-blue/25">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border-subtle bg-surface-tertiary text-sm font-bold text-text-secondary">
               IC
             </div>
             <div className="min-w-0">
               <p className="truncate font-semibold text-text-primary">Conversation avec Infinite</p>
               <p className="flex items-center gap-1.5 text-xs text-text-muted">
-                <Sparkles className="h-3.5 w-3.5 shrink-0 text-noya-green" aria-hidden />
+                <Sparkles className="h-3.5 w-3.5 shrink-0 text-text-muted" aria-hidden />
                 <span className="truncate">
                   {lastActivityLabel ? `Dernière activité ${lastActivityLabel}` : 'Nouvelle conversation'}
                 </span>
@@ -379,11 +384,11 @@ export default function ClientChat() {
           ) : null}
         </div>
 
-        <div className="custom-scrollbar flex-1 overflow-y-auto bg-linear-to-b from-noya-black/40 to-[#05080f] px-3 py-4 sm:px-5 sm:py-5">
+        <div className="custom-scrollbar flex-1 overflow-y-auto bg-surface-primary px-3 py-4 sm:px-5 sm:py-5">
           {messages.length === 0 ? (
             <div className="flex h-full min-h-[220px] flex-col items-center justify-center gap-4 px-4 text-center">
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-[#0c1018] shadow-inner">
-                <Send className="h-7 w-7 text-text-dim" aria-hidden />
+              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-border-subtle bg-surface-secondary shadow-inner">
+                <Send className="h-7 w-7 text-text-muted" aria-hidden />
               </div>
               <div>
                 <p className="font-display text-lg text-text-primary">Aucun message pour le moment</p>
@@ -397,9 +402,11 @@ export default function ClientChat() {
           {grouped.map(({ date, messages: dayMsgs }) => (
             <div key={date}>
               <div className="my-5 flex items-center gap-3">
-                <div className="h-px flex-1 bg-linear-to-r from-transparent to-white/10" />
-                <span className="px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-luxe-champagne/80">{date}</span>
-                <div className="h-px flex-1 bg-linear-to-l from-transparent to-white/10" />
+                <div className="h-px flex-1 bg-border-subtle" />
+                <span className="px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-text-muted">
+                  {date}
+                </span>
+                <div className="h-px flex-1 bg-border-subtle" />
               </div>
               {dayMsgs.map(renderMessage)}
             </div>
@@ -408,7 +415,7 @@ export default function ClientChat() {
           <div ref={bottomRef} className="h-2 shrink-0" />
         </div>
 
-        <div className="shrink-0 border-t border-white/[0.06] bg-[#080c14]/95 p-3 backdrop-blur-md sm:p-4">
+        <div className="shrink-0 border-t border-border-subtle bg-surface-secondary p-3 sm:p-4">
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -421,10 +428,10 @@ export default function ClientChat() {
               onClick={() => fileInputRef.current?.click()}
               disabled={isUploading || sending}
               title="Joindre un fichier"
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 text-text-secondary transition-colors hover:border-luxe-champagne/30 hover:bg-white/[0.04] hover:text-noya-blue disabled:opacity-40"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border-subtle text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary disabled:opacity-40"
             >
               {isUploading ? (
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-noya-blue/30 border-t-noya-blue" aria-hidden />
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-border-subtle border-t-text-muted" aria-hidden />
               ) : (
                 <Paperclip size={20} strokeWidth={1.5} aria-hidden />
               )}
@@ -450,13 +457,13 @@ export default function ClientChat() {
               onKeyDown={onTextareaKeyDown}
               rows={1}
               placeholder="Votre message…"
-              className="max-h-36 min-h-11 flex-1 resize-none rounded-xl border border-white/10 bg-[#060910]/90 px-4 py-3 text-sm text-text-primary shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] placeholder:text-text-muted focus:border-luxe-champagne/35 focus:outline-none focus:ring-2 focus:ring-luxe-champagne/15"
+              className="max-h-36 min-h-11 flex-1 resize-none rounded-xl border border-border-subtle bg-surface-primary px-4 py-3 text-sm text-text-primary placeholder:text-text-muted focus:border-border-medium focus:outline-none focus:ring-2 focus:ring-noya-blue/25"
             />
 
             <button
               type="submit"
               disabled={!text.trim() || sending || isUploading}
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-linear-to-br from-noya-blue to-[#5a8fd4] text-white shadow-[0_6px_20px_-4px_rgba(110,167,234,0.45)] transition-all hover:brightness-110 disabled:opacity-35"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-orange-600/50 text-white shadow-sm transition-opacity hover:bg-orange-600/60 disabled:opacity-35"
               aria-label="Envoyer"
             >
               {sending ? (

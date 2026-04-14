@@ -1,1 +1,0 @@
-import{j as e}from"./index-Du-4vFK1.js";function r(){return e.jsxs("div",{className:"p-6",children:[e.jsx("h1",{className:"text-2xl font-bold text-text-primary",children:"Profil développeur"}),e.jsx("p",{className:"text-text-secondary mt-2",children:"Paramètres du compte."})]})}export{r as default};

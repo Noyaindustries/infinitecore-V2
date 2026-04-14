@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Upload, X, FileText, CheckCircle, Clock, Trash2, ChevronDown, Users, Plus, Download } from 'lucide-react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Search, Upload, X, FileText, CheckCircle, Clock, Trash2, ChevronDown, Users, Plus, Download, MessageCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { collection, onSnapshot, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../../firebase';
@@ -420,6 +421,8 @@ function GeneralUploadModal({ client, onClose, commandoName, commandoId }: { cli
 
 export default function AdminDossiers() {
   const { user, userData } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [clients, setClients] = useState<any[]>([]);
   const [allSteps, setAllSteps] = useState<DossierStep[]>([]);
   const [selectedClient, setSelectedClient] = useState<any | null>(null);
@@ -469,6 +472,17 @@ export default function AdminDossiers() {
       unsubDocs();
     };
   }, []);
+
+  useEffect(() => {
+    const state = location.state as { selectClientId?: string } | null;
+    const id = state?.selectClientId;
+    if (!id || clients.length === 0) return;
+    const found = clients.find((c) => c.id === id);
+    if (found) {
+      setSelectedClient(found);
+      navigate('.', { replace: true, state: null });
+    }
+  }, [location.state, clients, navigate]);
 
   const handleDeleteStep = async (step: DossierStep) => {
     if (!confirm('Supprimer ce document ?')) return;
@@ -628,7 +642,14 @@ export default function AdminDossiers() {
                     <p className="text-[10px] text-text-muted font-bold uppercase tracking-widest opacity-60">{selectedClient.email}</p>
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center justify-end gap-3 sm:gap-4">
+                  <Link
+                    to={`/admin/messagerie?client=${encodeURIComponent(selectedClient.id)}`}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-noya-blue/25 bg-noya-blue/10 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-noya-blue transition-all hover:border-noya-blue/45 hover:bg-noya-blue/15"
+                  >
+                    <MessageCircle size={14} aria-hidden />
+                    Messagerie
+                  </Link>
                   <span className="text-[10px] font-black uppercase tracking-widest text-text-muted">{validatedCount} / {STEP_ORDER.length} VALIDÉS</span>
                   <div className="w-32 h-2 bg-surface-tertiary rounded-full overflow-hidden shadow-inner border border-border-subtle">
                     <div

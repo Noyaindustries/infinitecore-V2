@@ -134,6 +134,7 @@ function App() {
               <Route path="messagerie" element={<AdminMessagerie />} />
               <Route path="dossiers" element={<AdminDossiers />} />
               <Route path="instances" element={<AdminInstances />} />
+              <Route path="audits-padde" element={<PaddeCiAudits />} />
             </Route>
           </Route>
 

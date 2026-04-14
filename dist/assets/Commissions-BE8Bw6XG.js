@@ -1,1 +1,0 @@
-import{j as s}from"./index-Du-4vFK1.js";function t(){return s.jsxs("div",{className:"p-6",children:[s.jsx("h1",{className:"text-2xl font-bold text-text-primary",children:"Commissions"}),s.jsx("p",{className:"text-text-secondary mt-2",children:"Suivi des rémunérations missions."})]})}export{t as default};
