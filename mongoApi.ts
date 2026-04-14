@@ -141,6 +141,43 @@ function isStrongPassword(password: string) {
   return /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
 }
 
+/** Texte complet pour détecter les pannes réseau / TLS (Prisma met souvent le détail dans `meta`, pas dans `message`). */
+function prismaAndDriverErrorText(error: unknown): string {
+  const parts: string[] = [];
+  if (error instanceof Error) parts.push(error.message);
+  else parts.push(String(error));
+  const rec = error as { code?: string; meta?: unknown; cause?: unknown };
+  if (rec.code) parts.push(String(rec.code));
+  if (rec.meta !== undefined) {
+    try {
+      parts.push(typeof rec.meta === "string" ? rec.meta : JSON.stringify(rec.meta));
+    } catch {
+      parts.push(String(rec.meta));
+    }
+  }
+  if (rec.cause instanceof Error) parts.push(rec.cause.message);
+  else if (rec.cause !== undefined && rec.cause !== null) parts.push(String(rec.cause));
+  return parts.join("\n");
+}
+
+/** Erreurs Prisma / driver Mongo fréquentes quand Atlas ou le réseau est injoignable. */
+function sendAuthPrismaError(res: Response, logLabel: string, error: unknown) {
+  console.error(logLabel, error);
+  const msg = prismaAndDriverErrorText(error);
+  const dbUnreachable =
+    /Server selection timeout|Can't reach database server|ReplicaSetNoPrimary|P1001|P1017|P2010|MongoNetwork|ECONNREFUSED|fatal alert: InternalError|TLS handshake|certificate|timed out/i.test(
+      msg
+    );
+  if (dbUnreachable) {
+    return res.status(503).json({
+      success: false,
+      error:
+        "Connexion à MongoDB impossible. Vérifiez DATABASE_URL, le réseau « Network Access » sur Atlas (IP autorisées), et tout proxy ou antivirus qui intercepte TLS.",
+    });
+  }
+  return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+}
+
 function sha256Hex(input: string) {
   return createHash("sha256").update(input).digest("hex");
 }
@@ -694,8 +731,7 @@ export function registerMongoApi(app: Express) {
         },
       });
     } catch (error) {
-      console.error("[auth/register]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+      return sendAuthPrismaError(res, "[auth/register]", error);
     }
   });
 
@@ -739,8 +775,7 @@ export function registerMongoApi(app: Express) {
         },
       });
     } catch (error) {
-      console.error("[auth/login]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+      return sendAuthPrismaError(res, "[auth/login]", error);
     }
   });
 
@@ -792,8 +827,7 @@ export function registerMongoApi(app: Express) {
         },
       });
     } catch (error) {
-      console.error("[auth/google]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+      return sendAuthPrismaError(res, "[auth/google]", error);
     }
   });
 

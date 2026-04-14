@@ -1,10 +1,14 @@
+import { apiUrl } from "./apiBase";
+
 const AUTH_TOKEN_KEY = "ic_auth_token";
 
 export function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
   return localStorage.getItem(AUTH_TOKEN_KEY);
 }
 
 export function setAuthToken(token: string | null) {
+  if (typeof window === "undefined") return;
   if (!token) {
     localStorage.removeItem(AUTH_TOKEN_KEY);
     return;
@@ -20,10 +24,38 @@ export async function apiRequest<T>(url: string, init: RequestInit = {}): Promis
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const response = await fetch(url, { ...init, headers });
-  const payload = (await response.json().catch(() => ({}))) as { error?: string };
-  if (!response.ok) {
-    throw new Error(payload.error || `Erreur API (${response.status})`);
+  const resolvedUrl = url.startsWith("http://") || url.startsWith("https://") ? url : apiUrl(url);
+  const response = await fetch(resolvedUrl, { ...init, headers });
+  const text = await response.text();
+  let parsed: unknown = {};
+  if (text) {
+    try {
+      parsed = JSON.parse(text) as unknown;
+    } catch {
+      // Réponse HTML ou tronquée (ex. proxy Next après ECONNRESET) : pas de JSON exploitable.
+    }
   }
-  return payload as T;
+  const obj = typeof parsed === "object" && parsed !== null ? (parsed as Record<string, unknown>) : {};
+  if (!response.ok) {
+    const errObj = obj as { error?: string; message?: string };
+    const fromJson = errObj.error || errObj.message;
+    const snippet =
+      !fromJson && text && !text.trimStart().startsWith("<")
+        ? text.trim().slice(0, 240)
+        : "";
+    const opaque500 =
+      response.status === 500 &&
+      (!fromJson || /^internal server error$/i.test(String(fromJson).trim())) &&
+      (!snippet || /^internal server error$/i.test(snippet.trim()));
+    throw new Error(
+      fromJson ||
+        snippet ||
+        (response.status === 502 || response.status === 503
+          ? `API indisponible (${response.status}). Vérifiez que le serveur Express tourne (port 3001) et que la base MongoDB est joignable.`
+          : opaque500
+            ? `Erreur serveur (500). Consultez le terminal « api » : souvent MongoDB injoignable (Atlas, TLS, IP autorisées) ou cache Next corrompu (supprimez le dossier .next puis relancez npm run dev).`
+            : `Erreur API (${response.status})`)
+    );
+  }
+  return parsed as T;
 }

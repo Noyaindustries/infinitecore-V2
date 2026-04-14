@@ -112,7 +112,7 @@ export default function ClientProfile() {
   }, [userData]);
 
   const industryOptions = useMemo(() => {
-    const known = new Set(INDUSTRIES.map((x) => x.value));
+    const known = new Set<string>(INDUSTRIES.map((x) => x.value as string));
     if (form.industry && !known.has(form.industry)) {
       return [...INDUSTRIES, { value: form.industry, label: form.industry } as const];
     }
@@ -120,7 +120,7 @@ export default function ClientProfile() {
   }, [form.industry]);
 
   const employeeOptions = useMemo(() => {
-    const known = new Set(EMPLOYEE_RANGES.map((x) => x.value));
+    const known = new Set<string>(EMPLOYEE_RANGES.map((x) => x.value as string));
     if (form.employees && !known.has(form.employees)) {
       return [...EMPLOYEE_RANGES, { value: form.employees, label: form.employees } as const];
     }

@@ -1,3 +1,4 @@
+"use strict";
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -24,7 +25,6 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 // server.ts
 var import_express = __toESM(require("express"), 1);
 var import_cors = __toESM(require("cors"), 1);
-var import_vite = require("vite");
 var import_path3 = __toESM(require("path"), 1);
 var import_fs2 = require("fs");
 var import_multer = __toESM(require("multer"), 1);
@@ -36,10 +36,7 @@ var import_s3_request_presigner2 = require("@aws-sdk/s3-request-presigner");
 var import_fs = require("fs");
 var import_path = __toESM(require("path"), 1);
 var import_client = require("@prisma/client");
-function loadEnvFromDotEnv() {
-  const envPath = import_path.default.join(process.cwd(), ".env");
-  if (!(0, import_fs.existsSync)(envPath)) return;
-  const raw = (0, import_fs.readFileSync)(envPath, "utf8");
+function parseDotEnvFile(raw, overrideExisting) {
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim();
     if (!trimmed || trimmed.startsWith("#")) continue;
@@ -50,14 +47,35 @@ function loadEnvFromDotEnv() {
     if (value.startsWith('"') && value.endsWith('"') || value.startsWith("'") && value.endsWith("'")) {
       value = value.slice(1, -1);
     }
-    if (!(key in process.env)) {
+    if (overrideExisting || !(key in process.env)) {
       process.env[key] = value;
     }
   }
 }
+function loadEnvFromDotEnv() {
+  const root = process.cwd();
+  const envPath = import_path.default.join(root, ".env");
+  const localPath = import_path.default.join(root, ".env.local");
+  if ((0, import_fs.existsSync)(envPath)) {
+    parseDotEnvFile((0, import_fs.readFileSync)(envPath, "utf8"), false);
+  }
+  if ((0, import_fs.existsSync)(localPath)) {
+    parseDotEnvFile((0, import_fs.readFileSync)(localPath, "utf8"), true);
+  }
+}
 loadEnvFromDotEnv();
+function withMongoDriverTimeouts(databaseUrl) {
+  const trimmed = databaseUrl.trim();
+  if (!trimmed || /serverSelectionTimeoutMS=/i.test(trimmed)) return trimmed;
+  const ms = process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS?.trim() || (process.env.NODE_ENV === "development" ? "10000" : "20000");
+  const sep = trimmed.includes("?") ? "&" : "?";
+  return `${trimmed}${sep}serverSelectionTimeoutMS=${encodeURIComponent(ms)}&connectTimeoutMS=${encodeURIComponent(ms)}`;
+}
 var globalForPrisma = globalThis;
 var prisma = globalForPrisma.prisma ?? new import_client.PrismaClient({
+  datasources: {
+    db: { url: withMongoDriverTimeouts(process.env.DATABASE_URL ?? "") }
+  },
   log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"]
 });
 if (process.env.NODE_ENV !== "production") {
@@ -78,6 +96,7 @@ var accessKeyId = cleanEnv(process.env.R2_ACCESS_KEY_ID);
 var secretAccessKey = cleanEnv(process.env.R2_SECRET_ACCESS_KEY);
 var bucket = cleanEnv(process.env.R2_BUCKET_NAME);
 var publicBaseUrl = normalizeUrl(cleanEnv(process.env.R2_PUBLIC_BASE_URL));
+var apiPublicBase = normalizeUrl(cleanEnv(process.env.API_PUBLIC_URL)).replace(/\/$/, "");
 var endpoint = normalizeUrl(
   cleanEnv(process.env.R2_ENDPOINT) || (accountId ? `${accountId}.r2.cloudflarestorage.com` : "")
 );
@@ -93,6 +112,16 @@ function sanitizeFolder(input) {
 }
 function sanitizeObjectKey(input) {
   return input.replace(/\.\./g, "").replace(/^\/+/, "");
+}
+function buildFileUrl(publicId) {
+  if (publicBaseUrl) {
+    return `${publicBaseUrl.replace(/\/$/, "")}/${publicId}`;
+  }
+  const q = `?publicId=${encodeURIComponent(publicId)}`;
+  if (apiPublicBase) {
+    return `${apiPublicBase}/api/files/download${q}`;
+  }
+  return `/api/files/download${q}`;
 }
 
 // storageUtils.ts
@@ -247,6 +276,37 @@ function isValidEmail(email) {
 function isStrongPassword(password) {
   if (password.length < 12 || password.length > 128) return false;
   return /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
+}
+function prismaAndDriverErrorText(error) {
+  const parts = [];
+  if (error instanceof Error) parts.push(error.message);
+  else parts.push(String(error));
+  const rec = error;
+  if (rec.code) parts.push(String(rec.code));
+  if (rec.meta !== void 0) {
+    try {
+      parts.push(typeof rec.meta === "string" ? rec.meta : JSON.stringify(rec.meta));
+    } catch {
+      parts.push(String(rec.meta));
+    }
+  }
+  if (rec.cause instanceof Error) parts.push(rec.cause.message);
+  else if (rec.cause !== void 0 && rec.cause !== null) parts.push(String(rec.cause));
+  return parts.join("\n");
+}
+function sendAuthPrismaError(res, logLabel, error) {
+  console.error(logLabel, error);
+  const msg = prismaAndDriverErrorText(error);
+  const dbUnreachable = /Server selection timeout|Can't reach database server|ReplicaSetNoPrimary|P1001|P1017|P2010|MongoNetwork|ECONNREFUSED|fatal alert: InternalError|TLS handshake|certificate|timed out/i.test(
+    msg
+  );
+  if (dbUnreachable) {
+    return res.status(503).json({
+      success: false,
+      error: "Connexion \xE0 MongoDB impossible. V\xE9rifiez DATABASE_URL, le r\xE9seau \xAB Network Access \xBB sur Atlas (IP autoris\xE9es), et tout proxy ou antivirus qui intercepte TLS."
+    });
+  }
+  return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
 }
 function sha256Hex(input) {
   return (0, import_crypto.createHash)("sha256").update(input).digest("hex");
@@ -702,8 +762,7 @@ function registerMongoApi(app) {
         }
       });
     } catch (error) {
-      console.error("[auth/register]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+      return sendAuthPrismaError(res, "[auth/register]", error);
     }
   });
   app.post("/api/auth/login", async (req, res) => {
@@ -741,8 +800,7 @@ function registerMongoApi(app) {
         }
       });
     } catch (error) {
-      console.error("[auth/login]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+      return sendAuthPrismaError(res, "[auth/login]", error);
     }
   });
   app.post("/api/auth/logout", async (_req, res) => {
@@ -789,8 +847,7 @@ function registerMongoApi(app) {
         }
       });
     } catch (error) {
-      console.error("[auth/google]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+      return sendAuthPrismaError(res, "[auth/google]", error);
     }
   });
   app.post("/api/auth/admin-create", async (req, res) => {
@@ -1109,8 +1166,8 @@ function secureSecretEquals(expected, provided) {
 }
 async function startServer() {
   const app = (0, import_express.default)();
-  const PORT = 3e3;
-  const corsOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173,http://127.0.0.1:5173").split(",").map((v) => v.trim()).filter(Boolean);
+  const PORT = Number.parseInt(process.env.PORT || "", 10) || 3e3;
+  const corsOrigins = (process.env.CORS_ORIGIN || "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173").split(",").map((v) => v.trim()).filter(Boolean);
   const paddeWebhookSecret = process.env.PADDE_WEBHOOK_SECRET || "";
   const r2AccountId = process.env.R2_ACCOUNT_ID || "";
   const r2AccessKeyId = process.env.R2_ACCESS_KEY_ID || "";
@@ -1142,6 +1199,9 @@ async function startServer() {
     next();
   });
   app.use(import_express.default.json({ limit: "1mb", strict: true }));
+  app.get("/health", (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
   registerMongoApi(app);
   const s3 = canUseR2 ? new import_client_s32.S3Client({
     region: "auto",
@@ -1181,7 +1241,7 @@ async function startServer() {
             ContentDisposition: `inline; filename="${safeOriginal}"`
           })
         );
-        const fileUrl2 = r2PublicBaseUrl ? `${r2PublicBaseUrl.replace(/\/$/, "")}/${objectKey}` : `/api/files/download?publicId=${encodeURIComponent(objectKey)}`;
+        const fileUrl2 = r2PublicBaseUrl ? `${r2PublicBaseUrl.replace(/\/$/, "")}/${objectKey}` : buildFileUrl(objectKey);
         return res.status(200).json({
           success: true,
           url: fileUrl2,
@@ -1197,7 +1257,7 @@ async function startServer() {
       }
       await import_fs2.promises.mkdir(import_path3.default.dirname(absPath), { recursive: true });
       await import_fs2.promises.writeFile(absPath, req.file.buffer);
-      const fileUrl = `/api/files/download?publicId=${encodeURIComponent(objectKey)}`;
+      const fileUrl = buildFileUrl(objectKey);
       return res.status(200).json({
         success: true,
         url: fileUrl,
@@ -1347,21 +1407,8 @@ async function startServer() {
       res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await (0, import_vite.createServer)({
-      server: { middlewareMode: true },
-      appType: "spa"
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = import_path3.default.join(process.cwd(), "dist");
-    app.use(import_express.default.static(distPath));
-    app.get(/.*/, (_req, res) => {
-      res.sendFile(import_path3.default.join(distPath, "index.html"));
-    });
-  }
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`[infinitecore-api] http://0.0.0.0:${PORT}`);
   });
 }
 startServer();

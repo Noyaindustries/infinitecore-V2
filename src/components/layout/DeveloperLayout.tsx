@@ -10,6 +10,7 @@ import WorkspaceSpaceSwitcher from '../WorkspaceSpaceSwitcher';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '../../lib/utils';
+import { userInitialLetter } from '../../lib/userProfile';
 import { useRef } from 'react';
 
 export default function DeveloperLayout() {
@@ -245,7 +246,7 @@ export default function DeveloperLayout() {
                 aria-label="Profil développeur"
               >
                 <div className="w-10 h-10 rounded-xl bg-noya-blue/10 border border-noya-blue/20 flex items-center justify-center text-noya-blue font-black text-xs shadow-inner">
-                  {userData?.firstName?.[0] || 'D'}
+                  {userInitialLetter(userData, "D", user?.email)}
                 </div>
                 <div className="hidden sm:block text-left">
                   <span className="text-xs font-black text-text-primary uppercase tracking-tight block leading-none">{displayName}</span>

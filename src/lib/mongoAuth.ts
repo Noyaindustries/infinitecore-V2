@@ -1,4 +1,5 @@
 import { apiRequest, setAuthToken, getAuthToken } from "./apiClient";
+import { openGoogleEmailDialog } from "./googleSignInUI";
 
 export interface User {
   uid: string;
@@ -101,7 +102,9 @@ export function getAuth(_app?: unknown): Auth {
 export function onAuthStateChanged(_auth: Auth, callback: AuthListener) {
   listeners.add(callback);
   void bootstrapAuthState().then(() => callback(authState.currentUser));
-  return () => listeners.delete(callback);
+  return () => {
+    listeners.delete(callback);
+  };
 }
 
 export async function createUserWithEmailAndPassword(_auth: Auth, email: string, password: string) {
@@ -134,21 +137,45 @@ export async function signInWithEmailAndPassword(_auth: Auth, email: string, pas
   return { user: authState.currentUser };
 }
 
-export async function signInWithPopup(_auth: Auth, provider: GoogleAuthProvider) {
-  const hint = provider.getCustomParameters().login_hint || "";
-  const email = window.prompt("Adresse Google à utiliser", hint) || "";
+export type SignInWithGoogleOptions = {
+  /** Si renseigné, pas de modale (email déjà saisi sur login / signup). */
+  email?: string;
+  /** Nom affiché côté API (sinon dérivé de la partie locale de l’email). */
+  displayName?: string;
+};
+
+export async function signInWithPopup(
+  _auth: Auth,
+  provider: GoogleAuthProvider,
+  options?: SignInWithGoogleOptions
+) {
+  const fromOptions = String(options?.email || "").trim();
+  const fromHint = String(provider.getCustomParameters().login_hint || "").trim();
+  let email = fromOptions || fromHint;
+  if (!email) {
+    if (typeof window === "undefined") {
+      const error = new Error("Connexion Google indisponible côté serveur.");
+      (error as Error & { code?: string }).code = "auth/operation-not-supported-in-this-environment";
+      throw error;
+    }
+    const fromDialog = await openGoogleEmailDialog(fromHint);
+    email = (fromDialog || "").trim();
+  }
   if (!email.trim()) {
     const error = new Error("Connexion Google annulée.");
     (error as Error & { code?: string }).code = "auth/popup-closed-by-user";
     throw error;
   }
+  const trimmed = email.trim();
+  const display =
+    String(options?.displayName || "").trim() || trimmed.split("@")[0] || trimmed;
   const data = await apiRequest<{
     success: boolean;
     token: string;
     user: { uid: string; email: string; displayName?: string | null; photoURL?: string | null };
   }>("/api/auth/google", {
     method: "POST",
-    body: JSON.stringify({ email: email.trim(), displayName: email.split("@")[0] }),
+    body: JSON.stringify({ email: trimmed, displayName: display }),
   });
   setAuthToken(data.token);
   authState.currentUser = toUser(data.user);

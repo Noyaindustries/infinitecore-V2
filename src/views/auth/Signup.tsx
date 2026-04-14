@@ -402,7 +402,14 @@ export default function Signup() {
         throw new Error('Provider not initialized');
       }
 
-      const userCredential = await signInWithPopup(auth, provider);
+      const emailTrim = formData.email.trim();
+      if (emailTrim) {
+        provider.setCustomParameters({ login_hint: emailTrim });
+      }
+      const userCredential = await signInWithPopup(auth, provider, {
+        email: emailTrim || undefined,
+        displayName: formData.fullName.trim() || undefined,
+      });
       const user = userCredential.user;
 
       // Check if user exists in Firestore
@@ -480,29 +487,40 @@ export default function Signup() {
         }, 3000);
       } else {
         // User already exists, just log them in
-        const userData = userDoc.data();
-        if (userData.role === 'admin') {
+        const profile = userDoc.data();
+        if (!profile) {
+          navigate('/dashboard');
+          return;
+        }
+        const role = typeof profile.role === 'string' ? profile.role : 'client';
+        if (role === 'admin') {
           navigate('/superadmin');
-        } else if (userData.role === 'commando') {
+        } else if (role === 'commando') {
           navigate('/admin');
-        } else if (userData.role === 'developer') {
+        } else if (role === 'developer') {
           navigate('/developer');
-        } else if (userData.role === 'partner') {
+        } else if (role === 'partner') {
           navigate('/partenaire');
         } else {
           navigate('/dashboard');
         }
       }
     } catch (error: any) {
-      console.error(`${providerName} signup error:`, error);
-      if (error.code === 'auth/popup-blocked') {
-        toast.error('Le popup a été bloqué par votre navigateur. Veuillez autoriser les popups pour ce site.');
-      } else if (error.code === 'auth/unauthorized-domain') {
-        toast.error('Ce domaine n\'est pas autorisé dans la configuration Firebase. Veuillez contacter l\'administrateur.');
-      } else if (error.code === 'auth/popup-closed-by-user') {
-        toast.error('La fenêtre de connexion a été fermée avant la fin de l\'opération.');
+      const code = error?.code;
+      const cancelled =
+        code === 'auth/popup-closed-by-user' ||
+        (typeof error?.message === 'string' && error.message.includes('Connexion Google annulée'));
+      if (cancelled) {
+        toast.error('Connexion Google annulée.');
       } else {
-        toast.error(`Erreur lors de l'inscription avec ${providerName}.`);
+        console.error(`${providerName} signup error:`, error);
+        if (code === 'auth/popup-blocked') {
+          toast.error('Le popup a été bloqué par votre navigateur. Veuillez autoriser les popups pour ce site.');
+        } else if (code === 'auth/unauthorized-domain') {
+          toast.error('Ce domaine n\'est pas autorisé dans la configuration Firebase. Veuillez contacter l\'administrateur.');
+        } else {
+          toast.error(`Erreur lors de l'inscription avec ${providerName}.`);
+        }
       }
     } finally {
       setIsLoading(false);
@@ -510,21 +528,23 @@ export default function Signup() {
   };
 
   return (
-    <div className="relative flex w-full flex-col items-center px-4 py-6 font-sans sm:px-6 sm:py-8 lg:px-8">
+    <div className="relative flex w-full min-w-0 max-w-full flex-col items-center px-3 py-5 font-sans sm:px-6 sm:py-8 lg:px-8">
       {/* Header */}
-      <div className="mb-6 text-center">
-        <h2 className="mb-1 text-3xl font-bold text-white">Créer mon compte gratuit</h2>
-        <p className="text-[#9CA3AF]">Prêt en 2 minutes. Aucune carte bancaire.</p>
+      <div className="mb-5 w-full min-w-0 max-w-2xl px-1 text-center sm:mb-6">
+        <h2 className="mb-1 text-2xl font-bold leading-tight text-white sm:text-3xl">Créer mon compte gratuit</h2>
+        <p className="text-pretty text-sm text-[#9CA3AF] sm:text-base">Prêt en 2 minutes. Aucune carte bancaire.</p>
         {referralCode && (
-          <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-4 py-1.5 text-sm font-medium text-blue-700">
-            <CheckCircle size={16} />
-            Parrainé par : <span className="font-bold">{referrerName || 'Partenaire Infinite'}</span>
+          <div className="mx-auto mt-3 flex max-w-full flex-wrap items-center justify-center gap-2 rounded-full border border-blue-100 bg-blue-50 px-3 py-2 text-left text-xs font-medium text-blue-700 sm:px-4 sm:text-sm">
+            <CheckCircle size={16} className="shrink-0" />
+            <span className="min-w-0 wrap-break-word">
+              Parrainé par : <span className="font-bold">{referrerName || 'Partenaire Infinite'}</span>
+            </span>
           </div>
         )}
       </div>
 
       {/* Form Container */}
-      <div className="w-full max-w-2xl rounded-2xl border border-[#2d2d3d] bg-[#1E1E2E] p-6 shadow-sm sm:p-7">
+      <div className="w-full min-w-0 max-w-2xl rounded-2xl border border-[#2d2d3d] bg-[#1E1E2E] p-4 shadow-sm sm:p-6 md:p-7">
         {isSuccess ? (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
@@ -534,8 +554,8 @@ export default function Signup() {
             <div className="flex justify-center mb-6">
               <CheckCircle className="text-[#48bb78] w-24 h-24" />
             </div>
-            <h3 className="text-3xl font-bold text-white mb-4">Bienvenue !</h3>
-            <p className="text-lg text-[#9CA3AF] mb-8">
+            <h3 className="mb-4 text-2xl font-bold text-white sm:text-3xl">Bienvenue !</h3>
+            <p className="mb-8 text-base text-pretty text-[#9CA3AF] sm:text-lg">
               Votre compte a été créé avec succès. Redirection vers votre espace...
             </p>
           </motion.div>
@@ -545,7 +565,7 @@ export default function Signup() {
             <div className="mb-6 space-y-3">
               <button 
                 onClick={() => handleOAuth('google')}
-                className="flex w-full items-center justify-center gap-3 rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] px-6 py-2.5 font-medium text-white transition-colors hover:bg-[#111116]"
+                className="flex w-full items-center justify-center gap-3 rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-[#111116] sm:px-6 sm:py-2.5"
               >
                 <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
                 Continuer avec Google
@@ -559,17 +579,22 @@ export default function Signup() {
             </div>
 
             <form onSubmit={handleSubmit} className="mt-3 space-y-4">
-              <div className="grid grid-cols-3 gap-2 rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] p-1">
+              <div className="grid grid-cols-3 gap-1 rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] p-1 sm:gap-2">
                 {[1, 2, 3].map((step) => (
                   <button
                     key={step}
                     type="button"
                     onClick={() => setCurrentStep(step as 1 | 2 | 3)}
-                    className={`rounded-lg px-2 py-1.5 text-xs font-semibold transition-colors ${
+                    className={`touch-skip rounded-lg px-1 py-2 text-[11px] font-semibold transition-colors sm:px-2 sm:py-1.5 sm:text-xs ${
                       currentStep === step ? 'bg-[#6366F1] text-white' : 'text-[#9CA3AF] hover:bg-white/5'
                     }`}
+                    aria-label={`Étape ${step}`}
+                    aria-current={currentStep === step ? 'step' : undefined}
                   >
-                    Étape {step}
+                    <span className="sm:hidden" aria-hidden>
+                      {step}
+                    </span>
+                    <span className="hidden sm:inline">Étape {step}</span>
                   </button>
                 ))}
               </div>
@@ -779,12 +804,12 @@ export default function Signup() {
                 </div>
               )}
 
-              <div className="pt-2 flex gap-2">
+              <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:flex-wrap sm:items-stretch">
                 {currentStep > 1 && (
                   <button
                     type="button"
                     onClick={goToPrevStep}
-                    className="w-full rounded-xl border border-[#2d2d3d] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/5"
+                    className="w-full shrink-0 rounded-xl border border-[#2d2d3d] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/5 sm:min-w-0 sm:flex-1"
                   >
                     Précédent
                   </button>
@@ -794,17 +819,18 @@ export default function Signup() {
                   <button
                     type="button"
                     onClick={goToNextStep}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#6366F1] px-6 py-3 text-base font-bold text-white shadow-[0_0_15px_rgba(99,102,241,0.4)] transition-colors hover:bg-indigo-500"
+                    className="flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[#6366F1] px-4 py-3 text-sm font-bold text-white shadow-[0_0_15px_rgba(99,102,241,0.4)] transition-colors hover:bg-indigo-500 sm:flex-1 sm:px-6 sm:text-base"
                   >
-                    Suivant <ArrowRight size={20} />
+                    Suivant <ArrowRight size={20} className="shrink-0" />
                   </button>
                 ) : (
                   <button
                     type="submit"
                     disabled={isLoading}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#6366F1] px-6 py-3 text-base font-bold text-white shadow-[0_0_15px_rgba(99,102,241,0.4)] transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[#6366F1] px-4 py-3 text-sm font-bold text-white shadow-[0_0_15px_rgba(99,102,241,0.4)] transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-1 sm:px-6 sm:text-base"
                   >
-                    {isLoading ? 'Création en cours...' : 'Créer mon compte'} <ArrowRight size={20} />
+                    {isLoading ? 'Création en cours...' : 'Créer mon compte'}{' '}
+                    <ArrowRight size={20} className="shrink-0" />
                   </button>
                 )}
               </div>

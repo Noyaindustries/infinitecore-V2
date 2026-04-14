@@ -4,6 +4,7 @@ import { Suspense, lazy } from 'react';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { FirebaseProvider } from './components/FirebaseProvider';
 import CookieBanner from './components/CookieBanner';
+import GoogleEmailModal from './components/GoogleEmailModal';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminLayout from './components/layout/AdminLayout';
 import ClientLayout from './components/layout/ClientLayout';
@@ -13,67 +14,75 @@ import MarketingLayout from './components/layout/MarketingLayout';
 import PartnerLayout from './components/layout/PartnerLayout';
 
 // Lazy load pages
-const Home = lazy(() => import('./pages/Home'));
-const About = lazy(() => import('./pages/marketing/About'));
-const Pricing = lazy(() => import('./pages/marketing/Pricing'));
-const Solutions = lazy(() => import('./pages/marketing/Solutions'));
-const Cookies = lazy(() => import('./pages/marketing/Cookies'));
-const MentionsLegales = lazy(() => import('./pages/marketing/MentionsLegales'));
-const CGU = lazy(() => import('./pages/marketing/CGU'));
-const CGV = lazy(() => import('./pages/marketing/CGV'));
-const PolitiqueConfidentialite = lazy(() => import('./pages/marketing/PolitiqueConfidentialite'));
-const FAQ = lazy(() => import('./pages/marketing/FAQ'));
-const Login = lazy(() => import('./pages/auth/Login'));
-const Signup = lazy(() => import('./pages/auth/Signup'));
-const ResetPassword = lazy(() => import('./pages/auth/ResetPassword'));
-const MarketingPage = lazy(() => import('./pages/marketing/MarketingPage'));
-const AdminDashboard = lazy(() => import('./pages/admin/Dashboard'));
-const KanbanPipeline = lazy(() => import('./pages/admin/KanbanPipeline'));
-const Operations = lazy(() => import('./pages/admin/Operations'));
-const AdminClients = lazy(() => import('./pages/admin/Clients'));
-const AdminFinance = lazy(() => import('./pages/admin/Finance'));
-const AdminTickets = lazy(() => import('./pages/admin/Tickets'));
-const AdminDossiers = lazy(() => import('./pages/admin/Dossiers'));
-const AdminMessagerie = lazy(() => import('./pages/admin/Messagerie'));
-const AdminInstances = lazy(() => import('./pages/admin/Instances'));
-const AdminPartners = lazy(() => import('./pages/admin/Partners'));
-const AdminLeads = lazy(() => import('./pages/admin/Leads'));
-const ClientDashboard = lazy(() => import('./pages/client/Dashboard'));
-const ClientDocuments = lazy(() => import('./pages/client/Documents'));
-const ClientChat = lazy(() => import('./pages/client/Chat'));
-const ClientShop = lazy(() => import('./pages/client/Shop'));
-const ClientSupport = lazy(() => import('./pages/client/Support'));
-const ClientSuivi = lazy(() => import('./pages/client/Suivi'));
-const ClientProfile = lazy(() => import('./pages/client/Profile'));
-const DeveloperDashboard = lazy(() => import('./pages/developer/Dashboard'));
-const DeveloperMissions = lazy(() => import('./pages/developer/Missions'));
-const DeveloperDeliverables = lazy(() => import('./pages/developer/Deliverables'));
-const DeveloperCommissions = lazy(() => import('./pages/developer/Commissions'));
-const DeveloperResources = lazy(() => import('./pages/developer/Resources'));
-const DeveloperProfile = lazy(() => import('./pages/developer/Profile'));
-const SuperAdminDashboard = lazy(() => import('./pages/superadmin/Dashboard'));
-const SuperAdminUsers = lazy(() => import('./pages/superadmin/Users'));
-const SuperAdminOrders = lazy(() => import('./pages/superadmin/Orders'));
-const SuperAdminPartners = lazy(() => import('./pages/superadmin/Partners'));
-const SuperAdminCommando = lazy(() => import('./pages/superadmin/Commando'));
-const SuperAdminDevelopers = lazy(() => import('./pages/superadmin/Developers'));
-const SuperAdminSupervision = lazy(() => import('./pages/superadmin/Supervision'));
-const SuperAdminSettings = lazy(() => import('./pages/superadmin/Settings'));
-const PaddeCiAudits = lazy(() => import('./pages/superadmin/PaddeCiAudits'));
-const SuperAdminMissions = lazy(() => import('./pages/superadmin/Missions'));
-const PartnerDashboard = lazy(() => import('./pages/partner/Dashboard'));
-const PartnerClients = lazy(() => import('./pages/partner/Clients'));
-const PartnerCommissions = lazy(() => import('./pages/partner/Commissions'));
-const PartnerResources = lazy(() => import('./pages/partner/Resources'));
-const PartnerProfile = lazy(() => import('./pages/partner/Profile'));
-const PartnerReferrals = lazy(() => import('./pages/partner/Referrals'));
-const ModuleDashboard = lazy(() => import('./pages/module/Dashboard'));
+const Home = lazy(() => import('./views/Home'));
+const About = lazy(() => import('./views/marketing/About'));
+const Pricing = lazy(() => import('./views/marketing/Pricing'));
+const Solutions = lazy(() => import('./views/marketing/Solutions'));
+const Cookies = lazy(() => import('./views/marketing/Cookies'));
+const MentionsLegales = lazy(() => import('./views/marketing/MentionsLegales'));
+const CGU = lazy(() => import('./views/marketing/CGU'));
+const CGV = lazy(() => import('./views/marketing/CGV'));
+const PolitiqueConfidentialite = lazy(() => import('./views/marketing/PolitiqueConfidentialite'));
+const FAQ = lazy(() => import('./views/marketing/FAQ'));
+const Login = lazy(() => import('./views/auth/Login'));
+const Signup = lazy(() => import('./views/auth/Signup'));
+const ResetPassword = lazy(() => import('./views/auth/ResetPassword'));
+const MarketingPage = lazy(() => import('./views/marketing/MarketingPage'));
+const AdminDashboard = lazy(() => import('./views/admin/Dashboard'));
+const KanbanPipeline = lazy(() => import('./views/admin/KanbanPipeline'));
+const Operations = lazy(() => import('./views/admin/Operations'));
+const AdminClients = lazy(() => import('./views/admin/Clients'));
+const AdminFinance = lazy(() => import('./views/admin/Finance'));
+const AdminTickets = lazy(() => import('./views/admin/Tickets'));
+const AdminDossiers = lazy(() => import('./views/admin/Dossiers'));
+const AdminMessagerie = lazy(() => import('./views/admin/Messagerie'));
+const AdminInstances = lazy(() => import('./views/admin/Instances'));
+const AdminPartners = lazy(() => import('./views/admin/Partners'));
+const AdminLeads = lazy(() => import('./views/admin/Leads'));
+const ClientDashboard = lazy(() => import('./views/client/Dashboard'));
+const ClientDocuments = lazy(() => import('./views/client/Documents'));
+const ClientChat = lazy(() => import('./views/client/Chat'));
+const ClientShop = lazy(() => import('./views/client/Shop'));
+const ClientSupport = lazy(() => import('./views/client/Support'));
+const ClientSuivi = lazy(() => import('./views/client/Suivi'));
+const ClientProfile = lazy(() => import('./views/client/Profile'));
+const DeveloperDashboard = lazy(() => import('./views/developer/Dashboard'));
+const DeveloperMissions = lazy(() => import('./views/developer/Missions'));
+const DeveloperDeliverables = lazy(() => import('./views/developer/Deliverables'));
+const DeveloperCommissions = lazy(() => import('./views/developer/Commissions'));
+const DeveloperResources = lazy(() => import('./views/developer/Resources'));
+const DeveloperProfile = lazy(() => import('./views/developer/Profile'));
+const SuperAdminDashboard = lazy(() => import('./views/superadmin/Dashboard'));
+const SuperAdminUsers = lazy(() => import('./views/superadmin/Users'));
+const SuperAdminOrders = lazy(() => import('./views/superadmin/Orders'));
+const SuperAdminPartners = lazy(() => import('./views/superadmin/Partners'));
+const SuperAdminCommando = lazy(() => import('./views/superadmin/Commando'));
+const SuperAdminDevelopers = lazy(() => import('./views/superadmin/Developers'));
+const SuperAdminSupervision = lazy(() => import('./views/superadmin/Supervision'));
+const SuperAdminSettings = lazy(() => import('./views/superadmin/Settings'));
+const PaddeCiAudits = lazy(() => import('./views/superadmin/PaddeCiAudits'));
+const SuperAdminMissions = lazy(() => import('./views/superadmin/Missions'));
+const PartnerDashboard = lazy(() => import('./views/partner/Dashboard'));
+const PartnerClients = lazy(() => import('./views/partner/Clients'));
+const PartnerCommissions = lazy(() => import('./views/partner/Commissions'));
+const PartnerResources = lazy(() => import('./views/partner/Resources'));
+const PartnerProfile = lazy(() => import('./views/partner/Profile'));
+const PartnerReferrals = lazy(() => import('./views/partner/Referrals'));
+const ModuleDashboard = lazy(() => import('./views/module/Dashboard'));
 
 function App() {
   return (
     <ErrorBoundary>
       <FirebaseProvider>
-        <Toaster position="top-right" />
+        <Toaster
+          position="bottom-center"
+          containerClassName="!bottom-4 max-sm:!px-3 sm:!bottom-6"
+          toastOptions={{
+            duration: 4000,
+            className: "!max-w-[min(100vw-1.5rem,22rem)] !text-sm",
+          }}
+        />
+        <GoogleEmailModal />
         <CookieBanner />
         <Router>
           <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-surface-primary text-text-primary">Chargement...</div>}>

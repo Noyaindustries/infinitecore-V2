@@ -59,7 +59,7 @@ const STEP_THEME: Record<
 
 /**
  * URL absolue pour iframe / nouvel onglet.
- * - Chemins relatifs `/api/...` : même origine que la page, sauf si `VITE_API_BASE_URL` est défini (front et API sur des hôtes différents).
+ * - Chemins relatifs `/api/...` : même origine que la page, sauf si `NEXT_PUBLIC_API_BASE_URL` est défini.
  */
 function resolveClientFileUrl(url: string): string {
   if (!url) return '';
@@ -67,7 +67,7 @@ function resolveClientFileUrl(url: string): string {
   if (u.startsWith('http://') || u.startsWith('https://')) return u;
   if (typeof window !== 'undefined' && u.startsWith('//')) return `${window.location.protocol}${u}`;
   if (typeof window !== 'undefined' && u.startsWith('/')) {
-    const apiBase = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '');
+    const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL ?? '').replace(/\/$/, '');
     if (apiBase && /^https?:\/\//i.test(apiBase)) return `${apiBase}${u}`;
     return `${window.location.origin}${u}`;
   }
@@ -273,16 +273,14 @@ export default function ClientSuivi() {
     const validated = STEP_ORDER.filter((t) => latest[t]?.status === 'valide').length;
     const validatedPct = Math.round((validated / STEP_ORDER.length) * 100);
 
-    const weights = STEP_ORDER.map((t) => {
+    const weights: number[] = STEP_ORDER.map((t) => {
       const st = latest[t]?.status;
       if (st === 'valide') return 1;
       if (st === 'soumis') return 0.55;
       if (st === 'en_attente') return 0.2;
       return 0;
     });
-    const weightedPct = Math.round(
-      (weights.reduce((a, b) => a + b, 0) / STEP_ORDER.length) * 100
-    );
+    const weightedPct = Math.round((weights.reduce((a, b) => a + b, 0) / STEP_ORDER.length) * 100);
 
     const pendingIdx = STEP_ORDER.findIndex((t) => latest[t]?.status === 'soumis');
 

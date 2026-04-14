@@ -211,7 +211,7 @@ export async function getDocFromServer<T = any>(ref: DocumentReference<T>) {
   return getDoc(ref);
 }
 
-export async function setDoc<T = any>(ref: DocumentReference<T>, data: T, options?: { merge?: boolean }) {
+export async function setDoc<T extends DocData = DocData>(ref: DocumentReference<T>, data: T, options?: { merge?: boolean }) {
   const { collectionPath, docId } = splitDocPath(ref.path);
   await apiRequest("/api/data/doc", {
     method: "POST",
@@ -224,7 +224,7 @@ export async function setDoc<T = any>(ref: DocumentReference<T>, data: T, option
   });
 }
 
-export async function addDoc<T = any>(col: CollectionReference<T>, data: T) {
+export async function addDoc<T extends DocData = DocData>(col: CollectionReference<T>, data: T) {
   const docRef = doc(col);
   await setDoc(docRef, data);
   return docRef;
@@ -311,13 +311,13 @@ export function onSnapshot<T = DocData>(
 export function writeBatch(_db: Firestore) {
   const ops: Array<() => Promise<void>> = [];
   return {
-    set<T = DocData>(ref: DocumentReference<T>, data: T, options?: { merge?: boolean }) {
+    set<T extends DocData = DocData>(ref: DocumentReference<T>, data: T, options?: { merge?: boolean }) {
       ops.push(() => setDoc(ref, data, options));
     },
-    update<T = DocData>(ref: DocumentReference<T>, data: Partial<T>) {
+    update<T extends DocData = DocData>(ref: DocumentReference<T>, data: Partial<T>) {
       ops.push(() => updateDoc(ref, data));
     },
-    delete<T = DocData>(ref: DocumentReference<T>) {
+    delete<T extends DocData = DocData>(ref: DocumentReference<T>) {
       ops.push(() => deleteDoc(ref));
     },
     async commit() {
@@ -331,17 +331,17 @@ export function writeBatch(_db: Firestore) {
 type TransactionOp = () => Promise<void>;
 
 export function runTransaction<T>(_db: Firestore, handler: (tx: {
-  get: <D = DocData>(ref: DocumentReference<D>) => Promise<DocumentSnapshot<D>>;
-  set: <D = DocData>(ref: DocumentReference<D>, data: D, options?: { merge?: boolean }) => void;
-  update: <D = DocData>(ref: DocumentReference<D>, data: Partial<D>) => void;
+  get: <D extends DocData = DocData>(ref: DocumentReference<D>) => Promise<DocumentSnapshot<D>>;
+  set: <D extends DocData = DocData>(ref: DocumentReference<D>, data: D, options?: { merge?: boolean }) => void;
+  update: <D extends DocData = DocData>(ref: DocumentReference<D>, data: Partial<D>) => void;
 }) => Promise<T>): Promise<T> {
   const ops: TransactionOp[] = [];
   const tx = {
-    get: <D = DocData>(ref: DocumentReference<D>) => getDoc(ref),
-    set: <D = DocData>(ref: DocumentReference<D>, data: D, options?: { merge?: boolean }) => {
+    get: <D extends DocData = DocData>(ref: DocumentReference<D>) => getDoc(ref),
+    set: <D extends DocData = DocData>(ref: DocumentReference<D>, data: D, options?: { merge?: boolean }) => {
       ops.push(() => setDoc(ref, data, options));
     },
-    update: <D = DocData>(ref: DocumentReference<D>, data: Partial<D>) => {
+    update: <D extends DocData = DocData>(ref: DocumentReference<D>, data: Partial<D>) => {
       ops.push(() => updateDoc(ref, data));
     },
   };

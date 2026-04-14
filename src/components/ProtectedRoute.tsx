@@ -32,15 +32,16 @@ export default function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
     );
   }
 
-  if (allowedRoles && userData && !allowedRoles.includes(userData.role)) {
+  const role = typeof userData?.role === "string" ? userData.role : undefined;
+  if (allowedRoles && userData && role && !allowedRoles.includes(role)) {
     // User is logged in but doesn't have the right role
-    if (userData.role === 'admin') {
+    if (role === "admin") {
       return <Navigate to="/superadmin" replace />;
-    } else if (userData.role === 'commando') {
+    } else if (role === "commando") {
       return <Navigate to="/admin" replace />;
-    } else if (userData.role === 'developer') {
+    } else if (role === "developer") {
       return <Navigate to="/developer" replace />;
-    } else if (userData.role === 'partner') {
+    } else if (role === "partner") {
       return <Navigate to="/partenaire" replace />;
     }
     return <Navigate to="/dashboard" replace />;

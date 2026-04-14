@@ -1,6 +1,5 @@
 import express from "express";
 import cors from "cors";
-import { createServer as createViteServer } from "vite";
 import path from "path";
 import { createReadStream, promises as fs } from "fs";
 import multer from "multer";
@@ -8,7 +7,7 @@ import { randomUUID, timingSafeEqual } from "crypto";
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { prisma } from "./prismaClient";
-import { sanitizeFolder } from "./_r2";
+import { buildFileUrl, sanitizeFolder } from "./_r2";
 import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } from "./storageUtils";
 import { registerMongoApi } from "./mongoApi";
 
@@ -56,8 +55,11 @@ function secureSecretEquals(expected: string, provided: string) {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
-  const corsOrigins = (process.env.CORS_ORIGIN || "http://localhost:5173,http://127.0.0.1:5173")
+  const PORT = Number.parseInt(process.env.PORT || "", 10) || 3000;
+  const corsOrigins = (
+    process.env.CORS_ORIGIN ||
+    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173"
+  )
     .split(",")
     .map((v) => v.trim())
     .filter(Boolean);
@@ -95,6 +97,11 @@ async function startServer() {
     next();
   });
   app.use(express.json({ limit: "1mb", strict: true }));
+
+  app.get("/health", (_req, res) => {
+    res.status(200).json({ ok: true });
+  });
+
   registerMongoApi(app);
 
   const s3 = canUseR2
@@ -143,7 +150,7 @@ async function startServer() {
 
         const fileUrl = r2PublicBaseUrl
           ? `${r2PublicBaseUrl.replace(/\/$/, "")}/${objectKey}`
-          : `/api/files/download?publicId=${encodeURIComponent(objectKey)}`;
+          : buildFileUrl(objectKey);
 
         return res.status(200).json({
           success: true,
@@ -163,7 +170,7 @@ async function startServer() {
       await fs.mkdir(path.dirname(absPath), { recursive: true });
       await fs.writeFile(absPath, req.file.buffer);
 
-      const fileUrl = `/api/files/download?publicId=${encodeURIComponent(objectKey)}`;
+      const fileUrl = buildFileUrl(objectKey);
       return res.status(200).json({
         success: true,
         url: fileUrl,
@@ -341,23 +348,10 @@ async function startServer() {
     }
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-  } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
-    app.get(/.*/, (_req, res) => {
-      res.sendFile(path.join(distPath, 'index.html'));
-    });
-  }
+  // L’UI est servie par Next.js (`next dev --turbo` / `next start`). Ce processus ne sert que les routes /api/*.
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`[infinitecore-api] http://0.0.0.0:${PORT}`);
   });
 }
 

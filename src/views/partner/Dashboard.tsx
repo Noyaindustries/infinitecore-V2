@@ -96,7 +96,7 @@ export default function PartnerDashboard() {
   const partnerName = userData?.firstName
     ? `${userData.firstName} ${userData.lastName || ''}`.trim()
     : 'Partenaire';
-  const referralCode = normalizePartnerCode(userData?.referralCode || buildPartnerCode(partnerUid));
+  const referralCode = normalizePartnerCode(String(userData?.referralCode || buildPartnerCode(partnerUid)));
   const partnerCodeLegacy = normalizePartnerCode(String(userData?.partnerCode || ''));
   const referralLink = referralCode
     ? `${typeof window !== 'undefined' ? window.location.origin : 'https://infinitecore.app'}/signup?ref=${encodeURIComponent(referralCode)}`
@@ -118,7 +118,10 @@ export default function PartnerDashboard() {
       ].filter(Boolean));
 
       const signups = snapshot.docs
-        .map((d) => ({ id: d.id, ...(d.data() as ReferredSignup & { role?: string; referredBy?: string; referredByPartnerId?: string }) }))
+        .map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<ReferredSignup, "id"> & { role?: string; referredBy?: string; referredByPartnerId?: string }),
+        }))
         .filter((row) => {
           const role = String((row as { role?: string }).role || '').toLowerCase();
           if (role !== 'client') return false;

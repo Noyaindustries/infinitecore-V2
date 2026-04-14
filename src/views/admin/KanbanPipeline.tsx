@@ -260,7 +260,9 @@ export default function KanbanPipeline() {
                       draggable={!task.__fromLeadOnly}
                       onDragStart={(e) => {
                         if (task.__fromLeadOnly) return;
-                        e.dataTransfer.setData('text/plain', JSON.stringify({ 
+                        const dt = (e as unknown as React.DragEvent<HTMLDivElement>).dataTransfer;
+                        if (!dt) return;
+                        dt.setData('text/plain', JSON.stringify({ 
                           id: task.id, 
                           isOrder: task.isOrder, 
                           title: task.title, 

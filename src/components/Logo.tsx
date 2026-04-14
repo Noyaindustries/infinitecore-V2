@@ -1,4 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
+
+const LOGO_SRC = '/infinite-core-logo.png';
 
 interface LogoProps {
   className?: string;
@@ -6,6 +8,68 @@ interface LogoProps {
   lightText?: boolean;
   /** Fond sous le logo pour mix-blend : `transparent` = pas de plaque (ex. pied de page). */
   blendSurface?: 'primary' | 'secondary' | 'transparent';
+  /**
+   * Teinte alignée sur le menu marketing (liens `#8E9EAE`, survol `#F5F7FF`).
+   * Le parent du lien doit inclure `group/logo` pour le survol.
+   */
+  matchMarketingNav?: boolean;
+}
+
+function MarkSvgFallback({
+  monochrome,
+  className = '',
+}: {
+  monochrome?: boolean;
+  className?: string;
+}) {
+  const stroke = monochrome ? 'currentColor' : '#2B547E';
+  const fillMain = monochrome ? 'currentColor' : '#2B547E';
+  const fillAccent = monochrome ? 'currentColor' : '#8B6B5D';
+  const coreInner = monochrome ? 'currentColor' : '#D98A2C';
+  const a11y = monochrome
+    ? ({ role: 'img' as const, 'aria-label': 'Infinite Core' } as const)
+    : ({ 'aria-hidden': true as const } as const);
+
+  return (
+    <svg
+      className={`h-full max-h-full w-auto text-current ${className}`.trim()}
+      viewBox="0 0 100 60"
+      fill="none"
+      xmlns="http://www.w3.org/2000/svg"
+      {...a11y}
+    >
+      <path
+        d="M25 30 C 25 10, 45 10, 50 30 C 55 50, 75 50, 75 30 C 75 10, 55 10, 50 30 C 45 50, 25 50, 25 30 Z"
+        stroke={stroke}
+        strokeWidth="1.5"
+        fill="none"
+      />
+      <path
+        d="M15 30 C 15 5, 48 5, 50 30 C 52 55, 85 55, 85 30 C 85 5, 52 5, 50 30 C 48 55, 15 55, 15 30 Z"
+        stroke={stroke}
+        strokeWidth="1"
+        fill="none"
+        opacity={monochrome ? 0.55 : 0.6}
+      />
+      <path
+        d="M35 30 C 35 20, 42 20, 50 30 C 58 40, 65 40, 65 30 C 65 20, 58 20, 50 30 C 42 40, 35 40, 35 30 Z"
+        stroke={stroke}
+        strokeWidth="1"
+        fill="none"
+        opacity={monochrome ? 0.55 : 0.6}
+      />
+      <circle cx="25" cy="30" r="3" fill={fillMain} />
+      <circle cx="75" cy="30" r="3" fill={fillMain} />
+      <circle cx="15" cy="30" r="2.5" fill={fillMain} />
+      <circle cx="85" cy="30" r="2.5" fill={fillMain} />
+      <circle cx="35" cy="20" r="2.5" fill={fillAccent} className={monochrome ? 'opacity-50' : ''} />
+      <circle cx="65" cy="40" r="2.5" fill={fillAccent} className={monochrome ? 'opacity-50' : ''} />
+      <circle cx="35" cy="40" r="2.5" fill={fillAccent} className={monochrome ? 'opacity-50' : ''} />
+      <circle cx="65" cy="20" r="2.5" fill={fillAccent} className={monochrome ? 'opacity-50' : ''} />
+      <circle cx="50" cy="30" r="6" fill={fillMain} />
+      <circle cx="50" cy="30" r="3" fill={coreInner} opacity={monochrome ? 0.45 : 1} filter={monochrome ? undefined : 'blur(1px)'} />
+    </svg>
+  );
 }
 
 export default function Logo({
@@ -13,9 +77,11 @@ export default function Logo({
   showText = false,
   lightText = false,
   blendSurface,
+  matchMarketingNav = false,
 }: LogoProps) {
+  const [marketingImgFailed, setMarketingImgFailed] = useState(false);
   const sizeClass = className.trim() || 'h-14 md:h-16';
-  const blend = Boolean(blendSurface);
+  const blend = Boolean(blendSurface) && !matchMarketingNav;
   const imgBase =
     'block h-full max-h-full w-auto max-w-full object-contain object-left';
   const imgClasses = blend
@@ -27,43 +93,38 @@ export default function Logo({
     e.currentTarget.nextElementSibling?.classList.remove('hidden');
   };
 
-  const graphic = (
+  const graphic = matchMarketingNav ? (
+    marketingImgFailed ? (
+      <MarkSvgFallback monochrome />
+    ) : (
+      <img
+        src={LOGO_SRC}
+        alt="Infinite Core"
+        className="pointer-events-none block h-full w-auto max-h-full max-w-full object-contain object-left opacity-90 transition-opacity duration-150 group-hover/logo:opacity-100"
+        onError={() => setMarketingImgFailed(true)}
+      />
+    )
+  ) : (
     <>
       <img
-        src="/infinite-core-logo.png"
+        src={LOGO_SRC}
         alt="Infinite Core"
         className={imgClasses}
         onError={markFallback}
       />
 
-      {/* Fallback SVG Logo (similar to the provided image structure) */}
-      <svg
-        className={`h-full max-h-full w-auto hidden ${blend ? 'mix-blend-lighten' : ''}`}
-        viewBox="0 0 100 60"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        {/* Infinity network structure */}
-        <path d="M25 30 C 25 10, 45 10, 50 30 C 55 50, 75 50, 75 30 C 75 10, 55 10, 50 30 C 45 50, 25 50, 25 30 Z" stroke="#2B547E" strokeWidth="1.5" fill="none" />
-        <path d="M15 30 C 15 5, 48 5, 50 30 C 52 55, 85 55, 85 30 C 85 5, 52 5, 50 30 C 48 55, 15 55, 15 30 Z" stroke="#2B547E" strokeWidth="1" fill="none" opacity="0.6" />
-        <path d="M35 30 C 35 20, 42 20, 50 30 C 58 40, 65 40, 65 30 C 65 20, 58 20, 50 30 C 42 40, 35 40, 35 30 Z" stroke="#2B547E" strokeWidth="1" fill="none" opacity="0.6" />
-        
-        {/* Nodes */}
-        <circle cx="25" cy="30" r="3" fill="#2B547E" />
-        <circle cx="75" cy="30" r="3" fill="#2B547E" />
-        <circle cx="15" cy="30" r="2.5" fill="#2B547E" />
-        <circle cx="85" cy="30" r="2.5" fill="#2B547E" />
-        <circle cx="35" cy="20" r="2.5" fill="#8B6B5D" />
-        <circle cx="65" cy="40" r="2.5" fill="#8B6B5D" />
-        <circle cx="35" cy="40" r="2.5" fill="#8B6B5D" />
-        <circle cx="65" cy="20" r="2.5" fill="#8B6B5D" />
-        
-        {/* Central Core */}
-        <circle cx="50" cy="30" r="6" fill="#2B547E" />
-        <circle cx="50" cy="30" r="3" fill="#D98A2C" filter="blur(1px)" />
-      </svg>
+      <MarkSvgFallback className={`hidden ${blend ? 'mix-blend-lighten' : ''}`} />
     </>
   );
+
+  const graphicBlock =
+    matchMarketingNav ? (
+      <div className="flex h-full items-center text-[#8E9EAE] transition-colors duration-150 group-hover/logo:text-[#F5F7FF]">
+        {graphic}
+      </div>
+    ) : (
+      graphic
+    );
 
   return (
     <div
@@ -79,10 +140,10 @@ export default function Logo({
                 : 'bg-surface-primary'
           }`}
         >
-          {graphic}
+          {graphicBlock}
         </div>
       ) : (
-        graphic
+        graphicBlock
       )}
 
       {showText && (

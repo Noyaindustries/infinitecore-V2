@@ -78,9 +78,11 @@ export default function SuperAdminOrders() {
       
       const userDoc = await getDoc(doc(db, 'users', order.userId));
       if (userDoc.exists()) {
-        const userData = userDoc.data();
-        clientAddress = userData.address || '';
-        clientPhone = userData.phone || '';
+        const profile = userDoc.data() as Record<string, unknown> | null | undefined;
+        if (profile) {
+          clientAddress = typeof profile.address === "string" ? profile.address : "";
+          clientPhone = typeof profile.phone === "string" ? profile.phone : "";
+        }
       }
 
       const invoiceData: InvoiceData = {

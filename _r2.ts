@@ -15,6 +15,8 @@ const accessKeyId = cleanEnv(process.env.R2_ACCESS_KEY_ID);
 const secretAccessKey = cleanEnv(process.env.R2_SECRET_ACCESS_KEY);
 const bucket = cleanEnv(process.env.R2_BUCKET_NAME);
 const publicBaseUrl = normalizeUrl(cleanEnv(process.env.R2_PUBLIC_BASE_URL));
+/** URL publique de l’API (ex. https://infinitecore-api.onrender.com) — pour les liens /api/files/download quand le front est sur un autre domaine. */
+const apiPublicBase = normalizeUrl(cleanEnv(process.env.API_PUBLIC_URL)).replace(/\/$/, "");
 const endpoint = normalizeUrl(
   cleanEnv(process.env.R2_ENDPOINT) || (accountId ? `${accountId}.r2.cloudflarestorage.com` : "")
 );
@@ -50,7 +52,11 @@ export function buildFileUrl(publicId: string): string {
   if (publicBaseUrl) {
     return `${publicBaseUrl.replace(/\/$/, "")}/${publicId}`;
   }
-  return `/api/files/download?publicId=${encodeURIComponent(publicId)}`;
+  const q = `?publicId=${encodeURIComponent(publicId)}`;
+  if (apiPublicBase) {
+    return `${apiPublicBase}/api/files/download${q}`;
+  }
+  return `/api/files/download${q}`;
 }
 
 export async function putObject(params: {

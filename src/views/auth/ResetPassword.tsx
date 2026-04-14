@@ -51,9 +51,9 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="flex min-h-[calc(100dvh-66px)] flex-col justify-center py-8 px-4 sm:min-h-[calc(100dvh-70px)] sm:px-6 md:min-h-[calc(100dvh-78px)] lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="text-center text-3xl font-extrabold text-white">Réinitialiser le mot de passe</h2>
+    <div className="flex min-h-[calc(100dvh-70px)] flex-col justify-center px-3 py-6 sm:min-h-[calc(100dvh-76px)] sm:px-6 sm:py-8 md:min-h-[calc(100dvh-84px)] lg:px-8">
+      <div className="mx-auto w-full min-w-0 max-w-md px-1 sm:px-0">
+        <h2 className="text-center text-2xl font-extrabold text-white sm:text-3xl">Réinitialiser le mot de passe</h2>
         <p className="mt-2 text-center text-sm text-gray-400">
           Entrez l’e-mail, le token reçu et votre nouveau mot de passe.
         </p>
@@ -62,7 +62,7 @@ export default function ResetPassword() {
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mt-8 sm:mx-auto sm:w-full sm:max-w-md bg-white/5 border border-white/10 rounded-2xl p-8 backdrop-blur"
+        className="mx-auto mt-6 w-full min-w-0 max-w-md rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur sm:mt-8 sm:p-8"
       >
         <form className="space-y-5" onSubmit={handleSubmit}>
           <div>

@@ -65,10 +65,10 @@ export default function AdminPartners() {
 
   useEffect(() => {
     const unsubUsers = onSnapshot(collection(db, 'users'), (snap) => {
-      setUsers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as UserRow) })));
+      setUsers(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<UserRow, "id">) })));
     });
     const unsubLeads = onSnapshot(collection(db, 'leads'), (snap) => {
-      setLeads(snap.docs.map((d) => ({ id: d.id, ...(d.data() as LeadRow) })));
+      setLeads(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LeadRow, "id">) })));
     });
     return () => {
       unsubUsers();

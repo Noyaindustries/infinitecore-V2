@@ -1,3 +1,5 @@
+import { apiUrl } from "../lib/apiBase";
+
 export interface UploadResult {
   url: string;
   publicId: string;
@@ -17,7 +19,7 @@ export function uploadFile(
     formData.append("folder", folder);
 
     const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/files/upload");
+    xhr.open("POST", apiUrl("/api/files/upload"));
 
     xhr.upload.onprogress = (event) => {
       if (!onProgress || !event.lengthComputable) return;
@@ -63,7 +65,7 @@ export function uploadFile(
 
 export async function deleteUploadedFile(publicId: string): Promise<void> {
   if (!publicId) return;
-  const response = await fetch(`/api/files?publicId=${encodeURIComponent(publicId)}`, {
+  const response = await fetch(apiUrl(`/api/files?publicId=${encodeURIComponent(publicId)}`), {
     method: "DELETE",
   });
   if (!response.ok) {

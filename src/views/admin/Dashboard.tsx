@@ -296,6 +296,11 @@ export default function AdminDashboard() {
   }, []);
 
   const handleCreateLeadFromReferral = async (alert: (typeof referralAlerts)[number]) => {
+    const uid = user?.uid;
+    if (!uid) {
+      toast.error('Session expirée.');
+      return;
+    }
     if (!alert.referredByPartnerId) {
       toast.error('Partenaire introuvable pour ce parrainage.');
       return;
@@ -325,7 +330,7 @@ export default function AdminDashboard() {
       await setDoc(doc(db, 'tasks', taskId), {
         id: taskId,
         leadId,
-        userId: user.uid,
+        userId: uid,
         title: `Lead partenaire: ${alert.companyName || 'Entreprise non renseignée'}`,
         client: `${alert.firstName} ${alert.lastName}`.trim() || alert.companyName || 'Nouveau contact',
         columnId: 'nouveau',

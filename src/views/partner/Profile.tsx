@@ -74,7 +74,7 @@ export default function PartnerProfile() {
     const leadsQuery = query(collection(db, 'leads'), where('partnerId', '==', partnerUid));
     const notifsQuery = query(collection(db, 'notifications'), where('userId', '==', partnerUid), where('read', '==', false));
     const unsubscribeLeads = onSnapshot(leadsQuery, (snap) => {
-      setLeads(snap.docs.map((d) => ({ id: d.id, ...(d.data() as LeadRow) })));
+      setLeads(snap.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LeadRow, "id">) })));
     });
     const unsubscribeNotifs = onSnapshot(notifsQuery, (snap) => {
       setUnreadNotifications(snap.docs.length);

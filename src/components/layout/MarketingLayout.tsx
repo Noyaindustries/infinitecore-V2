@@ -6,6 +6,7 @@ import Logo from '../Logo';
 import { useAuth } from '../FirebaseProvider';
 import MarketingV4Background from './MarketingV4Background';
 import { cn } from '../../lib/utils';
+import { userInitialLetter } from '../../lib/userProfile';
 import { getWorkspaceNavLinks } from '../../lib/workspaceSpaces';
 
 /** Liens modules marketing (menu Solutions + footer). */
@@ -61,13 +62,13 @@ export default function MarketingLayout() {
           navSolid ? 'bg-[#03050d]/95' : 'bg-black/60'
         } backdrop-blur-[24px] backdrop-saturate-[180%]`}
       >
-        <div className="container mx-auto flex h-[66px] items-center justify-between px-4 sm:h-[70px] md:h-[78px] sm:px-6 lg:px-[52px]">
-          <div className="flex flex-1 justify-start items-center min-w-0">
+        <div className="container mx-auto flex h-[70px] min-w-0 items-center justify-between gap-2 px-3 sm:h-[76px] sm:px-6 md:h-[84px] lg:px-[52px]">
+          <div className="flex min-w-0 flex-1 items-center justify-start">
             <Link
               to="/"
-              className="flex shrink-0 items-center self-center transition-opacity duration-300 hover:opacity-90"
+              className="group/logo flex min-w-0 shrink items-center self-center transition-opacity duration-300 hover:opacity-90"
             >
-              <Logo lightText blendSurface="primary" className="h-[3.25rem] sm:h-[3.65rem] md:h-[4.1rem]" />
+              <Logo matchMarketingNav className="h-9 w-auto max-h-[2.75rem] sm:h-[3.5rem] sm:max-h-none md:h-[4rem] lg:h-[4.5rem]" />
             </Link>
           </div>
           
@@ -115,7 +116,7 @@ export default function MarketingLayout() {
               <div className="relative group">
                 <button className="flex items-center gap-1.5 rounded-full border border-white/[0.07] bg-white/[0.04] px-3 py-1.5 text-[13px] text-[#F5F7FF] transition-colors hover:bg-white/[0.07]">
                   <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#4A7FB5] text-[10px] font-bold text-white">
-                    {userData?.firstName?.charAt(0) || user.email?.charAt(0)?.toUpperCase() || 'U'}
+                    {userInitialLetter(userData, "U", user.email)}
                   </div>
                   <span className="hidden lg:inline">Mon espace</span>
                   <ChevronDown size={13} className="text-[#8E9EAE]" />
@@ -285,7 +286,7 @@ export default function MarketingLayout() {
       </header>
 
       {/* MAIN — le contenu passe sous la nav fixe (padding géré par les pages, ex. Home) */}
-      <main className="relative z-10 flex-1 pt-[66px] sm:pt-[70px] md:pt-[78px]">
+      <main className="relative z-10 flex-1 pt-[70px] sm:pt-[76px] md:pt-[84px]">
         <Outlet />
       </main>
 
@@ -299,8 +300,8 @@ export default function MarketingLayout() {
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-x-6 sm:gap-y-8 lg:mb-7 lg:grid-cols-12 lg:gap-x-6 lg:gap-y-0 xl:gap-x-8">
             {/* Marque */}
             <div className="sm:col-span-2 lg:col-span-5 xl:col-span-4">
-              <Link to="/" className="inline-block transition-opacity hover:opacity-90">
-                <Logo lightText blendSurface="primary" className="h-11 sm:h-12 md:h-14" />
+              <Link to="/" className="group/logo inline-block transition-opacity hover:opacity-90">
+                <Logo matchMarketingNav className="h-12 sm:h-14 md:h-16" />
               </Link>
               <p className="mt-2.5 max-w-[280px] text-[11px] font-normal leading-snug text-[#6B7A90] sm:text-[12px] sm:leading-relaxed">
                 The Operating System for African Business. Suite SaaS modulaire pour PME et grandes entreprises

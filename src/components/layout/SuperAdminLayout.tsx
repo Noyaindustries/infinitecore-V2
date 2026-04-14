@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { cn } from '../../lib/utils';
+import { userInitialLetter } from '../../lib/userProfile';
 import { auth } from '../../firebase';
 import { signOut } from 'firebase/auth';
 import Logo from '../Logo';
@@ -162,7 +163,8 @@ export default function SuperAdminLayout() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "bg-surface-secondary border-r border-border-subtle text-text-primary w-64 sidebar-responsive flex-shrink-0 flex-col transition-transform duration-300 ease-in-out fixed md:relative z-50 h-full",
+        "bg-surface-secondary border-r border-border-subtle text-text-primary w-64 sidebar-responsive flex-shrink-0 flex-col transition-transform duration-300 ease-in-out fixed z-50 md:relative md:h-full",
+        "top-[60px] h-[calc(100dvh-60px)] md:top-auto",
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}>
         <div className="p-6 hidden md:block">
@@ -307,7 +309,7 @@ export default function SuperAdminLayout() {
                   aria-label="Profil super admin"
                 >
                   <div className="w-8 h-8 bg-noya-red/20 border border-noya-red/30 rounded-full flex items-center justify-center text-noya-red font-bold text-sm shadow-inner">
-                    {userData?.firstName?.[0] || 'A'}
+                    {userInitialLetter(userData, "A", user?.email)}
                   </div>
                   <span className="hidden md:block text-sm font-black text-text-primary uppercase tracking-tighter">{displayName}</span>
                   <ChevronDown size={14} className={cn("text-text-secondary/50 transition-transform", showProfileMenu && "rotate-180")} />

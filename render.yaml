@@ -1,0 +1,31 @@
+# Blueprint Render : API Express (Node). Crée le service puis renseigne les secrets dans le dashboard.
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: infinitecore-api
+    runtime: node
+    region: frankfurt
+    plan: free
+    buildCommand: npm ci && npm run build:api
+    startCommand: node dist/server.cjs
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_PUBLIC_URL
+        # Remplace par l’URL Render une fois le service créé (ex. https://infinitecore-api.onrender.com)
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_ISSUER
+        value: infinitecore-api
+      - key: JWT_AUDIENCE
+        value: infinitecore-web
+      - key: CORS_ORIGIN
+        # Ex. https://infinitecore.net,https://www.infinitecore.net,https://ton-projet.vercel.app
+        sync: false
+      - key: APP_BASE_URL
+        # URL du front (liens reset mot de passe dans les mails)
+        sync: false

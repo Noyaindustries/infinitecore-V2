@@ -23,8 +23,9 @@ export default function MarketingV4Background() {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const ctxRaw = canvas.getContext('2d');
+    if (!ctxRaw) return;
+    const ctx: CanvasRenderingContext2D = ctxRaw;
 
     const orbs = [
       { x: 0.2, y: 0.15, r: 0.45, color: [74, 127, 181] as const, a: 0.12, speed: 0.00012, phase: 0 },

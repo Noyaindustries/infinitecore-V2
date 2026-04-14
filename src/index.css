@@ -436,15 +436,21 @@ table {
   border-collapse: collapse;
 }
 
-/* Touch-friendly tap targets */
+/* Cibles tactiles : boutons / champs — sans `a` global (évite débordement horizontal sur liens texte du footer, etc.) */
 @media (max-width: 768px) {
-  button, a, select, input[type="checkbox"], input[type="radio"] {
+  button:not(.link-inline):not(.touch-skip),
+  [role="button"]:not(.touch-skip),
+  input[type="submit"],
+  input[type="button"],
+  input[type="checkbox"],
+  input[type="radio"] {
     min-height: 44px;
-    min-width: 44px;
   }
-  
-  input, select, textarea {
-    font-size: 16px; /* Prevents iOS zoom on focus */
+
+  input,
+  select,
+  textarea {
+    font-size: 16px; /* évite le zoom iOS au focus */
   }
 }
 

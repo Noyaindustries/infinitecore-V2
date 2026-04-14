@@ -45,10 +45,10 @@ export default function AdminLeads() {
   useEffect(() => {
     const leadsQuery = query(collection(db, 'leads'), orderBy('createdAt', 'desc'));
     const unsubLeads = onSnapshot(leadsQuery, (snapshot) => {
-      setLeads(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as LeadRow) })));
+      setLeads(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<LeadRow, "id">) })));
     });
     const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      setUsers(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as UserRow) })));
+      setUsers(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<UserRow, "id">) })));
     });
     return () => {
       unsubLeads();

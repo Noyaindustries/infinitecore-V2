@@ -175,7 +175,7 @@ export default function PartnerClients() {
     ? `${userData.firstName} ${userData.lastName || ''}`.trim()
     : 'Partenaire';
   const partnerUid = String(userData?.uid || user?.uid || '');
-  const referralCode = normalizePartnerCode(userData?.referralCode || buildPartnerCode(partnerUid));
+  const referralCode = normalizePartnerCode(String(userData?.referralCode || buildPartnerCode(partnerUid)));
   const partnerCodeLegacy = normalizePartnerCode(String(userData?.partnerCode || ''));
 
   useEffect(() => {
@@ -213,7 +213,7 @@ export default function PartnerClients() {
       ].filter(Boolean));
 
       const signups = snapshot.docs
-        .map((d) => ({ id: d.id, ...(d.data() as ReferredSignup) }))
+        .map((d) => ({ id: d.id, ...(d.data() as Omit<ReferredSignup, "id">) }))
         .filter((row) => {
           const role = String(row.role || '').toLowerCase();
           if (role !== 'client') return false;

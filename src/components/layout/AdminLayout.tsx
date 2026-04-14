@@ -137,10 +137,12 @@ export default function AdminLayout() {
 
   const workspaceLinksCount = getAccessibleWorkspaces(userData?.role).length;
 
+  const firstNameStr = typeof userData?.firstName === "string" ? userData.firstName : "";
+  const lastNameStr = typeof userData?.lastName === "string" ? userData.lastName : "";
   const initials =
-    userData?.firstName && userData?.lastName
-      ? `${userData.firstName[0]}${userData.lastName[0]}`.toUpperCase()
-      : (userData?.firstName?.[0] || user?.email?.[0] || 'C').toUpperCase();
+    firstNameStr && lastNameStr
+      ? `${firstNameStr[0]}${lastNameStr[0]}`.toUpperCase()
+      : (firstNameStr[0] || user?.email?.[0] || "C").toUpperCase();
 
   const copyStaffEmail = async () => {
     if (!user?.email) return;
@@ -187,7 +189,8 @@ export default function AdminLayout() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "commando-sidebar-panel border-r border-luxe-champagne/15 text-text-primary w-64 sidebar-responsive shrink-0 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] fixed md:relative z-50 h-full max-h-[100dvh] md:h-full md:max-h-none md:shadow-none",
+        "commando-sidebar-panel border-r border-luxe-champagne/15 text-text-primary w-64 sidebar-responsive shrink-0 flex flex-col transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] fixed z-50 md:relative md:h-full md:max-h-none md:shadow-none",
+        "top-14 h-[calc(100dvh-3.5rem)] max-h-[calc(100dvh-3.5rem)] md:top-auto md:max-h-none",
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}>
         <div className="hidden border-b border-white/[0.05] px-2.5 py-2 md:block">

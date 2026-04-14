@@ -64,13 +64,14 @@ function isAppUserRole(role: string): role is AppUserRole {
 }
 
 /** Espaces accessibles au rôle courant (selon les routes protégées du projet). */
-export function getAccessibleWorkspaces(role: string | undefined): WorkspaceEntry[] {
-  if (!role || !isAppUserRole(role)) return [];
-  return WORKSPACES.filter((w) => w.allowedRoles.includes(role));
+export function getAccessibleWorkspaces(role: unknown): WorkspaceEntry[] {
+  const r = typeof role === "string" ? role : undefined;
+  if (!r || !isAppUserRole(r)) return [];
+  return WORKSPACES.filter((w) => w.allowedRoles.includes(r));
 }
 
 /** Liens ordonnés pour menus (site en premier, puis espaces produit). */
-export function getWorkspaceNavLinks(role: string | undefined): { to: string; label: string; id: WorkspaceId }[] {
+export function getWorkspaceNavLinks(role: unknown): { to: string; label: string; id: WorkspaceId }[] {
   const order: WorkspaceId[] = [
     'marketing',
     'superadmin',
@@ -89,7 +90,7 @@ export function getWorkspaceNavLinks(role: string | undefined): { to: string; la
 }
 
 /** Espaces applicatifs uniquement (sans le site marketing) — menus compte header marketing. */
-export function getWorkspaceAccountLinks(role: string | undefined): { to: string; label: string }[] {
+export function getWorkspaceAccountLinks(role: unknown): { to: string; label: string }[] {
   return getWorkspaceNavLinks(role).filter((l) => l.id !== 'marketing').map(({ to, label }) => ({ to, label }));
 }
 

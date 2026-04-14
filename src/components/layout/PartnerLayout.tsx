@@ -2,6 +2,7 @@ import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, Users, DollarSign, FolderOpen, User, LogOut, Menu, X, Bell, ChevronDown, Sun, Moon, Mail, Copy, UserPlus } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { cn } from '../../lib/utils';
+import { userInitialLetter } from '../../lib/userProfile';
 import { auth } from '../../firebase';
 import { signOut } from 'firebase/auth';
 import Logo from '../Logo';
@@ -111,7 +112,8 @@ export default function PartnerLayout() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "bg-noya-sidebar border-r border-white/5 text-text-primary w-64 sidebar-responsive flex-shrink-0 flex-col transition-transform duration-300 ease-in-out fixed md:relative z-50 h-full",
+        "bg-noya-sidebar border-r border-white/5 text-text-primary w-64 sidebar-responsive flex-shrink-0 flex-col transition-transform duration-300 ease-in-out fixed z-50 md:relative md:h-full",
+        "top-[60px] h-[calc(100dvh-60px)] md:top-auto",
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}>
         <div className="p-6 hidden md:block">
@@ -243,7 +245,7 @@ export default function PartnerLayout() {
                 {userData?.photoURL ? (
                   <img src={userData.photoURL as string} alt={displayName} className="h-full w-full object-cover" />
                 ) : (
-                  userData?.firstName?.[0] || 'P'
+                  userInitialLetter(userData, "P", user?.email)
                 )}
               </div>
               <span className="text-sm font-medium text-[#F2F4F8]">{displayName}</span>

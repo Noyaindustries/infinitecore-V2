@@ -117,8 +117,14 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
     setLoading(true);
     try {
       const provider = new GoogleAuthProvider();
-      provider.setCustomParameters({ prompt: 'select_account' });
-      const userCredential = await signInWithPopup(auth, provider);
+      const emailTrim = email.trim();
+      provider.setCustomParameters({
+        prompt: 'select_account',
+        ...(emailTrim ? { login_hint: emailTrim } : {}),
+      });
+      const userCredential = await signInWithPopup(auth, provider, {
+        email: emailTrim || undefined,
+      });
       const u = userCredential.user;
       const userDocRef = doc(db, 'users', u.uid);
       const userDoc = await getDoc(userDocRef);
@@ -218,16 +224,16 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
   };
 
   return (
-    <div className="flex min-h-[calc(100dvh-66px)] flex-col justify-center py-8 px-4 sm:min-h-[calc(100dvh-70px)] sm:px-6 md:min-h-[calc(100dvh-78px)] lg:px-8">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h2 className="text-center text-3xl font-extrabold text-white">
+    <div className="flex min-h-[calc(100dvh-70px)] flex-col justify-center px-3 py-6 sm:min-h-[calc(100dvh-76px)] sm:px-6 sm:py-8 md:min-h-[calc(100dvh-84px)] lg:px-8">
+      <div className="mx-auto w-full min-w-0 max-w-md px-1 sm:px-0">
+        <h2 className="text-center text-2xl font-extrabold text-white sm:text-3xl">
           {isStaff ? 'Connexion équipe' : 'Connexion'}
         </h2>
         {isStaff ? (
-          <p className="mt-3 text-center text-sm leading-relaxed text-gray-400">
+          <p className="mt-3 text-center text-sm leading-relaxed text-pretty text-gray-400">
             Accès <span className="font-semibold text-gray-200">Infinite Commando</span> (rôle commando ou admin) : après
             connexion vous êtes redirigé vers <span className="font-mono text-[#F27D26]">/admin</span> — pipeline,
-            <span className="whitespace-nowrap"> dossiers clients</span>, messagerie, opérations, etc.
+            dossiers clients, messagerie, opérations, etc.
           </p>
         ) : (
           <p className="mt-2 text-center text-sm text-gray-400">
@@ -250,7 +256,7 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mt-8 sm:mx-auto sm:w-full sm:max-w-md bg-white/5 border border-white/10 rounded-2xl p-8 backdrop-blur"
+        className="mx-auto mt-6 w-full min-w-0 max-w-md rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur sm:mt-8 sm:p-8"
       >
         <div className="mb-6 space-y-3">
           <button
