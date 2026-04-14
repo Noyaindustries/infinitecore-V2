@@ -12,6 +12,7 @@
     "build:next": "next build",
     "start": "next start -p 3000",
     "start:api": "node dist/server.cjs",
+    "verify:deploy": "node scripts/verifyDeploy.mjs",
     "lint": "tsc --noEmit",
     "test": "npm run test:rbac",
     "test:rbac": "tsx tests/rbac.test.ts",
