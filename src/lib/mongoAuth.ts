@@ -163,10 +163,37 @@ export async function createUserWithEmailAndPassword(_auth: Auth, email: string,
   const data = await apiRequest<{
     success: boolean;
     token?: string;
-    user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
+    verificationRequired?: boolean;
+    challengeId?: string;
+    user?: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
   }>("/api/auth/register", {
     method: "POST",
     body: JSON.stringify({ email, password }),
+  });
+  if (data.verificationRequired) {
+    return {
+      verificationRequired: true as const,
+      challengeId: data.challengeId || "",
+      email: String(email || "").trim().toLowerCase(),
+    };
+  }
+  if (!data.user) {
+    throw new Error("Réponse d'inscription invalide.");
+  }
+  setAuthToken(data.token || null);
+  authState.currentUser = toUser(data.user);
+  emitAuthState();
+  return { user: authState.currentUser };
+}
+
+export async function verifyEmailSignupCode(_auth: Auth, payload: { email: string; challengeId: string; code: string }) {
+  const data = await apiRequest<{
+    success: boolean;
+    token?: string;
+    user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
+  }>("/api/auth/register/verify", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
   setAuthToken(data.token || null);
   authState.currentUser = toUser(data.user);
@@ -178,10 +205,37 @@ export async function signInWithEmailAndPassword(_auth: Auth, email: string, pas
   const data = await apiRequest<{
     success: boolean;
     token?: string;
-    user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
+    verificationRequired?: boolean;
+    challengeId?: string;
+    user?: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
   }>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password: pass }),
+  });
+  if (data.verificationRequired) {
+    return {
+      verificationRequired: true as const,
+      challengeId: data.challengeId || "",
+      email: String(email || "").trim().toLowerCase(),
+    };
+  }
+  if (!data.user) {
+    throw new Error("Réponse de connexion invalide.");
+  }
+  setAuthToken(data.token || null);
+  authState.currentUser = toUser(data.user);
+  emitAuthState();
+  return { user: authState.currentUser };
+}
+
+export async function verifyEmailLoginCode(_auth: Auth, payload: { email: string; challengeId: string; code: string }) {
+  const data = await apiRequest<{
+    success: boolean;
+    token?: string;
+    user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
+  }>("/api/auth/login/verify", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
   setAuthToken(data.token || null);
   authState.currentUser = toUser(data.user);
@@ -232,8 +286,12 @@ export async function signInWithPopup(
   const data = await apiRequest<{
     success: boolean;
     token?: string;
+    verificationRequired?: boolean;
+    challengeId?: string;
+    email?: string;
+    role?: string;
     isNew: boolean;
-    user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
+    user?: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
   }>("/api/auth/google", {
     method: "POST",
     body: JSON.stringify({
@@ -247,6 +305,18 @@ export async function signInWithPopup(
       referredByPartnerName: options?.referredByPartnerName,
     }),
   });
+  if (data.verificationRequired) {
+    return {
+      verificationRequired: true as const,
+      challengeId: data.challengeId || "",
+      email: String(data.email || trimmed).trim().toLowerCase(),
+      role: String(data.role || "client"),
+      isNew: Boolean(data.isNew),
+    };
+  }
+  if (!data.user) {
+    throw new Error("Réponse Google invalide.");
+  }
   setAuthToken(data.token || null);
   authState.currentUser = toUser(data.user);
   emitAuthState();

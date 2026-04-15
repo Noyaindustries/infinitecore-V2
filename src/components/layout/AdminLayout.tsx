@@ -199,7 +199,7 @@ export default function AdminLayout() {
               <Logo className="h-7 w-auto" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="truncate font-display text-[9px] font-medium uppercase leading-none tracking-[0.18em] text-luxe-champagne-bright/95">
+              <p className="truncate font-display text-[9px] font-medium uppercase leading-none tracking-[0.12em] text-luxe-champagne-bright/95">
                 Infinite Commando
               </p>
               <p
@@ -356,7 +356,7 @@ export default function AdminLayout() {
                   className="absolute -inset-0.5 rounded-xl bg-gradient-to-br from-luxe-champagne/50 via-noya-blue/25 to-transparent opacity-80 blur-[1px] transition-opacity group-hover:opacity-100"
                   aria-hidden
                 />
-                <div className="relative flex h-11 w-11 items-center justify-center rounded-xl border border-luxe-champagne/40 bg-gradient-to-br from-luxe-champagne/28 via-noya-sidebar to-noya-blue/15 font-display text-[12px] font-semibold uppercase tracking-[0.12em] text-luxe-champagne-bright shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]">
+                <div className="relative flex h-11 w-11 items-center justify-center rounded-xl border border-luxe-champagne/40 bg-gradient-to-br from-luxe-champagne/28 via-noya-sidebar to-noya-blue/15 font-display text-[12px] font-semibold uppercase tracking-[0.08em] text-luxe-champagne-bright shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]">
                   {initials}
                 </div>
               </div>

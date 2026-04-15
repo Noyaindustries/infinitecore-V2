@@ -143,7 +143,7 @@ export default function AdminPartners() {
     <div className="mx-auto max-w-6xl px-5 py-8 md:px-8 md:py-10">
       <div className="mb-8 flex flex-col gap-4 border-b border-white/6 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="font-display text-[11px] uppercase tracking-[0.28em] text-luxe-champagne-bright/85">Infinite Commando</p>
+          <p className="font-display text-[11px] uppercase tracking-[0.18em] text-luxe-champagne-bright/85">Infinite Commando</p>
           <h1 className="mt-1 font-display text-3xl font-normal tracking-tight text-text-primary md:text-4xl">Partenaires</h1>
           <p className="mt-2 text-sm text-text-secondary">Suivi des partenaires, de leurs leads et des inscriptions parrainées.</p>
         </div>

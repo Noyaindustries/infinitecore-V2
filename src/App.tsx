@@ -5,6 +5,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { AuthProvider } from './components/AuthProvider';
 import CookieBanner from './components/CookieBanner';
 import GoogleEmailModal from './components/GoogleEmailModal';
+import GoogleConfirmModal from './components/GoogleConfirmModal';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminLayout from './components/layout/AdminLayout';
 import ClientLayout from './components/layout/ClientLayout';
@@ -83,6 +84,7 @@ function App() {
           }}
         />
         <GoogleEmailModal />
+        <GoogleConfirmModal />
         <CookieBanner />
         <Router>
           <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-surface-primary text-text-primary">Chargement...</div>}>

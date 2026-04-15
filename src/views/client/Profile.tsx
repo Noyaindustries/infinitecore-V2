@@ -71,7 +71,7 @@ function userDataToForm(data: Record<string, unknown> | null): FormState {
 const inputClass =
   'w-full rounded-xl border border-white/10 bg-[#060910]/90 px-4 py-3 text-sm text-text-primary placeholder:text-text-muted shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04)] transition-colors focus:border-luxe-champagne/40 focus:outline-none focus:ring-2 focus:ring-luxe-champagne/15';
 
-const labelClass = 'mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-luxe-champagne/85';
+const labelClass = 'mb-1.5 block font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-luxe-champagne/85';
 
 export default function ClientProfile() {
   const { user, userData, isAuthReady } = useAuth();
@@ -202,10 +202,10 @@ export default function ClientProfile() {
               <User className="h-7 w-7" strokeWidth={1.5} aria-hidden />
             </div>
             <div>
-              <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-luxe-champagne/25 bg-luxe-champagne/[0.07] px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.28em] text-luxe-champagne-bright">
+              <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-luxe-champagne/25 bg-luxe-champagne/[0.07] px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-luxe-champagne-bright">
                 Mon profil
               </div>
-              <h1 className="font-display text-2xl font-medium tracking-[0.02em] text-text-primary sm:text-3xl">{displayName}</h1>
+              <h1 className="font-display text-2xl font-medium tracking-[0.01em] text-text-primary sm:text-3xl">{displayName}</h1>
               <p className="mt-2 max-w-lg text-sm leading-relaxed text-text-secondary">
                 Informations utilisées pour votre dossier, vos commandes et vos échanges avec Infinite Core. Vous pouvez les
                 mettre à jour à tout moment.
@@ -225,7 +225,7 @@ export default function ClientProfile() {
       <form onSubmit={handleSubmit} className="space-y-8">
         {/* Identité */}
         <section className="rounded-2xl border border-white/[0.07] bg-[#0a0e18]/85 p-5 shadow-[0_24px_48px_-28px_rgba(0,0,0,0.55),inset_0_1px_0_0_rgba(255,255,255,0.04)] backdrop-blur-sm sm:p-6">
-          <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-luxe-champagne/85">Identité</h2>
+          <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-luxe-champagne/85">Identité</h2>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="profile-firstName" className={labelClass}>
@@ -277,7 +277,7 @@ export default function ClientProfile() {
 
         {/* Organisation */}
         <section className="rounded-2xl border border-white/[0.07] bg-[#0a0e18]/85 p-5 shadow-[0_24px_48px_-28px_rgba(0,0,0,0.55),inset_0_1px_0_0_rgba(255,255,255,0.04)] backdrop-blur-sm sm:p-6">
-          <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-luxe-champagne/85">Organisation</h2>
+          <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-luxe-champagne/85">Organisation</h2>
           <div className="mt-5 grid gap-4 sm:grid-cols-2">
             <div className="sm:col-span-2">
               <label htmlFor="profile-company" className={labelClass}>
@@ -341,7 +341,7 @@ export default function ClientProfile() {
 
         {/* Compte (lecture + sécurité) */}
         <section className="rounded-2xl border border-white/[0.07] bg-[#0a0e18]/85 p-5 shadow-[0_24px_48px_-28px_rgba(0,0,0,0.55),inset_0_1px_0_0_rgba(255,255,255,0.04)] backdrop-blur-sm sm:p-6">
-          <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-luxe-champagne/85">Compte</h2>
+          <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-luxe-champagne/85">Compte</h2>
           <p className="mt-2 text-xs text-text-muted">
             L’adresse e-mail de connexion est gérée par l’authentification sécurisée ; pour la modifier, contactez le support
             Infinite.

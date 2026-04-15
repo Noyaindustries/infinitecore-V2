@@ -416,7 +416,7 @@ export default function AdminMessagerie() {
         <div className="flex items-start gap-3">
           <span className="commando-luxe-ornament-diamond mt-1.5 shrink-0" aria-hidden />
           <div>
-            <p className="font-display text-[11px] uppercase tracking-[0.28em] text-luxe-champagne-bright/85">
+            <p className="font-display text-[11px] uppercase tracking-[0.18em] text-luxe-champagne-bright/85">
               Infinite Commando
             </p>
             <h1 className="mt-1 font-display text-2xl font-normal tracking-tight text-text-primary md:text-3xl">
@@ -624,7 +624,7 @@ export default function AdminMessagerie() {
               <div key={date} className="space-y-6">
                 <div className="flex items-center gap-6 my-12">
                   <div className="h-px flex-1 bg-linear-to-r from-transparent via-luxe-champagne/25 to-transparent" />
-                  <span className="whitespace-nowrap px-4 font-mono text-[10px] font-semibold uppercase tracking-[0.28em] text-luxe-champagne-bright/75">
+                  <span className="whitespace-nowrap px-4 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-luxe-champagne-bright/75">
                     {date}
                   </span>
                   <div className="h-px flex-1 bg-linear-to-l from-transparent via-luxe-champagne/25 to-transparent" />

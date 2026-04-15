@@ -16,12 +16,18 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
 import { auth, db } from '@/lib/clientSdk';
-import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from '@/lib/mongoAuth';
-import { doc, setDoc, getDoc, collection, getDocs, query, where } from '@/lib/mongoFirestore';
+import {
+  createUserWithEmailAndPassword,
+  GoogleAuthProvider,
+  signInWithPopup,
+  verifyEmailLoginCode,
+  verifyEmailSignupCode,
+} from '@/lib/mongoAuth';
+import { doc, setDoc } from '@/lib/mongoFirestore';
+import { apiRequest } from '../../lib/apiClient';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
+import { openGoogleConfirmDialog } from '../../lib/googleConfirmUI';
 import toast from 'react-hot-toast';
-import { notificationService } from '../../services/notificationService';
-import { leadService } from '../../services/leadService';
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -29,6 +35,14 @@ export default function Signup() {
   const { addClient } = useStore();
   const [isSuccess, setIsSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [signupChallengeId, setSignupChallengeId] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [awaitingEmailVerification, setAwaitingEmailVerification] = useState(false);
+  const [googleVerificationPending, setGoogleVerificationPending] = useState(false);
+  const [googleVerificationCode, setGoogleVerificationCode] = useState('');
+  const [googleChallengeId, setGoogleChallengeId] = useState('');
+  const [googleVerificationEmail, setGoogleVerificationEmail] = useState('');
+  const [googleIsNewUser, setGoogleIsNewUser] = useState(false);
 
   const homePathForRole = (role: string | undefined): string => {
     switch (role) {
@@ -81,42 +95,24 @@ export default function Signup() {
       // Fetch partner name
       const fetchPartner = async () => {
         try {
-          // 1) Compat direct: ref = uid du partenaire
-          const partnerDoc = await getDoc(doc(db, 'users', ref));
-          if (partnerDoc.exists()) {
-            const data = partnerDoc.data() as { firstName?: string; lastName?: string; email?: string };
-            setReferrerId(partnerDoc.id);
-            setReferrerName(getPartnerLabel(data, partnerDoc.id));
-            return;
-          }
-
-          // 2) ref = code de parrainage (nouveau champ)
-          const byReferralCode = await getDocs(query(collection(db, 'users'), where('referralCode', '==', ref)));
-          if (!byReferralCode.empty) {
-            const match = byReferralCode.docs[0];
-            const data = match.data() as { firstName?: string; lastName?: string; email?: string };
-            setReferrerId(match.id);
-            setReferrerName(getPartnerLabel(data, match.id));
-            return;
-          }
-
-          // 3) compat historique: partnerCode
-          const byPartnerCode = await getDocs(query(collection(db, 'users'), where('partnerCode', '==', ref)));
-          if (!byPartnerCode.empty) {
-            const match = byPartnerCode.docs[0];
-            const data = match.data() as { firstName?: string; lastName?: string; email?: string };
-            setReferrerId(match.id);
-            setReferrerName(getPartnerLabel(data, match.id));
+          const payload = await apiRequest<{
+            success: boolean;
+            partner?: { id: string; firstName?: string; lastName?: string; email?: string };
+          }>(`/api/auth/referral?ref=${encodeURIComponent(ref)}`);
+          if (payload?.success && payload.partner) {
+            setReferrerId(payload.partner.id);
+            setReferrerName(getPartnerLabel(payload.partner, payload.partner.id));
           }
         } catch (err) {
-          console.error("Error fetching partner name:", err);
+          // Ne bloque pas l'inscription si la référence est absente/invalide.
+          console.warn('[Signup] referral lookup unavailable:', err);
         }
       };
       fetchPartner();
     }
   }, [location]);
 
-  const notifyReferralLeadToCommando = async (payload: {
+  const syncReferralSignupSideEffects = async (payload: {
     signupUserId?: string;
     firstName: string;
     lastName: string;
@@ -127,105 +123,40 @@ export default function Signup() {
   }) => {
     if (!referralCode) return;
     try {
-      const [commandoSnap, adminSnap] = await Promise.all([
-        getDocs(query(collection(db, 'users'), where('role', '==', 'commando'))),
-        getDocs(query(collection(db, 'users'), where('role', '==', 'admin'))),
-      ]);
-
-      const recipients = new Set<string>();
-      for (const d of commandoSnap.docs) {
-        const data = d.data() as { uid?: string };
-        recipients.add(data.uid || d.id);
-      }
-      for (const d of adminSnap.docs) {
-        const data = d.data() as { uid?: string };
-        recipients.add(data.uid || d.id);
-      }
-
-      const partnerLabel = referrerName?.trim() || 'Partenaire Infinite';
-      const message = `Inscription via le lien de ${partnerLabel}: ${payload.firstName} ${payload.lastName} (${payload.companyName}) - ${payload.industry} - ${payload.phone} - ref: ${referralCode}`;
-      const metadata = {
-        referralCode,
-        referredByPartnerId: referrerId || null,
-        referredByPartnerName: partnerLabel,
-        source: 'referral_signup',
-        signupUserId: payload.signupUserId || null,
-        firstName: payload.firstName,
-        lastName: payload.lastName,
-        email: payload.email,
-        phone: payload.phone,
-        companyName: payload.companyName,
-        industry: payload.industry,
-        leadCreated: false,
-      };
-
-      if (recipients.size > 0) {
-        await Promise.all(
-          Array.from(recipients).map((recipientId) =>
-            notificationService.createNotification(
-              recipientId,
-              'Nouveau formulaire parrainage',
-              message,
-              'order',
-              metadata
-            )
-          )
-        );
-      } else {
-        await notificationService.createNotification(
-          'admin_general',
-          'Nouveau formulaire parrainage',
-          message,
-          'order',
-          metadata
-        );
-      }
-    } catch (error) {
-      console.error('[Signup] notify referral failed:', error);
-    }
-  };
-
-  const ensureReferralLeadForPartner = async (payload: {
-    firstName: string;
-    lastName: string;
-    email: string;
-    phone: string;
-    companyName: string;
-    industry: string;
-  }) => {
-    if (!referrerId || !referralCode) return;
-    try {
-      const existingLead = await getDocs(
-        query(
-          collection(db, 'leads'),
-          where('partnerId', '==', referrerId),
-          where('email', '==', payload.email)
-        )
-      );
-      if (!existingLead.empty) return;
-
-      await leadService.createLead({
-        partnerId: referrerId,
-        partnerName: referrerName?.trim() || 'Partenaire Infinite',
-        firstName: payload.firstName,
-        lastName: payload.lastName,
-        email: payload.email,
-        companyName: payload.companyName || 'Prospect parrainé',
-        sector: payload.industry || 'Non spécifié',
-        city: 'Non spécifiée',
-        employeesRange: '1-5',
-        urgency: 'moyenne',
-        whatsapp: payload.phone || 'Non renseigné',
-        phone: payload.phone || 'Non renseigné',
-        note: `Inscription via lien de parrainage (${referralCode}).`,
-        status: 'soumis',
+      await apiRequest('/api/auth/referral-signup-notify', {
+        method: 'POST',
+        body: JSON.stringify({
+          referralCode,
+          referredByPartnerId: referrerId || null,
+          referredByPartnerName: referrerName?.trim() || null,
+          signupUserId: payload.signupUserId || null,
+          firstName: payload.firstName,
+          lastName: payload.lastName,
+          email: payload.email,
+          phone: payload.phone,
+          companyName: payload.companyName,
+          industry: payload.industry,
+        }),
       });
     } catch (error) {
-      console.error('[Signup] ensure referral lead for partner failed:', error);
+      // Effet secondaire non bloquant : on ne casse jamais le signup.
+      console.error('[Signup] referral side-effects sync failed:', error);
     }
   };
 
   const updateFormData = (field: string, value: any) => {
+    if (awaitingEmailVerification && (field === 'email' || field === 'password' || field === 'confirmPassword')) {
+      setAwaitingEmailVerification(false);
+      setSignupChallengeId('');
+      setVerificationCode('');
+    }
+    if (field === 'email' && googleVerificationPending) {
+      setGoogleVerificationPending(false);
+      setGoogleVerificationCode('');
+      setGoogleChallengeId('');
+      setGoogleVerificationEmail('');
+      setGoogleIsNewUser(false);
+    }
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
@@ -301,22 +232,59 @@ export default function Signup() {
   };
 
   const goToPrevStep = () => {
+    if (currentStep === 3 && awaitingEmailVerification) {
+      setAwaitingEmailVerification(false);
+      setSignupChallengeId('');
+      setVerificationCode('');
+    }
     setCurrentStep((prev) => (prev === 3 ? 2 : 1));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (![1, 2, 3].every((step) => validateStep(step as 1 | 2 | 3))) {
+    if (!awaitingEmailVerification && ![1, 2, 3].every((step) => validateStep(step as 1 | 2 | 3))) {
+      return;
+    }
+    if (awaitingEmailVerification && !/^\d{6}$/.test(verificationCode.trim())) {
+      toast.error('Saisissez le code email à 6 chiffres.');
+      return;
+    }
+    if (awaitingEmailVerification && !signupChallengeId) {
+      toast.error("La session de vérification a expiré. Redémarrez l'inscription.");
+      setAwaitingEmailVerification(false);
       return;
     }
 
     setIsLoading(true);
 
     try {
-      // Création du compte (API + JWT)
-      const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
-      const user = userCredential.user;
+      let user: { uid: string; email: string | null } | null = null;
+      if (!awaitingEmailVerification) {
+        const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+        if ('verificationRequired' in userCredential && userCredential.verificationRequired) {
+          if (!userCredential.challengeId) {
+            throw new Error("Impossible de démarrer la vérification email.");
+          }
+          setSignupChallengeId(userCredential.challengeId);
+          setVerificationCode('');
+          setAwaitingEmailVerification(true);
+          toast.success('Code de vérification envoyé par email.');
+          return;
+        }
+        user = userCredential.user;
+      } else {
+        const verified = await verifyEmailSignupCode(auth, {
+          email: formData.email.trim().toLowerCase(),
+          challengeId: signupChallengeId,
+          code: verificationCode.trim(),
+        });
+        user = verified.user;
+        setAwaitingEmailVerification(false);
+      }
+      if (!user) {
+        throw new Error('Compte utilisateur indisponible après vérification.');
+      }
 
       // Extract first and last name from fullName
       const nameParts = formData.fullName.split(' ');
@@ -347,16 +315,8 @@ export default function Signup() {
         handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}`);
       }
 
-      await notifyReferralLeadToCommando({
+      await syncReferralSignupSideEffects({
         signupUserId: user.uid,
-        firstName,
-        lastName,
-        email: formData.email,
-        phone: formData.phone,
-        companyName: formData.company,
-        industry: formData.industry,
-      });
-      await ensureReferralLeadForPartner({
         firstName,
         lastName,
         email: formData.email,
@@ -400,6 +360,17 @@ export default function Signup() {
   };
 
   const handleOAuth = async (providerName: 'google') => {
+    const confirmed = await openGoogleConfirmDialog({
+      title: 'Vérification de sécurité',
+      description: 'Confirmez l’ouverture de Google pour continuer la création ou la connexion à votre compte.',
+      confirmLabel: 'Continuer avec Google',
+      cancelLabel: 'Annuler',
+    });
+    if (!confirmed) {
+      toast.error('Connexion Google annulée.');
+      return;
+    }
+
     setIsLoading(true);
     try {
       let provider;
@@ -412,9 +383,10 @@ export default function Signup() {
       }
 
       const emailTrim = formData.email.trim();
-      if (emailTrim) {
-        provider.setCustomParameters({ login_hint: emailTrim });
-      }
+      provider.setCustomParameters({
+        prompt: 'select_account',
+        ...(emailTrim ? { login_hint: emailTrim } : {}),
+      });
       const userCredential = await signInWithPopup(auth, provider, {
         email: emailTrim || undefined,
         displayName: formData.fullName.trim() || undefined,
@@ -425,12 +397,24 @@ export default function Signup() {
         referredByPartnerId: referrerId || null,
         referredByPartnerName: referrerName?.trim() || null,
       });
+      if ('verificationRequired' in userCredential && userCredential.verificationRequired) {
+        if (!userCredential.challengeId) {
+          throw new Error("Challenge de vérification Google manquant.");
+        }
+        setGoogleVerificationPending(true);
+        setGoogleVerificationCode('');
+        setGoogleChallengeId(userCredential.challengeId);
+        setGoogleVerificationEmail(userCredential.email);
+        setGoogleIsNewUser(Boolean(userCredential.isNew));
+        toast.success('Code de vérification Google envoyé par email.');
+        return;
+      }
       const u = userCredential.user as any;
       const isNew = (userCredential as any).isNew;
 
       if (isNew) {
         try {
-          await notifyReferralLeadToCommando({
+          await syncReferralSignupSideEffects({
             signupUserId: u.uid,
             firstName: u.displayName?.split(' ')[0] || '',
             lastName: u.displayName?.split(' ').slice(1).join(' ') || '',
@@ -470,6 +454,57 @@ export default function Signup() {
           toast.error(`Erreur lors de l'inscription avec ${providerName}.`);
         }
       }
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const completeGoogleVerification = async () => {
+    const code = googleVerificationCode.trim();
+    if (!/^\d{6}$/.test(code)) {
+      toast.error('Entrez le code Google à 6 chiffres.');
+      return;
+    }
+    if (!googleChallengeId || !googleVerificationEmail) {
+      toast.error('Session Google expirée. Relancez Google.');
+      return;
+    }
+    setIsLoading(true);
+    try {
+      const verified = await verifyEmailLoginCode(auth, {
+        email: googleVerificationEmail,
+        challengeId: googleChallengeId,
+        code,
+      });
+      const u = verified.user as any;
+      if (googleIsNewUser) {
+        try {
+          await syncReferralSignupSideEffects({
+            signupUserId: u.uid,
+            firstName: u.displayName?.split(' ')[0] || '',
+            lastName: u.displayName?.split(' ').slice(1).join(' ') || '',
+            email: u.email || '',
+            phone: '',
+            companyName: `${u.displayName || 'Mon'}'s Company`,
+            industry: 'Non spécifié',
+          });
+        } catch (e) { console.error("Lead sync failed", e); }
+        addClient({
+          name: u.displayName || u.email || 'Nouveau Client',
+          email: u.email || '',
+          company: `${u.displayName || 'Mon'}'s Company`,
+          pack: 'Pack Essentiel'
+        });
+      }
+      setGoogleVerificationPending(false);
+      setGoogleVerificationCode('');
+      setGoogleChallengeId('');
+      setGoogleVerificationEmail('');
+      setGoogleIsNewUser(false);
+      navigate(homePathForRole(u.role), { replace: true });
+    } catch (error: any) {
+      const msg = typeof error?.message === 'string' ? error.message : '';
+      toast.error(msg || 'Validation Google impossible.');
     } finally {
       setIsLoading(false);
     }
@@ -518,6 +553,48 @@ export default function Signup() {
                 <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google" className="w-5 h-5" />
                 Continuer avec Google
               </button>
+              {googleVerificationPending ? (
+                <div className="rounded-xl border border-white/10 bg-[#080d17]/84 p-3 shadow-[0_24px_60px_-38px_rgba(0,0,0,0.85)]">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.12em] text-text-muted">
+                    Vérification Google
+                  </p>
+                  <p className="mt-1 text-xs text-[#9CA3AF]">
+                    Code envoyé à <span className="font-medium text-white">{googleVerificationEmail}</span>
+                  </p>
+                  <div className="relative mt-2">
+                    <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                      <Mail className="h-5 w-5 text-[#4B5563]" />
+                    </div>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      value={googleVerificationCode}
+                      onChange={(e) => setGoogleVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      className="block w-full rounded-xl border border-white/10 bg-[#0A0A0F] py-2.5 pl-10 pr-3 text-sm tracking-[0.24em] text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
+                      placeholder="000000"
+                    />
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void completeGoogleVerification()}
+                      disabled={isLoading}
+                      className="rounded-xl bg-[#6366F1] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-60"
+                    >
+                      Valider le code
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleOAuth('google')}
+                      disabled={isLoading}
+                      className="text-xs font-medium text-[#6366F1] transition-colors hover:text-indigo-400 disabled:opacity-60"
+                    >
+                      Relancer Google
+                    </button>
+                  </div>
+                </div>
+              ) : null}
             </div>
 
             <div className="relative flex items-center py-3">
@@ -749,6 +826,54 @@ export default function Signup() {
                       />
                     </div>
                   </div>
+                  {awaitingEmailVerification ? (
+                    <div className="md:col-span-2">
+                      <label className="mb-1 block text-sm font-medium text-[#9CA3AF]">
+                        Code de vérification email <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                          <Mail className="h-5 w-5 text-[#4B5563]" />
+                        </div>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          autoComplete="one-time-code"
+                          value={verificationCode}
+                          onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                          className="block w-full rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] py-2.5 pl-10 pr-3 text-sm tracking-[0.24em] text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
+                          placeholder="000000"
+                        />
+                      </div>
+                      <p className="mt-2 text-xs text-[#9CA3AF]">Code envoyé à {formData.email}</p>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!validateStep(3)) return;
+                          setIsLoading(true);
+                          try {
+                            const retry = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+                            if ('verificationRequired' in retry && retry.verificationRequired && retry.challengeId) {
+                              setSignupChallengeId(retry.challengeId);
+                              setVerificationCode('');
+                              toast.success('Nouveau code envoyé par email.');
+                              return;
+                            }
+                            toast.error("Impossible de renvoyer le code pour le moment.");
+                          } catch (error) {
+                            const msg = error instanceof Error ? error.message : 'Impossible de renvoyer le code.';
+                            toast.error(msg);
+                          } finally {
+                            setIsLoading(false);
+                          }
+                        }}
+                        disabled={isLoading}
+                        className="mt-2 text-xs font-medium text-[#6366F1] transition-colors hover:text-indigo-400 disabled:opacity-60"
+                      >
+                        Renvoyer le code
+                      </button>
+                    </div>
+                  ) : null}
                 </div>
               )}
 
@@ -777,7 +902,11 @@ export default function Signup() {
                     disabled={isLoading}
                     className="flex w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-[#6366F1] px-4 py-3 text-sm font-bold text-white shadow-[0_0_15px_rgba(99,102,241,0.4)] transition-colors hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 sm:flex-1 sm:px-6 sm:text-base"
                   >
-                    {isLoading ? 'Création en cours...' : 'Créer mon compte'}{' '}
+                    {isLoading
+                      ? 'Traitement en cours...'
+                      : awaitingEmailVerification
+                        ? 'Valider mon email'
+                        : 'Recevoir mon code'}{' '}
                     <ArrowRight size={20} className="shrink-0" />
                   </button>
                 )}

@@ -7,7 +7,7 @@ import { notificationService } from '../../services/notificationService';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { collection, doc, getDocs, onSnapshot, query, setDoc, where } from '@/lib/mongoFirestore';
+import { collection, getDocs, onSnapshot, query, where } from '@/lib/mongoFirestore';
 import { db } from '@/lib/clientSdk';
 
 type ReferredSignup = {
@@ -84,6 +84,7 @@ export default function PartnerClients() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [confirmLeadSubmission, setConfirmLeadSubmission] = useState(false);
   const [form, setForm] = useState({
     firstName: '',
     lastName: '',
@@ -101,6 +102,7 @@ export default function PartnerClients() {
 
   const resetForm = () => {
     setCurrentStep(1);
+    setConfirmLeadSubmission(false);
     setForm({
       firstName: '',
       lastName: '',
@@ -136,6 +138,10 @@ export default function PartnerClients() {
       }
       return true;
     }
+    if (!confirmLeadSubmission) {
+      toast.error('Confirmez l’étape finale avant de soumettre.');
+      return false;
+    }
     return true;
   };
 
@@ -144,6 +150,9 @@ export default function PartnerClients() {
       return false;
     }
     if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      return false;
+    }
+    if (!confirmLeadSubmission) {
       return false;
     }
     return true;
@@ -239,6 +248,7 @@ export default function PartnerClients() {
       toast.error('Veuillez remplir tous les champs.');
       return;
     }
+    if (!validateStep(3)) return;
     if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       toast.error('Le format de l’email est invalide.');
       return;
@@ -305,31 +315,16 @@ export default function PartnerClients() {
           );
         }
 
-        // Injecte aussi une carte dans le pipeline commando (collection tasks),
-        // car l'espace commando affiche tasks/orders et non la collection leads.
-        const taskId = `TSK-${crypto.randomUUID().split('-')[0].toUpperCase()}`;
-        await setDoc(doc(db, 'tasks', taskId), {
-          id: taskId,
-          leadId,
-          userId: Array.from(recipients)[0] || 'system',
-          title: `Lead partenaire: ${form.companyName.trim()}`,
-          client: `${form.firstName.trim()} ${form.lastName.trim()}`.trim() || form.companyName.trim(),
-          columnId: 'nouveau',
-          isOrder: false,
-          source: 'partner_lead',
-          partnerId: partnerUid,
-          partnerName,
-          leadCompany: form.companyName.trim(),
-          leadPhone: form.whatsapp.trim(),
-          createdAt: new Date().toISOString(),
-        });
+        // Pas d'écriture dans `tasks` ici : le rôle partner n'y est pas autorisé.
+        // Le pipeline Commando reçoit déjà ces leads via la collection `leads`
+        // et les notifications envoyées ci-dessus.
       } catch (notifyError) {
         relayToOtherSpacesOk = false;
         console.error('[PartnerClients] notify commando/admin failed:', notifyError);
       }
 
       if (relayToOtherSpacesOk) {
-        toast.success('Contact soumis — l\'équipe Commando prend le relais !');
+        toast.success('Contact soumis — transmis au Commando via le pipeline leads.');
       } else {
         toast.error('Contact enregistré, mais la transmission vers les autres espaces a échoué.');
       }
@@ -712,6 +707,17 @@ export default function PartnerClients() {
                       <label className="mb-1 block text-sm font-medium text-text-secondary">Contexte (optionnel)</label>
                       <textarea rows={2} value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} placeholder="Ex: besoin de devis rapide, projet en cours de validation..." className="w-full resize-none rounded-xl border border-white/10 bg-black/35 px-4 py-1.5 text-sm text-text-primary shadow-inner outline-none transition-colors focus:border-noya-blue/60 focus:ring-2 focus:ring-noya-blue/30" />
                     </div>
+                    <label className="flex items-start gap-2 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-xs text-text-secondary">
+                      <input
+                        type="checkbox"
+                        checked={confirmLeadSubmission}
+                        onChange={(e) => setConfirmLeadSubmission(e.target.checked)}
+                        className="mt-0.5 h-4 w-4 rounded border-white/20 bg-black/30 text-noya-blue focus:ring-noya-blue/40"
+                      />
+                      <span>
+                        Je confirme que les informations sont finalisées et prêtes à être transmises au Commando.
+                      </span>
+                    </label>
                   </section>
                 ) : null}
 

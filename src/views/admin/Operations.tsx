@@ -296,7 +296,7 @@ export default function Operations() {
         <div className="flex items-start gap-3">
           <span className="commando-luxe-ornament-diamond mt-1.5 shrink-0" aria-hidden />
           <div>
-            <p className="font-display text-[11px] uppercase tracking-[0.28em] text-luxe-champagne-bright/85">Infinite Commando</p>
+            <p className="font-display text-[11px] uppercase tracking-[0.18em] text-luxe-champagne-bright/85">Infinite Commando</p>
             <h1 className="mt-1 font-display text-3xl font-normal tracking-tight text-text-primary md:text-4xl">Opérations</h1>
             <p className="mt-2 max-w-2xl text-sm text-text-secondary">
               Archives partagées, flux d’alertes, missions développeurs et bibliothèque ressources — centre logistique de l’atelier.
@@ -710,7 +710,7 @@ export default function Operations() {
               <div className="relative border-b border-white/10 px-6 py-5 md:px-8">
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="font-display text-[10px] uppercase tracking-[0.28em] text-luxe-champagne-bright/90">Bibliothèque</p>
+                    <p className="font-display text-[10px] uppercase tracking-[0.18em] text-luxe-champagne-bright/90">Bibliothèque</p>
                     <h3 id="inject-resource-title" className="mt-1 font-display text-2xl font-normal tracking-tight text-text-primary">
                       Injecter une ressource
                     </h3>

@@ -430,11 +430,11 @@ export default function ClientSuivi() {
         <div className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-noya-blue/12 blur-3xl" aria-hidden />
         <div className="relative flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-luxe-champagne/25 bg-luxe-champagne/[0.07] px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.28em] text-luxe-champagne-bright">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-luxe-champagne/25 bg-luxe-champagne/[0.07] px-3 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-luxe-champagne-bright">
               <FolderCheck className="h-3.5 w-3.5 text-noya-orange" aria-hidden />
               Mon dossier
             </div>
-            <h1 className="font-display text-[1.65rem] font-medium leading-[1.15] tracking-[0.02em] text-text-primary sm:text-4xl">
+            <h1 className="font-display text-[1.65rem] font-medium leading-[1.15] tracking-[0.01em] text-text-primary sm:text-4xl">
               Bonjour {displayName}
               {company ? (
                 <span className="mt-1 block font-sans text-lg font-semibold text-text-secondary sm:text-xl">

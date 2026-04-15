@@ -38,6 +38,8 @@ const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_RATE_MAX_FAILURES = 8;
 const AUTH_RATE_BLOCK_MS = 20 * 60 * 1000;
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
+const LOGIN_VERIFICATION_TTL_MS = 10 * 60 * 1000;
+const LOGIN_VERIFICATION_MAX_ATTEMPTS = 5;
 const USER_FIELDS = [
   "uid",
   "email",
@@ -81,6 +83,36 @@ async function sendResetPasswordEmail(input: { to: string; token: string }) {
     subject: "Reinitialisation de votre mot de passe",
     text: `Bonjour,\n\nUtilisez ce lien pour reinitialiser votre mot de passe:\n${resetLink}\n\nCe lien expire dans 30 minutes.\nSi vous n'etes pas a l'origine de cette demande, ignorez cet email.\n`,
     html: `<p>Bonjour,</p><p>Utilisez ce lien pour reinitialiser votre mot de passe :</p><p><a href="${resetLink}">${resetLink}</a></p><p>Ce lien expire dans 30 minutes.</p><p>Si vous n'etes pas a l'origine de cette demande, ignorez cet email.</p>`,
+  });
+  return { delivered: true as const };
+}
+
+function generateNumericCode(length = 6) {
+  const min = 10 ** (length - 1);
+  const max = 10 ** length - 1;
+  return String(Math.floor(min + Math.random() * (max - min + 1)));
+}
+
+async function sendLoginVerificationEmail(input: { to: string; code: string }) {
+  const transporter = getSmtpTransport();
+  if (!transporter) {
+    return { delivered: false as const, previewCode: input.code };
+  }
+  await transporter.sendMail({
+    from: appEnv.smtp.fromOrUser,
+    to: input.to,
+    subject: "Code de verification de connexion",
+    text:
+      `Bonjour,\n\n` +
+      `Voici votre code de verification Infinite Core : ${input.code}\n\n` +
+      `Il expire dans 10 minutes.\n` +
+      `Si vous n'êtes pas a l'origine de cette tentative de connexion, ignorez cet email.\n`,
+    html:
+      `<p>Bonjour,</p>` +
+      `<p>Voici votre code de verification Infinite Core :</p>` +
+      `<p style="font-size: 24px; font-weight: 700; letter-spacing: 0.12em;">${input.code}</p>` +
+      `<p>Il expire dans <strong>10 minutes</strong>.</p>` +
+      `<p>Si vous n'êtes pas a l'origine de cette tentative de connexion, ignorez cet email.</p>`,
   });
   return { delivered: true as const };
 }
@@ -283,6 +315,10 @@ function isSafeDocId(docId: string) {
   return SAFE_DOC_ID.test(docId);
 }
 
+function normalizePartnerCode(raw: string) {
+  return String(raw || "").trim().toUpperCase().replace("PART-USR", "PART-INF");
+}
+
 function sanitizeFilters(raw: unknown): QueryFilter[] | null {
   if (!Array.isArray(raw)) return [];
   if (raw.length > MAX_FILTERS) return null;
@@ -386,6 +422,7 @@ function getAllowedPrefixes(role: string, op: DataOperation): string[] {
       "logs",
       "chats",
       "documents",
+      "resources",
       "admin_config",
       "instances",
       "leads",
@@ -395,10 +432,10 @@ function getAllowedPrefixes(role: string, op: DataOperation): string[] {
     ];
   }
   if (role === "developer") {
-    return ["users", "notifications", "missions", "chats"];
+    return ["users", "notifications", "missions", "chats", "livrables"];
   }
   if (role === "partner") {
-    return ["users", "notifications", "leads", "missions", "payments", "orders", "chats"];
+    return ["users", "notifications", "leads", "missions", "payments", "orders", "chats", "resources"];
   }
   if (role === "client") {
     if (op === "read") return ["users", "notifications", "missions", "dossier_steps", "payments", "orders", "chats"];
@@ -742,8 +779,122 @@ export function registerMongoApi(app: Express) {
         return res.status(409).json({ success: false, error: "Cet email existe déjà." });
       }
 
-      const uid = `usr_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
+      const challengeId = randomUUID().replace(/-/g, "");
+      const verificationCode = generateNumericCode(6);
+      const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
       const passwordHash = await bcrypt.hash(password, 10);
+      await upsertDataDocument(
+        "auth_register_verifications",
+        challengeId,
+        {
+          email,
+          passwordHash,
+          codeHash: sha256Hex(verificationCode),
+          firstName,
+          lastName,
+          companyId,
+          referredBy,
+          phone,
+          attempts: 0,
+          used: false,
+          createdAt: new Date().toISOString(),
+          expiresAt: expiresAtIso,
+        },
+        false
+      );
+
+      const mailResult = await sendLoginVerificationEmail({
+        to: email,
+        code: verificationCode,
+      });
+      if (!mailResult.delivered) {
+        await prisma.dataDocument.delete({
+          where: { collectionPath_docId: { collectionPath: "auth_register_verifications", docId: challengeId } },
+        });
+        return res.status(503).json({
+          success: false,
+          error: "Service email indisponible. Configurez SMTP avant la vérification par code.",
+        });
+      }
+
+      clearAuthFailures(authKey);
+
+      return res.status(201).json({
+        success: true,
+        verificationRequired: true,
+        challengeId,
+      });
+    } catch (error) {
+      return sendAuthPrismaError(res, "[auth/register]", error);
+    }
+  });
+
+  app.post("/api/auth/register/verify", async (req: Request, res: Response) => {
+    try {
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      const challengeId = String(req.body?.challengeId || "").trim();
+      const code = String(req.body?.code || "").trim();
+
+      if (!email || !isValidEmail(email) || !challengeId || !isSafeDocId(challengeId) || !/^\d{6}$/.test(code)) {
+        return res.status(400).json({ success: false, error: "Paramètres de vérification invalides." });
+      }
+
+      const challengeRow = await prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath: "auth_register_verifications", docId: challengeId } },
+      });
+      const challenge = coerceRecord(challengeRow?.data);
+      if (!challengeRow) {
+        return res.status(400).json({ success: false, error: "Code invalide ou expiré." });
+      }
+
+      const challengeEmail = String(challenge.email || "").trim().toLowerCase();
+      const passwordHash = String(challenge.passwordHash || "");
+      const firstName = String(challenge.firstName || "").trim();
+      const lastName = String(challenge.lastName || "").trim();
+      const companyId = challenge.companyId ? String(challenge.companyId) : null;
+      const referredBy = challenge.referredBy ? String(challenge.referredBy) : null;
+      const phone = challenge.phone ? String(challenge.phone) : null;
+      const codeHash = String(challenge.codeHash || "");
+      const used = Boolean(challenge.used);
+      const attempts = Number(challenge.attempts || 0);
+      const expiresAt = String(challenge.expiresAt || "");
+      const expiresAtMs = Date.parse(expiresAt);
+
+      if (
+        !passwordHash ||
+        !codeHash ||
+        used ||
+        !Number.isFinite(expiresAtMs) ||
+        expiresAtMs < Date.now() ||
+        challengeEmail !== email
+      ) {
+        return res.status(400).json({ success: false, error: "Code invalide ou expiré." });
+      }
+
+      if (attempts >= LOGIN_VERIFICATION_MAX_ATTEMPTS) {
+        return res.status(429).json({ success: false, error: "Trop de tentatives sur ce code. Réinscrivez-vous." });
+      }
+
+      if (sha256Hex(code) !== codeHash) {
+        await prisma.dataDocument.update({
+          where: { collectionPath_docId: { collectionPath: "auth_register_verifications", docId: challengeId } },
+          data: {
+            data: {
+              ...challenge,
+              attempts: attempts + 1,
+              updatedAt: new Date().toISOString(),
+            } as any,
+          },
+        });
+        return res.status(400).json({ success: false, error: "Code invalide ou expiré." });
+      }
+
+      const existing = await prisma.userAccount.findUnique({ where: { email } });
+      if (existing) {
+        return res.status(409).json({ success: false, error: "Cet email existe déjà." });
+      }
+
+      const uid = `usr_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
       const account = await prisma.userAccount.create({
         data: {
           uid,
@@ -761,20 +912,211 @@ export function registerMongoApi(app: Express) {
       });
 
       await ensureUserDocumentFromAccount(account);
+      await prisma.dataDocument.update({
+        where: { collectionPath_docId: { collectionPath: "auth_register_verifications", docId: challengeId } },
+        data: {
+          data: {
+            ...challenge,
+            used: true,
+            usedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as any,
+        },
+      });
+
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
       setAuthCookie(res, token);
-      clearAuthFailures(authKey);
 
-      return res.status(201).json({
+      return res.status(200).json({
         success: true,
         user: {
           uid: account.uid,
           email: account.email,
+          role: account.role,
           displayName: [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email,
         },
       });
     } catch (error) {
-      return sendAuthPrismaError(res, "[auth/register]", error);
+      return sendAuthPrismaError(res, "[auth/register/verify]", error);
+    }
+  });
+
+  app.get("/api/auth/referral", async (req: Request, res: Response) => {
+    try {
+      const refRaw = String(req.query.ref || "").trim();
+      if (!refRaw) {
+        return res.status(400).json({ success: false, error: "Paramètre ref requis." });
+      }
+
+      const ref = normalizePartnerCode(refRaw);
+
+      // 1) Compat direct : ref = uid
+      const byUid = await prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath: "users", docId: refRaw } },
+      });
+      if (byUid) {
+        const data = coerceRecord(byUid.data);
+        const role = String(data.role || "").toLowerCase();
+        if (role === "partner") {
+          return res.status(200).json({
+            success: true,
+            partner: {
+              id: byUid.docId,
+              firstName: typeof data.firstName === "string" ? data.firstName : "",
+              lastName: typeof data.lastName === "string" ? data.lastName : "",
+              email: typeof data.email === "string" ? data.email : "",
+            },
+          });
+        }
+      }
+
+      // 2) ref = referralCode / partnerCode (fallback mémoire pour compat)
+      const rows = await prisma.dataDocument.findMany({
+        where: { collectionPath: "users" },
+      });
+      for (const row of rows) {
+        const data = coerceRecord(row.data);
+        const role = String(data.role || "").toLowerCase();
+        if (role !== "partner") continue;
+
+        const referralCode = normalizePartnerCode(String(data.referralCode || ""));
+        const partnerCode = normalizePartnerCode(String(data.partnerCode || ""));
+        const uid = String(data.uid || row.docId || "");
+        if (referralCode === ref || partnerCode === ref || uid === refRaw) {
+          return res.status(200).json({
+            success: true,
+            partner: {
+              id: row.docId,
+              firstName: typeof data.firstName === "string" ? data.firstName : "",
+              lastName: typeof data.lastName === "string" ? data.lastName : "",
+              email: typeof data.email === "string" ? data.email : "",
+            },
+          });
+        }
+      }
+
+      return res.status(404).json({ success: false, error: "Référence de parrainage introuvable." });
+    } catch (error) {
+      console.error("[auth/referral]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
+  app.post("/api/auth/referral-signup-notify", async (req: Request, res: Response) => {
+    try {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+
+      const referralCodeRaw = String(req.body?.referralCode || "").trim();
+      if (!referralCodeRaw) {
+        return res.status(200).json({ success: true, skipped: true });
+      }
+
+      const referralCode = normalizePartnerCode(referralCodeRaw);
+      const referredByPartnerIdRaw = String(req.body?.referredByPartnerId || "").trim();
+      const referredByPartnerId = referredByPartnerIdRaw || null;
+      const partnerLabel = String(req.body?.referredByPartnerName || "").trim() || "Partenaire Infinite";
+      const signupUserId = String(req.body?.signupUserId || auth.uid).trim() || auth.uid;
+      const firstName = String(req.body?.firstName || "").trim();
+      const lastName = String(req.body?.lastName || "").trim();
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      const phone = String(req.body?.phone || "").trim();
+      const companyName = String(req.body?.companyName || "").trim() || "Prospect parrainé";
+      const industry = String(req.body?.industry || "").trim() || "Non spécifié";
+
+      const message = `Inscription via le lien de ${partnerLabel}: ${firstName} ${lastName} (${companyName}) - ${industry} - ${phone} - ref: ${referralCode}`;
+      const metadata = {
+        referralCode,
+        referredByPartnerId,
+        referredByPartnerName: partnerLabel,
+        source: "referral_signup",
+        signupUserId,
+        firstName,
+        lastName,
+        email,
+        phone,
+        companyName,
+        industry,
+        leadCreated: false,
+      };
+
+      const recipients = await prisma.userAccount.findMany({
+        where: { role: { in: ["commando", "admin"] } },
+        select: { uid: true },
+      });
+
+      const recipientIds = recipients.map((r) => r.uid).filter(Boolean);
+      const finalRecipients = recipientIds.length > 0 ? recipientIds : ["admin_general"];
+
+      await Promise.all(
+        finalRecipients.map((recipientId) =>
+          upsertDataDocument(
+            "notifications",
+            randomUUID().replace(/-/g, ""),
+            {
+              userId: recipientId,
+              title: "Nouveau formulaire parrainage",
+              message,
+              type: "order",
+              read: false,
+              createdAt: new Date().toISOString(),
+              metadata,
+            },
+            false
+          )
+        )
+      );
+
+      let leadCreated = false;
+      if (referredByPartnerId && email) {
+        const allLeads = await prisma.dataDocument.findMany({
+          where: { collectionPath: "leads" },
+        });
+        const alreadyExists = allLeads.some((row) => {
+          const data = coerceRecord(row.data);
+          return (
+            String(data.partnerId || "") === referredByPartnerId &&
+            String(data.email || "").trim().toLowerCase() === email
+          );
+        });
+
+        if (!alreadyExists) {
+          const leadId = randomUUID().replace(/-/g, "");
+          await upsertDataDocument(
+            "leads",
+            leadId,
+            {
+              id: leadId,
+              partnerId: referredByPartnerId,
+              partnerName: partnerLabel,
+              firstName,
+              lastName,
+              email,
+              companyName,
+              sector: industry,
+              city: "Non spécifiée",
+              employeesRange: "1-5",
+              urgency: "moyenne",
+              whatsapp: phone || "Non renseigné",
+              phone: phone || "Non renseigné",
+              note: `Inscription via lien de parrainage (${referralCode}).`,
+              status: "soumis",
+              createdAt: new Date().toISOString(),
+            },
+            false
+          );
+          leadCreated = true;
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        notified: finalRecipients.length,
+        leadCreated,
+      });
+    } catch (error) {
+      console.error("[auth/referral-signup-notify]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
 
@@ -852,18 +1194,45 @@ export function registerMongoApi(app: Express) {
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
 
-      await ensureUserDocumentFromAccount(account);
-      const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
-      setAuthCookie(res, token);
+      const challengeId = randomUUID().replace(/-/g, "");
+      const verificationCode = generateNumericCode(6);
+      const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
+
+      await upsertDataDocument(
+        "auth_login_verifications",
+        challengeId,
+        {
+          uid: account.uid,
+          email: account.email,
+          codeHash: sha256Hex(verificationCode),
+          attempts: 0,
+          used: false,
+          createdAt: new Date().toISOString(),
+          expiresAt: expiresAtIso,
+        },
+        false
+      );
+
+      const mailResult = await sendLoginVerificationEmail({
+        to: account.email,
+        code: verificationCode,
+      });
+      if (!mailResult.delivered) {
+        await prisma.dataDocument.delete({
+          where: { collectionPath_docId: { collectionPath: "auth_login_verifications", docId: challengeId } },
+        });
+        return res.status(503).json({
+          success: false,
+          error: "Service email indisponible. Configurez SMTP avant la vérification par code.",
+        });
+      }
+
       clearAuthFailures(authKey);
 
       return res.status(200).json({
         success: true,
-        user: {
-          uid: account.uid,
-          email: account.email,
-          displayName: [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email,
-        },
+        verificationRequired: true,
+        challengeId,
       });
     } catch (error) {
       // #region agent log
@@ -885,6 +1254,98 @@ export function registerMongoApi(app: Express) {
   app.post("/api/auth/logout", async (_req: Request, res: Response) => {
     clearAuthCookie(res);
     return res.status(200).json({ success: true });
+  });
+
+  app.post("/api/auth/login/verify", async (req: Request, res: Response) => {
+    try {
+      const email = String(req.body?.email || "").trim().toLowerCase();
+      const challengeId = String(req.body?.challengeId || "").trim();
+      const code = String(req.body?.code || "").trim();
+
+      if (!email || !isValidEmail(email) || !challengeId || !isSafeDocId(challengeId) || !/^\d{6}$/.test(code)) {
+        return res.status(400).json({ success: false, error: "Paramètres de vérification invalides." });
+      }
+
+      const challengeRow = await prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath: "auth_login_verifications", docId: challengeId } },
+      });
+      const challenge = coerceRecord(challengeRow?.data);
+
+      if (!challengeRow) {
+        return res.status(400).json({ success: false, error: "Code invalide ou expiré." });
+      }
+
+      const challengeEmail = String(challenge.email || "").trim().toLowerCase();
+      const challengeUid = String(challenge.uid || "").trim();
+      const codeHash = String(challenge.codeHash || "");
+      const used = Boolean(challenge.used);
+      const attempts = Number(challenge.attempts || 0);
+      const expiresAt = String(challenge.expiresAt || "");
+      const expiresAtMs = Date.parse(expiresAt);
+
+      if (
+        !challengeUid ||
+        !codeHash ||
+        used ||
+        !Number.isFinite(expiresAtMs) ||
+        expiresAtMs < Date.now() ||
+        challengeEmail !== email
+      ) {
+        return res.status(400).json({ success: false, error: "Code invalide ou expiré." });
+      }
+
+      if (attempts >= LOGIN_VERIFICATION_MAX_ATTEMPTS) {
+        return res.status(429).json({ success: false, error: "Trop de tentatives sur ce code. Reconnectez-vous." });
+      }
+
+      if (sha256Hex(code) !== codeHash) {
+        await prisma.dataDocument.update({
+          where: { collectionPath_docId: { collectionPath: "auth_login_verifications", docId: challengeId } },
+          data: {
+            data: {
+              ...challenge,
+              attempts: attempts + 1,
+              updatedAt: new Date().toISOString(),
+            } as any,
+          },
+        });
+        return res.status(400).json({ success: false, error: "Code invalide ou expiré." });
+      }
+
+      const account = await prisma.userAccount.findUnique({ where: { uid: challengeUid } });
+      if (!account || account.email.toLowerCase() !== email) {
+        return res.status(401).json({ success: false, error: "Compte introuvable." });
+      }
+
+      await ensureUserDocumentFromAccount(account);
+
+      await prisma.dataDocument.update({
+        where: { collectionPath_docId: { collectionPath: "auth_login_verifications", docId: challengeId } },
+        data: {
+          data: {
+            ...challenge,
+            used: true,
+            usedAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as any,
+        },
+      });
+
+      const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+      setAuthCookie(res, token);
+
+      return res.status(200).json({
+        success: true,
+        user: {
+          uid: account.uid,
+          email: account.email,
+          role: account.role,
+          displayName: [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email,
+        },
+      });
+    } catch (error) {
+      return sendAuthPrismaError(res, "[auth/login/verify]", error);
+    }
   });
 
   app.post("/api/auth/google", async (req: Request, res: Response) => {
@@ -962,20 +1423,46 @@ export function registerMongoApi(app: Express) {
 
       await upsertDataDocument("users", account.uid, profileData, true);
 
-      const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
-      setAuthCookie(res, token);
+      const challengeId = randomUUID().replace(/-/g, "");
+      const verificationCode = generateNumericCode(6);
+      const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
+      await upsertDataDocument(
+        "auth_login_verifications",
+        challengeId,
+        {
+          uid: account.uid,
+          email: account.email,
+          codeHash: sha256Hex(verificationCode),
+          attempts: 0,
+          used: false,
+          createdAt: new Date().toISOString(),
+          expiresAt: expiresAtIso,
+        },
+        false
+      );
+      const mailResult = await sendLoginVerificationEmail({
+        to: account.email,
+        code: verificationCode,
+      });
+      if (!mailResult.delivered) {
+        await prisma.dataDocument.delete({
+          where: { collectionPath_docId: { collectionPath: "auth_login_verifications", docId: challengeId } },
+        });
+        return res.status(503).json({
+          success: false,
+          error: "Service email indisponible. Configurez SMTP avant la vérification par code.",
+        });
+      }
+
       clearAuthFailures(authKey);
 
       return res.status(200).json({
         success: true,
+        verificationRequired: true,
+        challengeId,
         isNew,
-        user: {
-          uid: account.uid,
-          email: account.email,
-          displayName: [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email,
-          photoURL: account.photoURL || null,
-          role: account.role,
-        },
+        email: account.email,
+        role: account.role,
       });
     } catch (error) {
       return sendAuthPrismaError(res, "[auth/google]", error);

@@ -377,13 +377,13 @@ export default function AdminDashboard() {
         <div className="flex items-center gap-3">
           <span className="commando-luxe-ornament-diamond shrink-0" aria-hidden />
           <div>
-            <p className="font-display text-[11px] uppercase tracking-[0.28em] text-luxe-champagne-bright/85">
+            <p className="font-display text-[11px] uppercase tracking-[0.18em] text-luxe-champagne-bright/85">
               Infinite Core
             </p>
             <p className="mt-1 text-xs capitalize text-text-muted">{dateLong}</p>
           </div>
         </div>
-        <p className="font-mono text-[11px] uppercase tracking-[0.2em] text-text-dim">
+        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-dim">
           {timeShort} <span className="mx-2 text-luxe-champagne/40">·</span> Paris
         </p>
       </div>
@@ -394,7 +394,7 @@ export default function AdminDashboard() {
         <HeroCorners />
         <div className="relative flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
-            <p className="font-display text-[11px] uppercase tracking-[0.42em] text-luxe-champagne-bright/90 md:text-xs">
+            <p className="font-display text-[11px] uppercase tracking-[0.24em] text-luxe-champagne-bright/90 md:text-xs">
               Atelier opérationnel
             </p>
             <h1 className="mt-4 font-display text-[2rem] font-normal leading-[1.08] tracking-tight text-text-primary sm:text-4xl lg:text-[2.65rem]">

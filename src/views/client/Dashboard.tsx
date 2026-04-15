@@ -149,11 +149,11 @@ export default function ClientDashboard() {
         <div className="pointer-events-none absolute left-0 right-0 top-0 h-px bg-linear-to-r from-transparent via-luxe-champagne/35 to-transparent" aria-hidden />
         <div className="relative flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-luxe-champagne/25 bg-luxe-champagne/[0.07] px-3.5 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.28em] text-luxe-champagne-bright">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-luxe-champagne/25 bg-luxe-champagne/[0.07] px-3.5 py-1.5 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-luxe-champagne-bright">
               <LayoutDashboard className="h-3.5 w-3.5 text-noya-blue" aria-hidden />
               Mon espace
             </div>
-            <h1 className="font-display text-[1.65rem] font-medium leading-[1.15] tracking-[0.02em] text-text-primary sm:text-4xl">
+            <h1 className="font-display text-[1.65rem] font-medium leading-[1.15] tracking-[0.01em] text-text-primary sm:text-4xl">
               Bonjour, {displayName}
             </h1>
             <p className="mt-3 max-w-xl text-sm leading-relaxed text-text-secondary sm:text-[15px]">
@@ -176,7 +176,7 @@ export default function ClientDashboard() {
       {/* Résumé compte + progression dossier */}
       <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-white/[0.07] bg-[#0a0e18]/85 p-5 shadow-[0_24px_48px_-28px_rgba(0,0,0,0.55),inset_0_1px_0_0_rgba(255,255,255,0.04)] backdrop-blur-sm sm:p-6">
-          <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-luxe-champagne/85">
+          <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-luxe-champagne/85">
             Votre organisation
           </h2>
           <div className="mt-4 space-y-3 text-sm">
@@ -210,7 +210,7 @@ export default function ClientDashboard() {
 
         <div className="rounded-2xl border border-white/[0.07] bg-[#0a0e18]/85 p-5 shadow-[0_24px_48px_-28px_rgba(0,0,0,0.55),inset_0_1px_0_0_rgba(255,255,255,0.04)] backdrop-blur-sm sm:p-6">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-luxe-champagne/85">
+            <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-luxe-champagne/85">
               Dossier Infinite
             </h2>
             {!loading && (
@@ -254,7 +254,7 @@ export default function ClientDashboard() {
           <div>
             <div className="mb-2 inline-flex items-center gap-2 text-noya-orange">
               <Sparkles className="h-5 w-5 shrink-0" aria-hidden />
-              <span className="font-mono text-[10px] font-bold uppercase tracking-[0.24em]">PADDE-CI · Gratuit</span>
+              <span className="font-mono text-[10px] font-bold uppercase tracking-[0.16em]">PADDE-CI · Gratuit</span>
             </div>
             <h2 className="font-display text-xl font-medium text-text-primary sm:text-2xl">Vos audits disponibles</h2>
             <p className="mt-1 max-w-2xl text-sm text-text-secondary">
@@ -306,7 +306,7 @@ export default function ClientDashboard() {
 
       {/* Raccourcis */}
       <div>
-        <h2 className="mb-4 font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-luxe-champagne/85">
+        <h2 className="mb-4 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-luxe-champagne/85">
           Accès rapides
         </h2>
         <div className="grid gap-4 sm:grid-cols-2">

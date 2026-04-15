@@ -332,10 +332,10 @@ export default function ClientChat() {
               <MessageCircle className="h-6 w-6" strokeWidth={1.5} aria-hidden />
             </div>
             <div>
-              <div className="mb-1.5 inline-flex items-center gap-2 rounded-full border border-border-subtle bg-surface-tertiary px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.22em] text-text-muted">
+              <div className="mb-1.5 inline-flex items-center gap-2 rounded-full border border-border-subtle bg-surface-tertiary px-2.5 py-1 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
                 Messagerie privée
               </div>
-              <h1 className="font-display text-2xl font-medium tracking-[0.02em] text-text-primary sm:text-3xl">Équipe Infinite Core</h1>
+              <h1 className="font-display text-2xl font-medium tracking-[0.01em] text-text-primary sm:text-3xl">Équipe Infinite Core</h1>
               <p className="mt-2 max-w-xl text-sm text-text-secondary">
                 Canal direct avec votre interlocuteur : questions, pièces jointes, suivi de commandes et réponses centralisés ici.
               </p>
@@ -403,7 +403,7 @@ export default function ClientChat() {
             <div key={date}>
               <div className="my-5 flex items-center gap-3">
                 <div className="h-px flex-1 bg-border-subtle" />
-                <span className="px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.2em] text-text-muted">
+                <span className="px-2 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
                   {date}
                 </span>
                 <div className="h-px flex-1 bg-border-subtle" />

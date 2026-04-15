@@ -2,12 +2,17 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Lock, Mail, ArrowLeft, ArrowRight } from 'lucide-react';
-import { GoogleAuthProvider, sendPasswordResetEmail, signInWithEmailAndPassword, signInWithPopup, signOut } from '@/lib/mongoAuth';
-import { collection, doc, getDoc, getDocs, query, setDoc, where } from '@/lib/mongoFirestore';
+import {
+  GoogleAuthProvider,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+  verifyEmailLoginCode,
+} from '@/lib/mongoAuth';
+import { collection, doc, getDoc, getDocs, query, where } from '@/lib/mongoFirestore';
 import { auth, db } from '@/lib/clientSdk';
 import { useAuth } from '../../components/AuthProvider';
-import { useStore } from '../../store/useStore';
-import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
+import { openGoogleConfirmDialog } from '../../lib/googleConfirmUI';
 import toast from 'react-hot-toast';
 
 function homePathForRole(role: string | undefined): string {
@@ -30,10 +35,12 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, userData, isAuthReady } = useAuth();
-  const addClient = useStore((s) => s.addClient);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loginStep, setLoginStep] = useState<1 | 2>(1);
+  const [loginStep, setLoginStep] = useState<1 | 2 | 3>(1);
+  const [verificationMethod, setVerificationMethod] = useState<'password' | 'google' | null>(null);
+  const [loginChallengeId, setLoginChallengeId] = useState('');
+  const [verificationCode, setVerificationCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [referrerName, setReferrerName] = useState<string | null>(null);
@@ -110,7 +117,26 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
         return;
       }
       setEmail(emailTrim);
+      setVerificationCode('');
+      setLoginChallengeId('');
+      setVerificationMethod(null);
       setLoginStep(2);
+      return;
+    }
+
+    if (loginStep === 2 && !password.trim()) {
+      toast.error('Veuillez saisir votre mot de passe.');
+      return;
+    }
+
+    if (loginStep === 3 && !/^\d{6}$/.test(verificationCode.trim())) {
+      toast.error('Saisissez le code à 6 chiffres reçu par email.');
+      return;
+    }
+    if (loginStep === 3 && !loginChallengeId) {
+      toast.error('Session de vérification expirée. Recommencez la connexion.');
+      setLoginStep(1);
+      setPassword('');
       return;
     }
 
@@ -124,8 +150,29 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
       );
     }, safetyMs);
     try {
-      await signInWithEmailAndPassword(auth, email.trim(), password);
-      toast.success('Connexion réussie');
+      if (loginStep === 2) {
+        const result = await signInWithEmailAndPassword(auth, email.trim(), password);
+        if ('verificationRequired' in result && result.verificationRequired) {
+          if (!result.challengeId) {
+            throw new Error("Impossible de démarrer la vérification email.");
+          }
+          setLoginChallengeId(result.challengeId);
+          setVerificationCode('');
+          setVerificationMethod('password');
+          setLoginStep(3);
+          toast.success('Code de vérification envoyé par email.');
+        } else {
+          toast.success('Connexion réussie');
+        }
+      } else {
+        await verifyEmailLoginCode(auth, {
+          email: email.trim(),
+          challengeId: loginChallengeId,
+          code: verificationCode.trim(),
+        });
+        setVerificationMethod(null);
+        toast.success('Connexion validée');
+      }
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : '';
       if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
@@ -141,6 +188,19 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
   };
 
   const handleGoogle = async () => {
+    const confirmed = await openGoogleConfirmDialog({
+      title: 'Vérification de sécurité',
+      description: isStaff
+        ? "Confirmez l'ouverture de Google pour accéder à l’espace équipe."
+        : 'Confirmez l’ouverture de Google pour continuer la connexion ou la création de compte.',
+      confirmLabel: 'Continuer avec Google',
+      cancelLabel: 'Annuler',
+    });
+    if (!confirmed) {
+      toast.error('Connexion Google annulée.');
+      return;
+    }
+
     setLoading(true);
     const safetyMs = 32_000;
     const safetyId = window.setTimeout(() => {
@@ -159,67 +219,21 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
       const userCredential = await signInWithPopup(auth, provider, {
         email: emailTrim || undefined,
       });
-      const u = userCredential.user;
-      const userDocRef = doc(db, 'users', u.uid);
-      const userDoc = await getDoc(userDocRef);
-
-      if (isStaff) {
-        if (!userDoc.exists()) {
-          await signOut(auth);
-          toast.error('Aucun compte équipe n’est associé à cette adresse Google.');
-          return;
+      if ('verificationRequired' in userCredential && userCredential.verificationRequired) {
+        if (!userCredential.challengeId) {
+          throw new Error("Impossible de démarrer la vérification email Google.");
         }
-        const role = userDoc.data()?.role as string | undefined;
-        if (role !== 'admin' && role !== 'commando') {
-          await signOut(auth);
+        if (isStaff && userCredential.role !== 'admin' && userCredential.role !== 'commando') {
           toast.error('Ce compte n’a pas accès à l’espace équipe (commando ou admin uniquement).');
           return;
         }
-        toast.success('Connexion réussie');
+        setEmail(userCredential.email || emailTrim);
+        setLoginChallengeId(userCredential.challengeId);
+        setVerificationCode('');
+        setVerificationMethod('google');
+        setLoginStep(3);
+        toast.success('Code de vérification Google envoyé par email.');
         return;
-      }
-
-      if (!userDoc.exists()) {
-        const nameParts = (u.displayName || '').split(' ');
-        const firstName = nameParts[0] || '';
-        const lastName = nameParts.slice(1).join(' ') || '';
-        const isAdminEmail = u.email === 'superadmin@infinitecore.com';
-        const companyId = `comp_${Date.now()}`;
-        try {
-          await setDoc(doc(db, 'companies', companyId), {
-            id: companyId,
-            name: `${firstName || 'Mon'}'s Company`,
-            industry: 'Non spécifié',
-            size: '1-5',
-            pack: 'starter',
-            createdAt: new Date().toISOString(),
-          });
-        } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, `companies/${companyId}`);
-        }
-        try {
-          await setDoc(userDocRef, {
-            uid: u.uid,
-            email: u.email || '',
-            firstName,
-            lastName,
-            phone: u.phoneNumber || '',
-            role: isAdminEmail ? 'admin' : 'client',
-            companyId,
-            referredBy: referralCode || null,
-            referredByPartnerId: referrerId || null,
-            referredByPartnerName: referrerName?.trim() || null,
-            createdAt: new Date().toISOString(),
-          });
-        } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, `users/${u.uid}`);
-        }
-        addClient({
-          name: u.displayName || u.email || 'Nouveau client',
-          email: u.email || '',
-          company: `${firstName || 'Mon'}'s Company`,
-          pack: 'Pack Essentiel',
-        });
       }
       toast.success('Connexion réussie');
     } catch (err: unknown) {
@@ -329,10 +343,24 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
             >
               Etape 2
             </span>
+            <span className="text-[10px] text-text-dim" aria-hidden>
+              {'→'}
+            </span>
+            <span
+              className={`rounded-full px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.12em] ${
+                loginStep === 3 ? 'bg-luxe-champagne/20 text-luxe-champagne-bright' : 'bg-white/5 text-text-muted'
+              }`}
+            >
+              Etape 3
+            </span>
           </div>
 
           <p className="mt-2 text-center text-[9px] uppercase tracking-[0.14em] text-text-muted sm:mt-2.5 sm:text-[10px] sm:tracking-[0.16em]">
-            {loginStep === 1 ? "Verification de l'email" : 'Saisie du mot de passe'}
+            {loginStep === 1
+              ? "Verification de l'email"
+              : loginStep === 2
+                ? 'Saisie du mot de passe'
+                : 'Validation du code email'}
           </p>
 
           <form className="mt-2.5 space-y-2.5 sm:mt-3 sm:space-y-3" onSubmit={handleSubmit}>
@@ -350,7 +378,7 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  disabled={loading || loginStep === 2}
+                  disabled={loading || loginStep !== 1}
                   className="block w-full rounded-xl border border-white/10 bg-surface-primary py-1.5 pl-9 pr-3 text-[13px] text-text-primary placeholder:text-text-muted focus:border-noya-blue focus:outline-none focus:ring-2 focus:ring-noya-blue/20 sm:py-2 sm:pl-10 sm:text-sm"
                   placeholder="vous@exemple.com"
                 />
@@ -382,6 +410,9 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
                     onClick={() => {
                       setLoginStep(1);
                       setPassword('');
+                      setLoginChallengeId('');
+                      setVerificationCode('');
+                      setVerificationMethod(null);
                     }}
                     disabled={loading}
                   className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted transition-colors hover:text-text-primary disabled:opacity-60"
@@ -401,12 +432,92 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
               </div>
             ) : null}
 
+            {loginStep === 3 ? (
+              <div>
+                <label htmlFor="verificationCode" className="block text-sm font-medium text-text-secondary">
+                  Code de vérification (6 chiffres)
+                </label>
+                <div className="relative mt-1">
+                  <Mail className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-text-muted" />
+                  <input
+                    id="verificationCode"
+                    name="verificationCode"
+                    inputMode="numeric"
+                    pattern="\d{6}"
+                    autoComplete="one-time-code"
+                    required
+                    maxLength={6}
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    className="block w-full rounded-xl border border-white/10 bg-surface-primary py-1.5 pl-9 pr-3 text-[13px] tracking-[0.24em] text-text-primary placeholder:text-text-muted focus:border-noya-blue focus:outline-none focus:ring-2 focus:ring-noya-blue/20 sm:py-2 sm:pl-10 sm:text-sm"
+                    placeholder="000000"
+                  />
+                </div>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLoginStep(2);
+                      setVerificationCode('');
+                      setVerificationMethod(null);
+                    }}
+                    disabled={loading}
+                    className="inline-flex items-center gap-1 text-[11px] font-medium text-text-muted transition-colors hover:text-text-primary disabled:opacity-60"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" />
+                    Retour
+                  </button>
+                  <span className="text-[11px] text-text-muted">Code envoyé à {email}</span>
+                  {verificationMethod === 'password' ? (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!password.trim()) {
+                          toast.error('Mot de passe requis pour renvoyer le code.');
+                          return;
+                        }
+                        setLoading(true);
+                        try {
+                          const result = await signInWithEmailAndPassword(auth, email.trim(), password);
+                          if ('verificationRequired' in result && result.verificationRequired && result.challengeId) {
+                            setLoginChallengeId(result.challengeId);
+                            setVerificationCode('');
+                            toast.success('Nouveau code envoyé par email.');
+                            return;
+                          }
+                          toast.error("Impossible de renvoyer le code pour le moment.");
+                        } catch (error) {
+                          const msg = error instanceof Error ? error.message : 'Impossible de renvoyer le code.';
+                          toast.error(msg);
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      disabled={loading}
+                      className="text-[11px] font-medium text-noya-blue transition-colors hover:text-luxe-champagne-bright disabled:opacity-60"
+                    >
+                      Renvoyer le code
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleGoogle()}
+                      disabled={loading}
+                      className="text-[11px] font-medium text-noya-blue transition-colors hover:text-luxe-champagne-bright disabled:opacity-60"
+                    >
+                      Relancer Google
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : null}
+
             <button
               type="submit"
               disabled={loading}
               className="flex w-full items-center justify-center gap-2 rounded-xl bg-noya-orange px-4 py-1.5 text-[13px] font-bold text-[#0b0f19] transition-colors hover:brightness-105 disabled:opacity-60 sm:py-2 sm:text-sm"
             >
-              {loading ? 'Connexion…' : loginStep === 1 ? 'Continuer' : 'Se connecter'}
+              {loading ? 'Connexion…' : loginStep === 1 ? 'Continuer' : loginStep === 2 ? 'Recevoir mon code' : 'Valider le code'}
               <ArrowRight className="h-4 w-4" />
             </button>
 

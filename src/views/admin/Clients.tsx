@@ -116,7 +116,7 @@ export default function AdminClients() {
         <div className="flex items-start gap-3">
           <span className="commando-luxe-ornament-diamond mt-1.5 shrink-0" aria-hidden />
           <div>
-            <p className="font-display text-[11px] uppercase tracking-[0.28em] text-luxe-champagne-bright/85">CRM</p>
+            <p className="font-display text-[11px] uppercase tracking-[0.18em] text-luxe-champagne-bright/85">CRM</p>
             <h1 className="mt-1 font-display text-3xl font-normal tracking-tight text-text-primary md:text-4xl">
               Carnet clients
             </h1>

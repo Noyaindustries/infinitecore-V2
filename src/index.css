@@ -26,8 +26,8 @@
   --color-border-medium: rgba(255, 255, 255, 0.1);
 
   --font-sans: "Urbanist", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "DM Mono", ui-monospace, SFMono-Regular, monospace;
-  --font-display: "Cormorant Garamond", ui-serif, Georgia, "Times New Roman", serif;
+  --font-mono: "Urbanist", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Urbanist", ui-sans-serif, system-ui, sans-serif;
 
   /* Espace client — accents « maison de luxe » (champagne / or froid) */
   --color-luxe-champagne: #c9a962;

@@ -128,7 +128,7 @@ export default function ClientLayout() {
             <Logo lightText className="h-14 md:h-[3.75rem]" />
           </div>
           <div className="h-px w-full bg-linear-to-r from-transparent via-luxe-champagne/30 to-transparent" aria-hidden />
-          <div className="mt-4 flex items-center gap-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.35em] text-luxe-champagne/90">
+          <div className="mt-4 flex items-center gap-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.24em] text-luxe-champagne/90">
             <span
               className="h-1.5 w-1.5 shrink-0 rounded-full bg-luxe-champagne shadow-[0_0_12px_rgba(201,169,98,0.65)]"
               aria-hidden
@@ -187,10 +187,10 @@ export default function ClientLayout() {
           <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-luxe-champagne/25 to-transparent" aria-hidden />
           <div className="flex items-center justify-between px-6 py-4">
             <div>
-              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.28em] text-luxe-champagne/80">
+              <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-luxe-champagne/80">
                 Portail privé
               </p>
-              <h1 className="font-display text-2xl font-medium tracking-[0.02em] text-text-primary md:text-[1.75rem]">
+              <h1 className="font-display text-2xl font-medium tracking-[0.01em] text-text-primary md:text-[1.75rem]">
                 {pageTitle}
               </h1>
             </div>
