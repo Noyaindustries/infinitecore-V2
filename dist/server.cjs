@@ -371,11 +371,31 @@ function registerDataRoutes(app, deps) {
       const authz = deps.assertDataQueryAuthorized(auth, collectionPath, filters);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
       const dbFilters = buildDbFiltersFromQueryFilters(filters);
-      const dbWhere = dbFilters ? { AND: [{ collectionPath }, ...dbFilters] } : { collectionPath };
-      const rows = await deps.prisma.dataDocument.findMany({
-        where: dbWhere,
-        take: 5e3
-      });
+      let rows;
+      if (dbFilters) {
+        try {
+          const dbWhere = { AND: [{ collectionPath }, ...dbFilters] };
+          rows = await deps.prisma.dataDocument.findMany({
+            where: dbWhere,
+            take: 5e3
+          });
+        } catch (error) {
+          console.warn("[data/query] fallback to in-memory filters", {
+            collectionPath,
+            filtersCount: filters.length,
+            error: error instanceof Error ? error.message : String(error)
+          });
+          rows = await deps.prisma.dataDocument.findMany({
+            where: { collectionPath },
+            take: 5e3
+          });
+        }
+      } else {
+        rows = await deps.prisma.dataDocument.findMany({
+          where: { collectionPath },
+          take: 5e3
+        });
+      }
       const normalized = rows.map((row) => ({
         docId: row.docId,
         data: deps.coerceRecord(row.data)

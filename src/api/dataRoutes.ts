@@ -121,11 +121,35 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
 
       const dbFilters = buildDbFiltersFromQueryFilters(filters);
-      const dbWhere = dbFilters ? ({ AND: [{ collectionPath }, ...dbFilters] } as unknown) : { collectionPath };
-      const rows = await deps.prisma.dataDocument.findMany({
-        where: dbWhere as never,
-        take: 5000,
-      });
+      let rows: Awaited<ReturnType<typeof deps.prisma.dataDocument.findMany>>;
+
+      if (dbFilters) {
+        try {
+          const dbWhere = { AND: [{ collectionPath }, ...dbFilters] } as unknown;
+          rows = await deps.prisma.dataDocument.findMany({
+            where: dbWhere as never,
+            take: 5000,
+          });
+        } catch (error) {
+          // Certains connecteurs Prisma ne supportent pas les filtres JSON avancés
+          // de la même manière en runtime. On retombe en filtrage applicatif pour
+          // éviter un 500 côté client.
+          console.warn("[data/query] fallback to in-memory filters", {
+            collectionPath,
+            filtersCount: filters.length,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          rows = await deps.prisma.dataDocument.findMany({
+            where: { collectionPath } as never,
+            take: 5000,
+          });
+        }
+      } else {
+        rows = await deps.prisma.dataDocument.findMany({
+          where: { collectionPath } as never,
+          take: 5000,
+        });
+      }
 
       const normalized = rows.map((row) => ({
         docId: row.docId,

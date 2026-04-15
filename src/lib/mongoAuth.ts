@@ -93,7 +93,6 @@ async function bootstrapAuthState() {
     // #endregion
     const token = getAuthToken();
     if (!token) {
-      authState.currentUser = null;
       // #region agent log
       agentDebugLog({
         runId: "initial",
@@ -103,8 +102,6 @@ async function bootstrapAuthState() {
         data: {},
       });
       // #endregion
-      emitAuthState();
-      return;
     }
     try {
       const data = await apiRequest<{
@@ -122,7 +119,7 @@ async function bootstrapAuthState() {
       });
       // #endregion
     } catch {
-      setAuthToken(null);
+      if (token) setAuthToken(null);
       authState.currentUser = null;
       // #region agent log
       agentDebugLog({
