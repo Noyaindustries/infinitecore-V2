@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
 import path from "path";
 import { createReadStream, promises as fs } from "fs";
@@ -11,7 +11,7 @@ import { appEnv, parseCorsOrigins } from "@/config/env";
 import { prisma } from "./prismaClient";
 import { buildFileUrl, sanitizeFolder } from "./_r2";
 import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } from "./storageUtils";
-import { registerMongoApi } from "./mongoApi";
+import { parseAuthFromRequest, registerMongoApi, resolveAuthPayload } from "./mongoApi";
 
 const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "application/pdf",
@@ -55,6 +55,35 @@ function secureSecretEquals(expected: string, provided: string) {
   return timingSafeEqual(expectedBuf, providedBuf);
 }
 
+async function readAuthenticatedUser(req: Request) {
+  const auth = parseAuthFromRequest(req);
+  if (!auth) return null;
+  return resolveAuthPayload(auth);
+}
+
+async function requireAuthenticatedUser(req: Request, res: Response, next: NextFunction) {
+  try {
+    const auth = await readAuthenticatedUser(req);
+    if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+    return next();
+  } catch (error) {
+    console.error("[auth] middleware user:", error);
+    return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+  }
+}
+
+async function requireAdminUser(req: Request, res: Response, next: NextFunction) {
+  try {
+    const auth = await readAuthenticatedUser(req);
+    if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+    if (auth.role !== "admin") return res.status(403).json({ success: false, error: "Acces refuse." });
+    return next();
+  } catch (error) {
+    console.error("[auth] middleware admin:", error);
+    return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+  }
+}
+
 /** Application Express (routes `/api/*`, `/health`) sans `listen` — utilisée par `startServer` et par le dev unifié Next+API. */
 export async function createExpressApplication(): Promise<{ app: Express; port: number }> {
   const app = express();
@@ -94,6 +123,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       },
       methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT", "HEAD"],
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+      credentials: true,
     })
   );
   app.use((_, res, next) => {
@@ -146,8 +176,28 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     storage: multer.memoryStorage(),
     limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
   });
+  const uploadSingleWithHandling: express.RequestHandler = (req, res, next) => {
+    upload.single("file")(req, res, (error: unknown) => {
+      if (!error) return next();
+      if (error instanceof multer.MulterError) {
+        if (error.code === "LIMIT_FILE_SIZE") {
+          return res.status(413).json({
+            success: false,
+            error: "Fichier trop volumineux (max 50MB).",
+          });
+        }
+        return res.status(400).json({
+          success: false,
+          error: `Upload invalide: ${error.message}`,
+        });
+      }
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error("[upload] middleware:", msg);
+      return res.status(400).json({ success: false, error: "Requête d'upload invalide." });
+    });
+  };
 
-  app.post("/api/files/upload", upload.single("file"), async (req, res) => {
+  app.post("/api/files/upload", requireAuthenticatedUser, uploadSingleWithHandling, async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ success: false, error: "Aucun fichier reçu." });
@@ -216,7 +266,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     }
   });
 
-  app.delete("/api/files", async (req, res) => {
+  app.delete("/api/files", requireAuthenticatedUser, async (req, res) => {
     try {
       const safePath = normalizePublicIdQuery(String(req.query.publicId || ""));
       if (!safePath) {
@@ -250,7 +300,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     }
   });
 
-  app.get("/api/files/download", async (req, res) => {
+  app.get("/api/files/download", requireAuthenticatedUser, async (req, res) => {
     try {
       const safePath = normalizePublicIdQuery(String(req.query.publicId || ""));
       if (!safePath) {
@@ -340,7 +390,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   });
 
   // GET audits PADDE-CI (ex. admin.html) — lecture MongoDB
-  app.get("/api/webhooks/padde-ci", async (req, res) => {
+  app.get("/api/webhooks/padde-ci", requireAdminUser, async (req, res) => {
     try {
       if (!appEnv.database.url) {
         return res.status(503).json({ success: false, error: "Base de données non configurée (DATABASE_URL)." });

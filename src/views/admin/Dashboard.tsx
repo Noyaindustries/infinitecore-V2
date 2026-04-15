@@ -27,6 +27,7 @@ const shortcuts: {
   description: string;
   icon: typeof FolderOpen;
   highlight?: boolean;
+  compact?: boolean;
 }[] = [
   {
     to: '/admin/dossiers',
@@ -65,6 +66,7 @@ const shortcuts: {
     title: 'Messagerie',
     description: 'Échanges avec les clients.',
     icon: MessageCircle,
+    compact: true,
   },
   {
     to: '/admin/operations',
@@ -724,15 +726,17 @@ function ShortcutCard({
   className?: string;
   large?: boolean;
 }) {
-  const { to, title, description, icon: Icon, highlight } = item;
+  const { to, title, description, icon: Icon, highlight, compact } = item;
+  const isCompact = Boolean(compact && !large);
   return (
     <Link
       to={to}
       className={cn(
-        'group relative flex flex-col overflow-hidden rounded-2xl border p-6 transition-all duration-500 md:p-7',
+        'group relative flex flex-col overflow-hidden rounded-2xl border transition-all duration-500',
         highlight
           ? 'border-luxe-champagne/42 bg-linear-to-br from-luxe-champagne/14 via-noya-sidebar/85 to-noya-sidebar/55 shadow-[0_24px_72px_-32px_rgba(201,169,98,0.42),inset_0_1px_0_rgba(228,212,165,0.18)] hover:border-luxe-champagne/58 hover:shadow-[0_32px_80px_-28px_rgba(201,169,98,0.38)]'
           : 'border-white/8 bg-noya-sidebar/40 backdrop-blur-sm shadow-[0_20px_56px_-36px_rgba(0,0,0,0.88)] hover:border-luxe-champagne/28 hover:bg-noya-sidebar/55 hover:shadow-[0_28px_64px_-30px_rgba(110,167,234,0.14)]',
+        isCompact ? 'p-5 md:p-6' : 'p-6 md:p-7',
         large && 'min-h-56 md:min-h-60',
         className
       )}
@@ -747,13 +751,13 @@ function ShortcutCard({
         <div
           className={cn(
             'flex shrink-0 items-center justify-center rounded-xl border transition-all duration-500',
-            large ? 'h-14 w-14 md:h-16 md:w-16' : 'h-12 w-12',
+            large ? 'h-14 w-14 md:h-16 md:w-16' : isCompact ? 'h-10 w-10' : 'h-12 w-12',
             highlight
               ? 'border-luxe-champagne/38 bg-luxe-champagne/14 text-luxe-champagne-bright shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]'
               : 'border-white/8 bg-black/25 text-text-muted group-hover:border-luxe-champagne/32 group-hover:text-luxe-champagne-bright'
           )}
         >
-          <Icon size={large ? 26 : 22} strokeWidth={1.5} aria-hidden className="transition-transform duration-500 group-hover:scale-[1.04]" />
+          <Icon size={large ? 26 : isCompact ? 20 : 22} strokeWidth={1.5} aria-hidden className="transition-transform duration-500 group-hover:scale-[1.04]" />
         </div>
         {highlight ? (
           <span className="rounded-full border border-luxe-champagne/32 bg-luxe-champagne/10 px-3 py-1 text-[9px] font-semibold uppercase tracking-[0.14em] text-luxe-champagne-bright">
@@ -761,15 +765,16 @@ function ShortcutCard({
           </span>
         ) : null}
       </div>
-      <h3 className={cn('mt-5 font-display font-medium tracking-tight text-text-primary', large ? 'text-xl md:text-2xl' : 'text-lg')}>
+      <h3 className={cn('mt-5 font-display font-medium tracking-tight text-text-primary', large ? 'text-xl md:text-2xl' : isCompact ? 'text-base' : 'text-lg')}>
         {title}
       </h3>
-      <p className={cn('mt-2 flex-1 leading-relaxed text-text-secondary', large ? 'text-sm md:text-[15px] md:max-w-2xl' : 'text-sm')}>
+      <p className={cn('mt-2 flex-1 leading-relaxed text-text-secondary', large ? 'text-sm md:text-[15px] md:max-w-2xl' : isCompact ? 'text-xs' : 'text-sm')}>
         {description}
       </p>
       <span
         className={cn(
-          'mt-6 inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em]',
+          'inline-flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.2em]',
+          isCompact ? 'mt-4' : 'mt-6',
           highlight ? 'text-luxe-champagne-bright' : 'text-text-muted group-hover:text-luxe-champagne-bright'
         )}
       >

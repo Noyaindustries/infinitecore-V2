@@ -162,13 +162,13 @@ export function onAuthStateChanged(_auth: Auth, callback: AuthListener) {
 export async function createUserWithEmailAndPassword(_auth: Auth, email: string, password: string) {
   const data = await apiRequest<{
     success: boolean;
-    token: string;
+    token?: string;
     user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
   }>("/api/auth/register", {
     method: "POST",
     body: JSON.stringify({ email, password }),
   });
-  setAuthToken(data.token);
+  setAuthToken(data.token || null);
   authState.currentUser = toUser(data.user);
   emitAuthState();
   return { user: authState.currentUser };
@@ -177,13 +177,13 @@ export async function createUserWithEmailAndPassword(_auth: Auth, email: string,
 export async function signInWithEmailAndPassword(_auth: Auth, email: string, pass: string) {
   const data = await apiRequest<{
     success: boolean;
-    token: string;
+    token?: string;
     user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
   }>("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ email, password: pass }),
   });
-  setAuthToken(data.token);
+  setAuthToken(data.token || null);
   authState.currentUser = toUser(data.user);
   emitAuthState();
   return { user: authState.currentUser };
@@ -231,7 +231,7 @@ export async function signInWithPopup(
 
   const data = await apiRequest<{
     success: boolean;
-    token: string;
+    token?: string;
     isNew: boolean;
     user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
   }>("/api/auth/google", {
@@ -247,7 +247,7 @@ export async function signInWithPopup(
       referredByPartnerName: options?.referredByPartnerName,
     }),
   });
-  setAuthToken(data.token);
+  setAuthToken(data.token || null);
   authState.currentUser = toUser(data.user);
   emitAuthState();
   return { user: authState.currentUser, isNew: data.isNew };

@@ -232,11 +232,18 @@ export default function Signup() {
   const getPasswordStrength = (password: string) => {
     if (!password) return 0;
     let score = 0;
-    if (password.length >= 8) score += 1;
+    if (password.length >= 12) score += 1;
     if (/[a-zA-Z]/.test(password) && /[0-9]/.test(password)) score += 1;
     if (/[^a-zA-Z0-9]/.test(password)) score += 1;
     return Math.max(1, score);
   };
+
+  const isStrongPassword = (password: string) =>
+    password.length >= 12 &&
+    /[a-z]/.test(password) &&
+    /[A-Z]/.test(password) &&
+    /\d/.test(password) &&
+    /[^A-Za-z0-9]/.test(password);
 
   const strength = getPasswordStrength(formData.password);
 
@@ -277,8 +284,8 @@ export default function Signup() {
       toast.error('Le mot de passe est requis.');
       return false;
     }
-    if (formData.password.length < 8) {
-      toast.error('Le mot de passe doit contenir au moins 8 caractères.');
+    if (!isStrongPassword(formData.password)) {
+      toast.error('Mot de passe insuffisant (12+ caractères, majuscule, minuscule, chiffre et symbole).');
       return false;
     }
     if (formData.password !== formData.confirmPassword) {
@@ -311,22 +318,6 @@ export default function Signup() {
       const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
       const user = userCredential.user;
 
-      // Create company
-      const companyId = `comp_${Date.now()}`;
-      try {
-        await setDoc(doc(db, 'companies', companyId), {
-          id: companyId,
-          name: formData.company,
-          description: formData.companyDescription.trim() || '',
-          industry: formData.industry,
-          size: formData.employees,
-          pack: 'starter', // Default
-          createdAt: new Date().toISOString()
-        });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.CREATE, `companies/${companyId}`);
-      }
-
       // Extract first and last name from fullName
       const nameParts = formData.fullName.split(' ');
       const firstName = nameParts[0];
@@ -346,7 +337,7 @@ export default function Signup() {
           industry: formData.industry,
           employees: formData.employees,
           role: isAdminEmail ? 'admin' : 'client',
-          companyId: companyId,
+          companyId: null,
           referredBy: referralCode || null,
           referredByPartnerId: referrerId || null,
           referredByPartnerName: referrerName?.trim() || null,
@@ -400,7 +391,8 @@ export default function Signup() {
       if (error.code === 'auth/email-already-in-use' || (error.message && error.message.includes('auth/email-already-in-use'))) {
         toast.error('Cet email est déjà utilisé.');
       } else {
-        toast.error('Une erreur est survenue lors de la création du compte.');
+        const msg = typeof error?.message === 'string' ? error.message : '';
+        toast.error(msg || 'Une erreur est survenue lors de la création du compte.');
       }
     } finally {
       setIsLoading(false);
@@ -722,7 +714,7 @@ export default function Signup() {
                         value={formData.password}
                         onChange={(e) => updateFormData('password', e.target.value)}
                         className="block w-full rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] py-2.5 pl-10 pr-10 text-sm text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
-                        placeholder="Min 8 caractères"
+                        placeholder="12+ caractères, majuscule, minuscule, chiffre, symbole"
                       />
                       <button
                         type="button"

@@ -3,21 +3,17 @@
  * via serverless-http. En dev unifié (`npm run dev`), Express est servi avant Next — ce handler n’est pas utilisé.
  */
 import type { NextApiRequest, NextApiResponse } from "next";
-import type { Handler } from "serverless-http";
 import type { Express } from "express";
-import serverless from "serverless-http";
 import { agentSessionLog } from "../../src/debug/agentSessionLog";
 import { createExpressApplication } from "../../server";
 
-let cachedHandler: Handler | null = null;
+let cachedExpressApp: Express | null = null;
 
-async function getHandler(): Promise<Handler> {
-  if (cachedHandler) return cachedHandler;
+async function getExpressApp(): Promise<Express> {
+  if (cachedExpressApp) return cachedExpressApp;
   const { app } = await createExpressApplication();
-  cachedHandler = serverless(app as Express, {
-    binary: ["application/octet-stream", "multipart/form-data", "application/pdf"],
-  });
-  return cachedHandler;
+  cachedExpressApp = app as Express;
+  return cachedExpressApp;
 }
 
 export const config = {
@@ -40,9 +36,9 @@ export default async function apiGateway(req: NextApiRequest, res: NextApiRespon
     data: { url: String(req.url || "").slice(0, 200) },
   });
   // #endregion
-  let handler: Awaited<ReturnType<typeof getHandler>>;
+  let expressApp: Awaited<ReturnType<typeof getExpressApp>>;
   try {
-    handler = await getHandler();
+    expressApp = await getExpressApp();
   } catch (e) {
     agentSessionLog({
       runId: "initial",
@@ -65,5 +61,9 @@ export default async function apiGateway(req: NextApiRequest, res: NextApiRespon
     data: { getHandlerMs: Date.now() - coldStartT0 },
   });
   // #endregion
-  return handler(req, res);
+  return expressApp(req as unknown as Parameters<Express>[0], res as unknown as Parameters<Express>[1], () => {
+    if (!res.writableEnded) {
+      res.status(404).json({ success: false, error: "Route API introuvable." });
+    }
+  });
 }

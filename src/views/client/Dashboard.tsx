@@ -30,6 +30,16 @@ const AUDIT_ICONS = {
   'audit-institutionnel': Building2,
 } as const;
 
+type QuickLinkItem = {
+  to: string;
+  icon: typeof FolderCheck;
+  title: string;
+  description: string;
+  border: string;
+  iconBg: string;
+  compact?: boolean;
+};
+
 function useDossierProgress(clientId: string | undefined) {
   const [steps, setSteps] = useState<DossierStep[]>([]);
   const [loading, setLoading] = useState(true);
@@ -72,7 +82,7 @@ function useDossierProgress(clientId: string | undefined) {
   }, [steps, loading]);
 }
 
-const quickLinks = [
+const quickLinks: QuickLinkItem[] = [
   {
     to: '/dashboard/suivi',
     icon: FolderCheck,
@@ -89,6 +99,7 @@ const quickLinks = [
     description: 'Échangez avec votre équipe Infinite.',
     border: 'border-white/[0.08] hover:border-white/18',
     iconBg: 'bg-white/[0.06] text-luxe-champagne/90 ring-1 ring-luxe-champagne/15',
+    compact: true,
   },
   {
     to: '/dashboard/boutique',
@@ -106,7 +117,7 @@ const quickLinks = [
     border: 'border-white/[0.08] hover:border-white/18',
     iconBg: 'bg-white/[0.06] text-text-secondary ring-1 ring-white/8',
   },
-] as const;
+];
 
 export default function ClientDashboard() {
   const { user, userData } = useAuth();
@@ -303,23 +314,23 @@ export default function ClientDashboard() {
             <Link
               key={item.to}
               to={item.to}
-              className={`group relative flex gap-4 overflow-hidden rounded-2xl border bg-[#080c14]/90 p-5 shadow-[0_20px_40px_-24px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.04)] transition-all duration-300 ${item.border}`}
+              className={`group relative flex overflow-hidden rounded-2xl border bg-[#080c14]/90 shadow-[0_20px_40px_-24px_rgba(0,0,0,0.5),inset_0_1px_0_0_rgba(255,255,255,0.04)] transition-all duration-300 ${item.compact ? 'gap-3 p-4' : 'gap-4 p-5'} ${item.border}`}
             >
               <div
                 className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_100%_0%,rgba(201,169,98,0.08),transparent_55%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100"
                 aria-hidden
               />
               <div
-                className={`relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl ${item.iconBg}`}
+                className={`relative flex shrink-0 items-center justify-center rounded-xl ${item.compact ? 'h-10 w-10' : 'h-12 w-12'} ${item.iconBg}`}
               >
-                <item.icon className="h-6 w-6" aria-hidden strokeWidth={1.75} />
+                <item.icon className={item.compact ? 'h-5 w-5' : 'h-6 w-6'} aria-hidden strokeWidth={1.75} />
               </div>
               <div className="relative min-w-0 flex-1">
-                <h3 className="font-display text-lg font-medium text-text-primary group-hover:text-luxe-champagne-bright">
+                <h3 className={`font-display font-medium text-text-primary group-hover:text-luxe-champagne-bright ${item.compact ? 'text-base' : 'text-lg'}`}>
                   {item.title}
                 </h3>
-                <p className="mt-1 text-sm text-text-secondary">{item.description}</p>
-                <span className="mt-3 inline-flex items-center gap-1 text-xs font-bold uppercase tracking-wider text-noya-blue transition-all group-hover:gap-2 group-hover:text-luxe-champagne-bright">
+                <p className={`mt-1 text-text-secondary ${item.compact ? 'text-xs' : 'text-sm'}`}>{item.description}</p>
+                <span className={`inline-flex items-center gap-1 font-bold uppercase tracking-wider text-noya-blue transition-all group-hover:gap-2 group-hover:text-luxe-champagne-bright ${item.compact ? 'mt-2 text-[11px]' : 'mt-3 text-xs'}`}>
                   Accéder
                   <ArrowRight className="h-3.5 w-3.5" aria-hidden />
                 </span>

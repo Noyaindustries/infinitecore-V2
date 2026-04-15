@@ -162,6 +162,10 @@ function parseAuth(req: Request): AuthPayload | null {
   }
 }
 
+export function parseAuthFromRequest(req: Request): AuthPayload | null {
+  return parseAuth(req);
+}
+
 const VALID_ROLES = new Set(["admin", "commando", "developer", "partner", "client"]);
 const VALID_OPERATORS = new Set<QueryFilter["operator"]>(["==", "!=", ">", ">=", "<", "<="]);
 
@@ -311,7 +315,7 @@ function sanitizeOrders(raw: unknown): QueryOrder[] | null {
   return orders;
 }
 
-async function resolveAuthPayload(raw: AuthPayload): Promise<AuthPayload | null> {
+export async function resolveAuthPayload(raw: AuthPayload): Promise<AuthPayload | null> {
   const account = await prisma.userAccount.findUnique({
     where: { uid: raw.uid },
     select: { uid: true, email: true, role: true },
@@ -763,7 +767,6 @@ export function registerMongoApi(app: Express) {
 
       return res.status(201).json({
         success: true,
-        token,
         user: {
           uid: account.uid,
           email: account.email,
@@ -856,7 +859,6 @@ export function registerMongoApi(app: Express) {
 
       return res.status(200).json({
         success: true,
-        token,
         user: {
           uid: account.uid,
           email: account.email,
@@ -966,7 +968,6 @@ export function registerMongoApi(app: Express) {
 
       return res.status(200).json({
         success: true,
-        token,
         isNew,
         user: {
           uid: account.uid,

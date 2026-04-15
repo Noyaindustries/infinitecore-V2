@@ -1,4 +1,5 @@
 import { apiUrl } from "../lib/apiBase";
+import { getAuthToken } from "../lib/apiClient";
 
 export interface UploadResult {
   url: string;
@@ -20,6 +21,11 @@ export function uploadFile(
 
     const xhr = new XMLHttpRequest();
     xhr.open("POST", apiUrl("/api/files/upload"));
+    xhr.withCredentials = true;
+    const token = getAuthToken();
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
 
     xhr.upload.onprogress = (event) => {
       if (!onProgress || !event.lengthComputable) return;
