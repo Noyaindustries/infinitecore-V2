@@ -1,4 +1,4 @@
-import { Link, Outlet, useNavigate } from 'react-router-dom';
+import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { Menu, X, ChevronDown } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { auth } from '@/lib/clientSdk';
@@ -30,11 +30,12 @@ export default function MarketingLayout() {
   const [solutionsSubOpen, setSolutionsSubOpen] = useState(false);
   const [navSolid, setNavSolid] = useState(false);
   const { user, userData } = useAuth();
+  const location = useLocation();
   const navigate = useNavigate();
 
   const role = userData?.role;
   const workspaceLinks = user ? getWorkspaceNavLinks(role) : [];
-
+  const hideGuestAuthLinks = location.pathname.startsWith('/login');
   const handleLogout = async () => {
     localStorage.removeItem('demoRole');
     await auth.signOut();
@@ -62,7 +63,7 @@ export default function MarketingLayout() {
           navSolid ? 'bg-[#03050d]/95' : 'bg-black/60'
         } backdrop-blur-[24px] backdrop-saturate-[180%]`}
       >
-        <div className="container mx-auto flex h-[70px] min-w-0 items-center justify-between gap-2 px-3 sm:h-[76px] sm:px-6 md:h-[84px] lg:px-[52px]">
+        <div className="container mx-auto flex h-[66px] min-w-0 items-center justify-between gap-2 px-3 sm:h-[76px] sm:px-6 md:h-[84px] lg:px-[52px]">
           <div className="flex min-w-0 flex-1 items-center justify-start">
             <Link
               to="/"
@@ -139,7 +140,7 @@ export default function MarketingLayout() {
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : hideGuestAuthLinks ? null : (
               <>
                 <Link
                   to="/login"
@@ -181,7 +182,7 @@ export default function MarketingLayout() {
                   type="button"
                   id="nav-mobile-solutions"
                   className="flex w-full items-center justify-between rounded-md px-3 py-2.5 text-left text-[13px] font-medium text-[#8E9EAE] transition-all hover:bg-white/[0.06] hover:text-[#F5F7FF]"
-                  aria-expanded={solutionsSubOpen}
+                  aria-expanded={solutionsSubOpen ? 'true' : 'false'}
                   aria-controls="nav-mobile-solutions-panel"
                   onClick={() => setSolutionsSubOpen((o) => !o)}
                 >
@@ -262,7 +263,7 @@ export default function MarketingLayout() {
                     Déconnexion
                   </button>
                 </div>
-              ) : (
+              ) : hideGuestAuthLinks ? null : (
                 <div className="flex flex-col gap-2.5">
                   <Link
                     to="/login"
@@ -286,7 +287,7 @@ export default function MarketingLayout() {
       </header>
 
       {/* MAIN — le contenu passe sous la nav fixe (padding géré par les pages, ex. Home) */}
-      <main className="relative z-10 flex-1 pt-[70px] sm:pt-[76px] md:pt-[84px]">
+      <main className="relative z-10 pt-[66px] sm:pt-[76px] md:flex-1 md:pt-[84px]">
         <Outlet />
       </main>
 
@@ -296,28 +297,28 @@ export default function MarketingLayout() {
           className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-[#E8961E]/30 to-transparent"
           aria-hidden
         />
-        <div className="container mx-auto max-w-6xl px-4 py-8 sm:px-6 sm:py-9 lg:px-8 lg:py-10 xl:px-10">
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 sm:gap-x-6 sm:gap-y-8 lg:mb-7 lg:grid-cols-12 lg:gap-x-6 lg:gap-y-0 xl:gap-x-8">
+        <div className="container mx-auto max-w-6xl px-3 py-6 sm:px-6 sm:py-9 lg:px-8 lg:py-10 xl:px-10">
+          <div className="grid grid-cols-3 gap-4 sm:grid-cols-2 sm:gap-x-6 sm:gap-y-8 lg:mb-7 lg:grid-cols-12 lg:gap-x-6 lg:gap-y-0 xl:gap-x-8">
             {/* Marque */}
-            <div className="sm:col-span-2 lg:col-span-5 xl:col-span-4">
+            <div className="col-span-3 sm:col-span-2 lg:col-span-5 xl:col-span-4">
               <Link to="/" className="group/logo inline-block transition-opacity hover:opacity-90">
-                <Logo matchMarketingNav className="h-12 sm:h-14 md:h-16" />
+                <Logo blendSurface="primary" className="h-12 sm:h-14 md:h-16" />
               </Link>
-              <p className="mt-2.5 max-w-[280px] text-[11px] font-normal leading-snug text-[#6B7A90] sm:text-[12px] sm:leading-relaxed">
+              <p className="mt-2 max-w-[280px] text-[11px] font-normal leading-snug text-[#6B7A90] sm:text-[12px] sm:leading-relaxed">
                 The Operating System for African Business. Suite SaaS modulaire pour PME et grandes entreprises
                 d&apos;Afrique — conçue par Noya Industries, Abidjan.
               </p>
             </div>
 
-            <nav className="sm:col-span-1 lg:col-span-2" aria-label="Solutions">
+            <nav className="col-span-1 text-center lg:col-span-2 lg:text-left" aria-label="Solutions">
               <h4 className="mb-2 text-[9px] font-bold uppercase tracking-[0.2em] text-[#8E9EAE]">
                 Solutions
               </h4>
-              <ul className="flex flex-col gap-1">
+              <ul className="flex flex-col items-center gap-1 lg:items-start">
                 <li>
                   <Link
                     to="/solutions"
-                    className="inline-block py-px text-[11px] text-[#6B7A90] transition-colors duration-150 hover:text-[#F5F7FF] sm:text-xs"
+                    className="inline-block py-0.5 text-[11px] text-[#6B7A90] transition-colors duration-150 hover:text-[#F5F7FF] sm:text-xs"
                   >
                     Toutes les solutions
                   </Link>
@@ -326,7 +327,7 @@ export default function MarketingLayout() {
                   <li key={item.to}>
                     <Link
                       to={item.to}
-                      className="inline-block py-px text-[11px] text-[#5E6E84] transition-colors duration-150 hover:text-[#F5F7FF] sm:text-xs"
+                      className="inline-block py-0.5 text-[11px] text-[#5E6E84] transition-colors duration-150 hover:text-[#F5F7FF] sm:text-xs"
                     >
                       {item.label}
                     </Link>
@@ -335,11 +336,11 @@ export default function MarketingLayout() {
               </ul>
             </nav>
 
-            <nav className="sm:col-span-1 lg:col-span-2" aria-label="Entreprise">
+            <nav className="col-span-1 text-center lg:col-span-2 lg:text-left" aria-label="Entreprise">
               <h4 className="mb-2 text-[9px] font-bold uppercase tracking-[0.2em] text-[#8E9EAE]">
                 Entreprise
               </h4>
-              <ul className="flex flex-col gap-1">
+              <ul className="flex flex-col items-center gap-1 lg:items-start">
                 {[
                   { to: '/#system', label: 'Infinite System' },
                   { to: '/a-propos', label: 'À propos' },
@@ -349,7 +350,7 @@ export default function MarketingLayout() {
                   <li key={item.to}>
                     <Link
                       to={item.to}
-                      className="inline-block py-px text-[11px] text-[#5E6E84] transition-colors duration-150 hover:text-[#F5F7FF] sm:text-xs"
+                      className="inline-block py-0.5 text-[11px] text-[#5E6E84] transition-colors duration-150 hover:text-[#F5F7FF] sm:text-xs"
                     >
                       {item.label}
                     </Link>
@@ -358,23 +359,23 @@ export default function MarketingLayout() {
               </ul>
             </nav>
 
-            <nav className="sm:col-span-2 lg:col-span-3 xl:col-span-4" aria-label="Légal">
+            <nav className="col-span-1 text-center sm:col-span-2 lg:col-span-3 lg:text-left xl:col-span-4" aria-label="Légal">
               <h4 className="mb-2 text-[9px] font-bold uppercase tracking-[0.2em] text-[#8E9EAE]">
                 Légal
               </h4>
-              <ul className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2 lg:grid-cols-1">
+              <ul className="flex flex-col items-center gap-1.5 lg:items-start lg:gap-1">
                 {[
                   { to: '/mentions-legales', label: 'Mentions légales' },
+                  { to: '/confidentialite', label: 'Confidentialité' },
                   { to: '/cgu', label: 'CGU' },
                   { to: '/cgv', label: 'CGV' },
-                  { to: '/confidentialite', label: 'Confidentialité' },
-                  { to: '/securite', label: 'Sécurité' },
                   { to: '/cookies', label: 'Cookies' },
+                  { to: '/securite', label: 'Sécurité' },
                 ].map((item) => (
                   <li key={item.to}>
                     <Link
                       to={item.to}
-                      className="inline-block py-px text-[11px] text-[#5E6E84] transition-colors duration-150 hover:text-[#F5F7FF] sm:text-xs"
+                      className="inline-block py-0.5 text-[11px] text-[#5E6E84] transition-colors duration-150 hover:text-[#F5F7FF] sm:text-xs"
                     >
                       {item.label}
                     </Link>
@@ -384,53 +385,53 @@ export default function MarketingLayout() {
             </nav>
           </div>
 
-          <div className="border-t border-white/[0.07] pt-5">
-            <div className="flex justify-center overflow-x-auto pb-1 [scrollbar-width:thin]">
-              <div className="inline-flex min-w-0 flex-nowrap items-center justify-center gap-x-2 text-[10px] leading-snug text-[#5E6E84] sm:gap-x-2.5 sm:text-[11px]">
-              <span className="shrink-0 whitespace-nowrap">
+          <div className="border-t border-white/[0.07] pt-4 sm:pt-5">
+            <div className="flex justify-center pb-1">
+              <div className="flex min-w-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[10px] leading-snug text-[#5E6E84] sm:gap-x-2.5 sm:text-[11px]">
+              <span className="text-center">
                 © {new Date().getFullYear()}{' '}
                 <span className="text-[#8E9EAE]">Infinite Core</span>
                 {' · '}
                 <span>Noya Industries</span>
                 <span className="text-[#5E6E84]/80"> · Abidjan, Côte d&apos;Ivoire</span>
               </span>
-              <span className="shrink-0 text-[#5E6E84]/35" aria-hidden>
+              <span className="text-[#5E6E84]/35" aria-hidden>
                 ·
               </span>
               <Link
                 to="/mentions-legales"
-                className="shrink-0 whitespace-nowrap transition-colors duration-150 hover:text-[#F5F7FF]"
+                className="whitespace-nowrap transition-colors duration-150 hover:text-[#F5F7FF]"
               >
                 Mentions légales
               </Link>
-              <span className="shrink-0 text-[#5E6E84]/35" aria-hidden>
+              <span className="text-[#5E6E84]/35" aria-hidden>
                 ·
               </span>
               <Link
                 to="/confidentialite"
-                className="shrink-0 whitespace-nowrap transition-colors duration-150 hover:text-[#F5F7FF]"
+                className="whitespace-nowrap transition-colors duration-150 hover:text-[#F5F7FF]"
               >
                 Confidentialité
               </Link>
-              <span className="shrink-0 text-[#5E6E84]/35" aria-hidden>
+              <span className="text-[#5E6E84]/35" aria-hidden>
                 ·
               </span>
               <Link
                 to="/cookies"
-                className="shrink-0 whitespace-nowrap transition-colors duration-150 hover:text-[#F5F7FF]"
+                className="whitespace-nowrap transition-colors duration-150 hover:text-[#F5F7FF]"
               >
                 Cookies
               </Link>
-              <span className="shrink-0 text-[#5E6E84]/35" aria-hidden>
+              <span className="text-[#5E6E84]/35" aria-hidden>
                 ·
               </span>
               <Link
-                to="/login"
-                className="shrink-0 whitespace-nowrap transition-colors duration-150 hover:text-[#F5F7FF]"
+                to="/login/staff"
+                className="whitespace-nowrap transition-colors duration-150 hover:text-[#F5F7FF]"
               >
                 Espace Staff
               </Link>
-              <span className="shrink-0 text-[#5E6E84]/35" aria-hidden>
+              <span className="text-[#5E6E84]/35" aria-hidden>
                 ·
               </span>
               <button
@@ -439,7 +440,7 @@ export default function MarketingLayout() {
                   localStorage.removeItem('ic_consent');
                   window.location.reload();
                 }}
-                className="shrink-0 whitespace-nowrap text-left transition-colors duration-150 hover:text-[#F5F7FF]"
+                className="whitespace-nowrap text-left transition-colors duration-150 hover:text-[#F5F7FF]"
               >
                 Préférences cookies
               </button>

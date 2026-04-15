@@ -199,8 +199,8 @@ export default function PartnerDashboard() {
   };
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
-      <section className="rounded-2xl border border-white/10 bg-linear-to-r from-noya-sidebar to-surface-secondary p-6">
+    <div className="space-y-4 p-3 sm:p-4">
+      <section className="rounded-2xl border border-white/10 bg-linear-to-r from-noya-sidebar to-surface-secondary p-5">
         <p className="text-sm text-text-secondary">Bienvenue</p>
         <h1 className="mt-1 text-2xl font-bold text-text-primary">{partnerName}</h1>
         <p className="mt-2 max-w-2xl text-sm text-text-secondary">
@@ -369,7 +369,7 @@ export default function PartnerDashboard() {
         )}
       </section>
 
-      <section id="partner-dashboard-pipeline" className="scroll-mt-24 grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <section id="partner-dashboard-pipeline" className="scroll-mt-24 grid grid-cols-1 gap-4 xl:grid-cols-3">
         <article className="rounded-xl border border-white/5 bg-noya-sidebar p-5 xl:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <div>
@@ -424,7 +424,7 @@ export default function PartnerDashboard() {
         </article>
       </section>
 
-      <section id="partner-dashboard-activity" className="scroll-mt-24 grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <section id="partner-dashboard-activity" className="scroll-mt-24 grid grid-cols-1 gap-4 xl:grid-cols-3">
         <article className="rounded-xl border border-white/5 bg-noya-sidebar p-5 xl:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <div>

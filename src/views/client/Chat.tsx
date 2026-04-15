@@ -323,7 +323,7 @@ export default function ClientChat() {
   }
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6 pb-4">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-4xl flex-col gap-4 pb-2">
       {/* Intro */}
       <div className="relative overflow-hidden rounded-2xl border border-border-subtle bg-surface-secondary p-5 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -361,7 +361,7 @@ export default function ClientChat() {
       </div>
 
       {/* Fil de discussion */}
-      <div className="flex min-h-[min(520px,calc(100dvh-14rem))] flex-col overflow-hidden rounded-2xl border border-border-subtle bg-surface-primary shadow-md">
+      <div className="flex min-h-[360px] flex-1 flex-col overflow-hidden rounded-2xl border border-border-subtle bg-surface-primary shadow-md md:min-h-[420px]">
         <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border-subtle bg-surface-secondary px-4 py-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border-subtle bg-surface-tertiary text-sm font-bold text-text-secondary">

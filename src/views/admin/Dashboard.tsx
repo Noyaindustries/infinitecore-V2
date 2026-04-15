@@ -371,7 +371,7 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-5 py-8 md:px-8 md:py-10 pb-20">
+    <div className="mx-auto max-w-6xl px-5 py-6 pb-6 md:px-8 md:py-8">
       {/* Bandeau contextualisé */}
       <div className="mb-8 flex flex-col gap-3 border-b border-white/6 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex items-center gap-3">
@@ -449,7 +449,7 @@ export default function AdminDashboard() {
       </header>
 
       {/* Statistiques décoratives (données réelles légères) */}
-      <div className="mt-10 grid gap-4 sm:grid-cols-3">
+      <div className="mt-8 grid gap-4 sm:grid-cols-3">
         <div className="commando-luxe-stat-slab px-5 py-5">
           <p className="text-[9px] font-semibold uppercase tracking-[0.25em] text-text-dim">Profil</p>
           <p className="mt-2 font-display text-2xl text-luxe-champagne-bright">{roleLabel}</p>
@@ -468,7 +468,7 @@ export default function AdminDashboard() {
       </div>
 
       {/* Entrées formulaires parrainage */}
-      <section className="mt-12 md:mt-14">
+      <section className="mt-8 md:mt-10">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="commando-luxe-ornament-diamond shrink-0" aria-hidden />
@@ -541,7 +541,7 @@ export default function AdminDashboard() {
       </section>
 
       {/* Leads partenaires (source formulaire partenaire) */}
-      <section className="mt-12 md:mt-14">
+      <section className="mt-8 md:mt-10">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="commando-luxe-ornament-diamond shrink-0" aria-hidden />
@@ -605,7 +605,7 @@ export default function AdminDashboard() {
       </section>
 
       {/* Aperçu CRM — carnet clients */}
-      <section className="mt-12 md:mt-14" aria-labelledby="crm-dashboard-heading">
+      <section className="mt-8 md:mt-10" aria-labelledby="crm-dashboard-heading">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-4">
             <div className="commando-luxe-ornament-diamond shrink-0" aria-hidden />
@@ -689,7 +689,7 @@ export default function AdminDashboard() {
       </section>
 
       {/* Grille modules — bento */}
-      <div className="mt-12 md:mt-14">
+      <div className="mt-8 md:mt-10">
         <div className="mb-8 flex flex-wrap items-center gap-4">
           <div className="commando-luxe-ornament-diamond shrink-0" aria-hidden />
           <div className="h-px flex-1 min-w-12 max-w-xs bg-linear-to-r from-luxe-champagne/35 to-transparent" aria-hidden />

@@ -111,6 +111,7 @@ function App() {
             <Route path="/cookies" element={<Cookies />} />
 
             <Route path="/login" element={<Login />} />
+            <Route path="/login/staff" element={<Login isStaff />} />
             <Route path="/signup" element={<Signup />} />
             <Route path="/reset-password" element={<ResetPassword />} />
           </Route>

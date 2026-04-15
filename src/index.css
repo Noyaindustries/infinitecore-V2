@@ -3,12 +3,13 @@
 @theme {
   --color-noya-black: #06080D;
   --color-noya-sidebar: #0A1020;
-  --color-noya-blue: #6EA7EA;
-  --color-noya-orange: #FFB332;
+  /* Palette alignée au logo Infinite Core */
+  --color-noya-blue: #2B547E;
+  --color-noya-orange: #D98A2C;
   --color-noya-red: #E15B64;
   --color-noya-green: #2BC673;
   --color-noya-white: #f9fafb;
-  --color-noya-accent: #F27D26;
+  --color-noya-accent: #8B6B5D;
 
   /* Semantic Surfaces - Dark (Default) */
   --color-surface-primary: #06080D;
@@ -283,10 +284,10 @@ html::-webkit-scrollbar {
   --color-border-medium: rgba(0, 0, 0, 0.1);
 
   /* Adjust Noya colors for legibility on light backgrounds if necessary */
-  --color-noya-blue: #2563EB;
+  --color-noya-blue: #35638F;
   --color-noya-green: #16A34A;
   --color-noya-red: #DC2626;
-  --color-noya-orange: #D97706;
+  --color-noya-orange: #B87925;
 
   --color-luxe-champagne: #9a7b3c;
   --color-luxe-champagne-bright: #b08d44;

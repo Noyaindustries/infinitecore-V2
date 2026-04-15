@@ -22,7 +22,7 @@ export default function AppleIcon() {
           justifyContent: "center",
           background: "#050816",
           borderRadius: "50%",
-          border: "8px solid #E8961E",
+          border: "8px solid #D98A2C",
           boxSizing: "border-box",
         }}
       >

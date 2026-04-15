@@ -137,7 +137,7 @@ export default function ClientDashboard() {
   const pack = typeof userData?.pack === 'string' ? userData.pack : undefined;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-10 pb-10">
+    <div className="mx-auto max-w-5xl space-y-6 pb-2">
       {/* En-tête */}
       <div className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-linear-to-br from-[#0c101c] via-[#080c14] to-[#05080f] p-6 shadow-[0_32px_64px_-28px_rgba(0,0,0,0.75),0_0_0_1px_rgba(201,169,98,0.12),inset_0_1px_0_0_rgba(255,255,255,0.06)] sm:p-9">
         <div
@@ -174,7 +174,7 @@ export default function ClientDashboard() {
       </div>
 
       {/* Résumé compte + progression dossier */}
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-2">
         <div className="rounded-2xl border border-white/[0.07] bg-[#0a0e18]/85 p-5 shadow-[0_24px_48px_-28px_rgba(0,0,0,0.55),inset_0_1px_0_0_rgba(255,255,255,0.04)] backdrop-blur-sm sm:p-6">
           <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.22em] text-luxe-champagne/85">
             Votre organisation
@@ -248,9 +248,9 @@ export default function ClientDashboard() {
       </div>
 
       {/* Les 3 audits PADDE-CI gratuits */}
-      <section className="relative overflow-hidden rounded-2xl border border-noya-orange/30 bg-linear-to-br from-[#120c08]/90 via-[#0a0e18]/95 to-[#080c14]/95 p-5 shadow-[0_28px_56px_-24px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,179,50,0.12)] sm:p-7">
+      <section className="relative overflow-hidden rounded-2xl border border-noya-orange/30 bg-linear-to-br from-[#120c08]/90 via-[#0a0e18]/95 to-[#080c14]/95 p-5 shadow-[0_28px_56px_-24px_rgba(0,0,0,0.6),0_0_0_1px_rgba(255,179,50,0.12)] sm:p-6">
         <div className="pointer-events-none absolute -right-16 top-0 h-40 w-40 rounded-full bg-noya-orange/15 blur-3xl" aria-hidden />
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="mb-2 inline-flex items-center gap-2 text-noya-orange">
               <Sparkles className="h-5 w-5 shrink-0" aria-hidden />

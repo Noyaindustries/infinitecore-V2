@@ -75,16 +75,16 @@ export default function SuperAdminDashboard() {
   return (
     <div className="flex-1 flex flex-col h-full overflow-hidden bg-surface-primary">
       {/* Content */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           {stats.map((stat, index) => (
             <motion.div
               key={stat.label}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.1 }}
-              className="bg-surface-secondary p-6 rounded-2xl shadow-sm border border-border-subtle flex items-center justify-between hover:border-border-medium transition-shadow group"
+              className="flex items-center justify-between rounded-2xl border border-border-subtle bg-surface-secondary p-5 shadow-sm transition-shadow hover:border-border-medium group"
             >
               <div>
                 <p className="text-sm text-text-secondary font-medium mb-1">{stat.label}</p>
@@ -97,10 +97,10 @@ export default function SuperAdminDashboard() {
           ))}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {/* Chart Placeholder */}
           {/* Revenue Chart - Premium SVG Representation */}
-          <div className="lg:col-span-2 bg-surface-secondary rounded-3xl shadow-sm border border-border-subtle p-8 flex flex-col relative overflow-hidden group">
+          <div className="relative flex flex-col overflow-hidden rounded-3xl border border-border-subtle bg-surface-secondary p-6 shadow-sm group lg:col-span-2">
             <div className="absolute top-0 right-0 w-64 h-64 bg-noya-blue/5 rounded-full blur-[100px] -translate-y-1/2 translate-x-1/2 group-hover:bg-noya-blue/10 transition-colors duration-1000"></div>
             
             <div className="flex justify-between items-center mb-10 relative z-10">
@@ -117,7 +117,7 @@ export default function SuperAdminDashboard() {
               </select>
             </div>
             
-            <div className="flex-1 min-h-[250px] relative z-10 mt-6 mt-10">
+            <div className="relative z-10 mt-6 min-h-[250px] flex-1">
               <svg viewBox="0 0 800 250" className="w-full h-full drop-shadow-[0_10px_30px_rgba(110,167,234,0.15)]">
                 <defs>
                   <linearGradient id="chartGradient" x1="0" y1="0" x2="0" y2="1">
@@ -166,7 +166,7 @@ export default function SuperAdminDashboard() {
           </div>
 
           {/* Recent Activity */}
-          <div className="bg-surface-secondary rounded-3xl shadow-sm border border-border-subtle p-8">
+          <div className="rounded-3xl border border-border-subtle bg-surface-secondary p-6 shadow-sm">
             <h2 className="text-xl font-black text-text-primary uppercase tracking-tight mb-8">Activités Système</h2>
             <div className="space-y-8">
               {recentLogs.length > 0 ? recentLogs.map((log, i) => (
@@ -201,7 +201,7 @@ export default function SuperAdminDashboard() {
 
         {/* Recent Orders */}
         <div className="bg-surface-secondary rounded-3xl shadow-sm border border-border-subtle overflow-hidden">
-          <div className="p-8 border-b border-border-subtle bg-surface-primary/50 flex justify-between items-center">
+          <div className="flex items-center justify-between border-b border-border-subtle bg-surface-primary/50 p-6">
             <div>
               <h2 className="text-xl font-black text-text-primary uppercase tracking-tight">Flux Commandes Récentes</h2>
               <p className="text-[10px] text-text-secondary font-black uppercase tracking-[0.2em] mt-1 opacity-50">Transactions en temps réel</p>
@@ -217,26 +217,26 @@ export default function SuperAdminDashboard() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-surface-primary text-text-secondary/70 text-[10px] uppercase font-black tracking-widest border-b border-border-subtle">
-                  <th className="p-6 font-black tracking-widest">Compte Client</th>
-                  <th className="p-6 font-black tracking-widest">Architecture Service</th>
-                  <th className="p-6 font-black tracking-widest">Badge Statut</th>
-                  <th className="p-6 font-black tracking-widest text-right">Datation</th>
+                  <th className="p-4 font-black tracking-widest">Compte Client</th>
+                  <th className="p-4 font-black tracking-widest">Architecture Service</th>
+                  <th className="p-4 font-black tracking-widest">Badge Statut</th>
+                  <th className="p-4 text-right font-black tracking-widest">Datation</th>
                 </tr>
               </thead>
               <tbody className="text-sm text-text-primary font-medium">
                 {recentOrders.length > 0 ? recentOrders.map((order, i) => (
                   <tr key={order.id} className="border-b border-border-subtle hover:bg-surface-primary transition-all group">
-                    <td className="p-6">
+                    <td className="p-4">
                       <div className="font-bold group-hover:text-noya-blue transition-colors">{order.clientName}</div>
                       <div className="text-[9px] font-mono text-text-secondary/40 uppercase tracking-tighter mt-1 italic">ID: {order.id.substring(0, 8)}</div>
                     </td>
-                    <td className="p-6">
+                    <td className="p-4">
                       <div className="flex items-center gap-2">
                         <CreditCard size={14} className="text-noya-blue/50" />
                         <span className="text-xs">{order.serviceName}</span>
                       </div>
                     </td>
-                    <td className="p-6">
+                    <td className="p-4">
                       <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest shadow-inner
                         ${order.status === 'Terminé' ? 'bg-noya-green/10 text-noya-green' : 
                           order.status === 'En cours' ? 'bg-noya-blue/10 text-noya-blue' : 
@@ -247,13 +247,13 @@ export default function SuperAdminDashboard() {
                         {order.status}
                       </span>
                     </td>
-                    <td className="p-6 text-right font-mono text-[10px] text-text-secondary opacity-60">
+                    <td className="p-4 text-right font-mono text-[10px] text-text-secondary opacity-60">
                       {order.createdAt ? format(new Date(order.createdAt), 'dd MMMM yyyy HH:mm', { locale: fr }) : '--'}
                     </td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={4} className="p-20 text-center text-text-secondary/20">
+                    <td colSpan={4} className="p-12 text-center text-text-secondary/20">
                       <div className="flex flex-col items-center gap-4">
                         <CreditCard size={48} className="opacity-20" />
                         <p className="text-[10px] font-black uppercase tracking-widest italic">Aucun flux transactionnel détecté</p>
@@ -268,7 +268,7 @@ export default function SuperAdminDashboard() {
 
         {/* Recent Partner Leads */}
         <div className="bg-surface-secondary rounded-3xl shadow-sm border border-border-subtle overflow-hidden">
-          <div className="p-8 border-b border-border-subtle bg-surface-primary/50 flex justify-between items-center">
+          <div className="flex items-center justify-between border-b border-border-subtle bg-surface-primary/50 p-6">
             <div>
               <h2 className="text-xl font-black text-text-primary uppercase tracking-tight">Leads Partenaires Récents</h2>
               <p className="text-[10px] text-text-secondary font-black uppercase tracking-[0.2em] mt-1 opacity-50">Formulaires reçus depuis l&apos;espace partenaire</p>
@@ -284,37 +284,37 @@ export default function SuperAdminDashboard() {
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-surface-primary text-text-secondary/70 text-[10px] uppercase font-black tracking-widest border-b border-border-subtle">
-                  <th className="p-6 font-black tracking-widest">Contact</th>
-                  <th className="p-6 font-black tracking-widest">Entreprise</th>
-                  <th className="p-6 font-black tracking-widest">Partenaire</th>
-                  <th className="p-6 font-black tracking-widest">Téléphone</th>
-                  <th className="p-6 font-black tracking-widest">Statut</th>
-                  <th className="p-6 font-black tracking-widest text-right">Datation</th>
+                  <th className="p-4 font-black tracking-widest">Contact</th>
+                  <th className="p-4 font-black tracking-widest">Entreprise</th>
+                  <th className="p-4 font-black tracking-widest">Partenaire</th>
+                  <th className="p-4 font-black tracking-widest">Téléphone</th>
+                  <th className="p-4 font-black tracking-widest">Statut</th>
+                  <th className="p-4 text-right font-black tracking-widest">Datation</th>
                 </tr>
               </thead>
               <tbody className="text-sm text-text-primary font-medium">
                 {recentPartnerLeads.length > 0 ? recentPartnerLeads.map((lead) => (
                   <tr key={lead.id} className="border-b border-border-subtle hover:bg-surface-primary transition-all group">
-                    <td className="p-6">
+                    <td className="p-4">
                       <div className="font-bold group-hover:text-noya-blue transition-colors">
                         {`${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Contact'}
                       </div>
                     </td>
-                    <td className="p-6 text-xs">{lead.companyName || '—'}</td>
-                    <td className="p-6 text-xs">{lead.partnerName || '—'}</td>
-                    <td className="p-6 text-xs">{lead.phone || lead.whatsapp || '—'}</td>
-                    <td className="p-6">
+                    <td className="p-4 text-xs">{lead.companyName || '—'}</td>
+                    <td className="p-4 text-xs">{lead.partnerName || '—'}</td>
+                    <td className="p-4 text-xs">{lead.phone || lead.whatsapp || '—'}</td>
+                    <td className="p-4">
                       <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest shadow-inner bg-noya-blue/10 text-noya-blue">
                         {lead.status || 'soumis'}
                       </span>
                     </td>
-                    <td className="p-6 text-right font-mono text-[10px] text-text-secondary opacity-60">
+                    <td className="p-4 text-right font-mono text-[10px] text-text-secondary opacity-60">
                       {lead.createdAt ? format(new Date(lead.createdAt), 'dd MMMM yyyy HH:mm', { locale: fr }) : '--'}
                     </td>
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={6} className="p-20 text-center text-text-secondary/20">
+                    <td colSpan={6} className="p-12 text-center text-text-secondary/20">
                       <div className="flex flex-col items-center gap-4">
                         <Users size={48} className="opacity-20" />
                         <p className="text-[10px] font-black uppercase tracking-widest italic">Aucun lead partenaire détecté</p>
