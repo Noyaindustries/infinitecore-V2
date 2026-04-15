@@ -13,11 +13,11 @@ import {
   User,
   Users,
 } from 'lucide-react';
-import { sendPasswordResetEmail, updateProfile } from 'firebase/auth';
-import { doc, updateDoc } from 'firebase/firestore';
+import { sendPasswordResetEmail, updateProfile } from '@/lib/mongoAuth';
+import { doc, updateDoc } from '@/lib/mongoFirestore';
 import toast from 'react-hot-toast';
-import { useAuth } from '../../components/FirebaseProvider';
-import { auth, db } from '../../firebase';
+import { useAuth } from '../../components/AuthProvider';
+import { auth, db } from '@/lib/clientSdk';
 
 const INDUSTRIES = [
   { value: '', label: 'Non renseigné' },

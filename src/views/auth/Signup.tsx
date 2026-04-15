@@ -15,9 +15,9 @@ import {
   Users
 } from 'lucide-react';
 import { useStore } from '../../store/useStore';
-import { auth, db } from '../../firebase';
-import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
-import { doc, setDoc, getDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { auth, db } from '@/lib/clientSdk';
+import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from '@/lib/mongoAuth';
+import { doc, setDoc, getDoc, collection, getDocs, query, where } from '@/lib/mongoFirestore';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import toast from 'react-hot-toast';
 import { notificationService } from '../../services/notificationService';
@@ -286,7 +286,7 @@ export default function Signup() {
     setIsLoading(true);
 
     try {
-      // Create user in Firebase Auth
+      // Création du compte (API + JWT)
       const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
       const user = userCredential.user;
 
@@ -517,7 +517,7 @@ export default function Signup() {
         if (code === 'auth/popup-blocked') {
           toast.error('Le popup a été bloqué par votre navigateur. Veuillez autoriser les popups pour ce site.');
         } else if (code === 'auth/unauthorized-domain') {
-          toast.error('Ce domaine n\'est pas autorisé dans la configuration Firebase. Veuillez contacter l\'administrateur.');
+          toast.error('Ce domaine n\'est pas autorisé pour l\'inscription. Veuillez contacter l\'administrateur.');
         } else {
           toast.error(`Erreur lors de l'inscription avec ${providerName}.`);
         }

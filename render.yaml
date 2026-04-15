@@ -1,31 +1,33 @@
-# Blueprint Render : API Express (Node). Crée le service puis renseigne les secrets dans le dashboard.
+# Blueprint compatible Render (spécification Blueprint) : une seule app web Node.
+# Next + Express sur le même port — même modèle que `npm run dev` / `npm start`.
+# Tu peux réutiler ce fichier sur un autre PaaS qui accepte les mêmes idées (build + start).
 # https://render.com/docs/blueprint-spec
 services:
   - type: web
-    name: infinitecore-api
+    name: infinitecore
     runtime: node
     region: frankfurt
     plan: free
-    buildCommand: npm ci && npm run build:api
-    startCommand: node dist/server.cjs
+    buildCommand: npm ci && npm run build
+    startCommand: node dist/startUnified.cjs
     healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
       - key: API_PUBLIC_URL
-        # Remplace par l’URL Render une fois le service créé (ex. https://infinitecore-api.onrender.com)
+        # URL HTTPS publique de ce service (sans slash final), une fois connue.
+        sync: false
+      - key: NEXTAUTH_URL
+        # En général la même URL que le site (ex. https://infinitecore.example.com).
         sync: false
       - key: DATABASE_URL
         sync: false
-      - key: JWT_SECRET
+      - key: NEXTAUTH_SECRET
         generateValue: true
       - key: JWT_ISSUER
         value: infinitecore-api
       - key: JWT_AUDIENCE
         value: infinitecore-web
       - key: CORS_ORIGIN
-        # Ex. https://infinitecore.net,https://www.infinitecore.net,https://ton-projet.vercel.app
-        sync: false
-      - key: APP_BASE_URL
-        # URL du front (liens reset mot de passe dans les mails)
+        # Origines autorisées (souvent l’URL du site + previews si besoin).
         sync: false

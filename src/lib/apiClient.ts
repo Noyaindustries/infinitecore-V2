@@ -51,7 +51,7 @@ export async function apiRequest<T>(url: string, init: RequestInit = {}): Promis
       fromJson ||
         snippet ||
         (response.status === 502 || response.status === 503
-          ? `API indisponible (${response.status}). Vérifiez que le serveur Express tourne (port 3001) et que la base MongoDB est joignable.`
+          ? `API indisponible (${response.status}). Vercel : variables **DATABASE_URL** / secrets sur le projet, logs de la fonction \`/api\`. Local : \`npm run dev\`. Si API externe : **NEXT_PUBLIC_API_BASE_URL** + CORS.`
           : opaque500
             ? `Erreur serveur (500). Consultez le terminal « api » : souvent MongoDB injoignable (Atlas, TLS, IP autorisées) ou cache Next corrompu (supprimez le dossier .next puis relancez npm run dev).`
             : `Erreur API (${response.status})`)

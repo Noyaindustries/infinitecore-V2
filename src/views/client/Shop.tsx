@@ -6,9 +6,9 @@ import {
   LayoutTemplate, Wrench, Share2, TrendingUp, Package, Crown, X, CheckCircle2,
   Send, ExternalLink, Sparkles
 } from 'lucide-react';
-import { db, auth } from '../../firebase';
-import { collection, doc, setDoc } from 'firebase/firestore';
-import { useAuth } from '../../components/FirebaseProvider';
+import { db, auth } from '@/lib/clientSdk';
+import { collection, doc, setDoc } from '@/lib/mongoFirestore';
+import { useAuth } from '../../components/AuthProvider';
 import toast from 'react-hot-toast';
 import { PADDE_CI_FREE_AUDITS } from '../../data/paddeCiFreeAudits';
 import { openPaddeCiAuditForm } from '../../utils/openPaddeCiAuditForm';

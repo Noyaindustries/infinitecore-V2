@@ -15,10 +15,10 @@ import {
   FolderOpen,
   Inbox,
 } from 'lucide-react';
-import { db } from '../../firebase';
-import { collection, doc, setDoc, onSnapshot, query, orderBy, updateDoc } from 'firebase/firestore';
+import { db } from '@/lib/clientSdk';
+import { collection, doc, setDoc, onSnapshot, query, orderBy, updateDoc } from '@/lib/mongoFirestore';
 import { uploadFile } from '../../services/uploadService';
-import { useAuth } from '../../components/FirebaseProvider';
+import { useAuth } from '../../components/AuthProvider';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import { cn } from '../../lib/utils';

@@ -18,12 +18,9 @@
     "useDefineForClassFields": false,
     "moduleDetection": "force",
     "paths": {
-      "@/*": ["./src/*"],
-      "firebase/app": ["./src/lib/mongoApp.ts"],
-      "firebase/auth": ["./src/lib/mongoAuth.ts"],
-      "firebase/firestore": ["./src/lib/mongoFirestore.ts"]
+      "@/*": ["./src/*"]
     }
   },
-  "include": ["next-env.d.ts", "src/env.d.ts", ".next/types/**/*.ts", "src/**/*", "server.ts", "mongoApi.ts", "prismaClient.ts", "_r2.ts", "storageUtils.ts", "scripts/**/*", "tests/**/*", "next.config.ts"],
+  "include": ["next-env.d.ts", "src/env.d.ts", ".next/types/**/*.ts", "src/**/*", "pages/**/*", "server.ts", "mongoApi.ts", "prismaClient.ts", "_r2.ts", "storageUtils.ts", "scripts/**/*", "tests/**/*", "next.config.ts"],
   "exclude": ["node_modules", "dist", ".next", ".local-uploads", "infinitecore-V2"]
 }

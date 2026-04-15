@@ -7,8 +7,8 @@ import {
   onSnapshot,
   query,
   where,
-} from 'firebase/firestore';
-import { db } from '../firebase';
+} from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 
 export type StepType = 'audit' | 'proposition' | 'contrat' | 'facture';
 

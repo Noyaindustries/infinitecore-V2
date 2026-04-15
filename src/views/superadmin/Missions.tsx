@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, CheckCircle, Clock, X, Search, ExternalLink, AlertCircle, Edit2, Trash2 } from 'lucide-react';
-import { collection, onSnapshot, query, where, orderBy, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, onSnapshot, query, where, orderBy, doc, setDoc, updateDoc, deleteDoc } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 import { SERVICE_CATALOG } from '../../data/serviceCatalog';
 import toast from 'react-hot-toast';
 

@@ -5,6 +5,10 @@ var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __getProtoOf = Object.getPrototypeOf;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
 var __copyProps = (to, from, except, desc) => {
   if (from && typeof from === "object" || typeof from === "function") {
     for (let key of __getOwnPropNames(from))
@@ -21,21 +25,26 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
   mod
 ));
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // server.ts
+var server_exports = {};
+__export(server_exports, {
+  createExpressApplication: () => createExpressApplication
+});
+module.exports = __toCommonJS(server_exports);
 var import_express = __toESM(require("express"), 1);
 var import_cors = __toESM(require("cors"), 1);
-var import_path3 = __toESM(require("path"), 1);
-var import_fs2 = require("fs");
+var import_path2 = __toESM(require("path"), 1);
+var import_fs = require("fs");
 var import_multer = __toESM(require("multer"), 1);
 var import_crypto2 = require("crypto");
 var import_client_s32 = require("@aws-sdk/client-s3");
 var import_s3_request_presigner2 = require("@aws-sdk/s3-request-presigner");
 
-// prismaClient.ts
-var import_fs = require("fs");
-var import_path = __toESM(require("path"), 1);
-var import_client = require("@prisma/client");
+// src/config/loadEnvFiles.ts
+var import_node_fs = require("node:fs");
+var import_node_path = __toESM(require("node:path"), 1);
 function parseDotEnvFile(raw, overrideExisting) {
   for (const line of raw.split(/\r?\n/)) {
     const trimmed = line.trim();
@@ -52,33 +61,127 @@ function parseDotEnvFile(raw, overrideExisting) {
     }
   }
 }
-function loadEnvFromDotEnv() {
+var loaded = false;
+function ensureEnvFilesLoaded() {
+  if (loaded) return;
+  loaded = true;
   const root = process.cwd();
-  const envPath = import_path.default.join(root, ".env");
-  const localPath = import_path.default.join(root, ".env.local");
-  if ((0, import_fs.existsSync)(envPath)) {
-    parseDotEnvFile((0, import_fs.readFileSync)(envPath, "utf8"), false);
+  const envPath = import_node_path.default.join(root, ".env");
+  const localPath = import_node_path.default.join(root, ".env.local");
+  if ((0, import_node_fs.existsSync)(envPath)) {
+    parseDotEnvFile((0, import_node_fs.readFileSync)(envPath, "utf8"), false);
   }
-  if ((0, import_fs.existsSync)(localPath)) {
-    parseDotEnvFile((0, import_fs.readFileSync)(localPath, "utf8"), true);
+  if ((0, import_node_fs.existsSync)(localPath)) {
+    parseDotEnvFile((0, import_node_fs.readFileSync)(localPath, "utf8"), true);
   }
 }
-loadEnvFromDotEnv();
-function withMongoDriverTimeouts(databaseUrl) {
-  const trimmed = databaseUrl.trim();
+
+// src/config/env.ts
+ensureEnvFilesLoaded();
+function str(key, fallback = "") {
+  const v = process.env[key];
+  return typeof v === "string" ? v.trim() : fallback;
+}
+function int(key, fallback) {
+  const n = Number.parseInt(process.env[key] || "", 10);
+  return Number.isFinite(n) ? n : fallback;
+}
+var NODE_ENV = process.env.NODE_ENV || "development";
+function databaseUrlForPrisma() {
+  const trimmed = str("DATABASE_URL");
   if (!trimmed || /serverSelectionTimeoutMS=/i.test(trimmed)) return trimmed;
-  const ms = process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS?.trim() || (process.env.NODE_ENV === "development" ? "10000" : "20000");
+  const ms = str("MONGODB_SERVER_SELECTION_TIMEOUT_MS") || (NODE_ENV === "development" ? "10000" : "20000");
   const sep = trimmed.includes("?") ? "&" : "?";
   return `${trimmed}${sep}serverSelectionTimeoutMS=${encodeURIComponent(ms)}&connectTimeoutMS=${encodeURIComponent(ms)}`;
 }
+function getJwtSecret() {
+  const envSecret = str("NEXTAUTH_SECRET") || str("JWT_SECRET");
+  if (envSecret) return envSecret;
+  if (NODE_ENV === "production") {
+    throw new Error("NEXTAUTH_SECRET ou JWT_SECRET est requis en production.");
+  }
+  return "dev-secret-change-me";
+}
+function resetAppBaseUrl() {
+  const raw = str("NEXTAUTH_URL") || str("APP_BASE_URL") || "http://localhost:3000";
+  return raw.replace(/\/$/, "");
+}
+var appEnv = {
+  node: {
+    env: NODE_ENV,
+    get isProduction() {
+      return NODE_ENV === "production";
+    },
+    get isDevelopment() {
+      return NODE_ENV === "development";
+    }
+  },
+  database: {
+    get url() {
+      return str("DATABASE_URL");
+    },
+    mongoServerSelectionTimeoutMs: str("MONGODB_SERVER_SELECTION_TIMEOUT_MS")
+  },
+  auth: {
+    nextAuthUrl: str("NEXTAUTH_URL", "http://localhost:3000"),
+    appBaseUrl: str("APP_BASE_URL"),
+    jwtIssuer: str("JWT_ISSUER", "infinitecore-api"),
+    jwtAudience: str("JWT_AUDIENCE", "infinitecore-web"),
+    getJwtSecret,
+    resetAppBaseUrl
+  },
+  http: {
+    /** Liste brute pour parser côté Express (CORS). */
+    corsOriginRaw: str(
+      "CORS_ORIGIN",
+      "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173"
+    ),
+    apiPublicUrl: str("API_PUBLIC_URL"),
+    port: int("PORT", 3e3),
+    host: str("HOST", "0.0.0.0") || "0.0.0.0"
+  },
+  smtp: {
+    host: str("SMTP_HOST"),
+    port: int("SMTP_PORT", 587),
+    user: str("SMTP_USER"),
+    pass: str("SMTP_PASS"),
+    from: str("SMTP_FROM"),
+    get secure() {
+      return str("SMTP_SECURE").toLowerCase() === "true";
+    },
+    get fromOrUser() {
+      return str("SMTP_FROM") || str("SMTP_USER") || "no-reply@infinitecore.local";
+    }
+  },
+  r2: {
+    accountId: str("R2_ACCOUNT_ID"),
+    accessKeyId: str("R2_ACCESS_KEY_ID"),
+    secretAccessKey: str("R2_SECRET_ACCESS_KEY"),
+    bucket: str("R2_BUCKET_NAME"),
+    publicBaseUrl: str("R2_PUBLIC_BASE_URL"),
+    endpointRaw: str("R2_ENDPOINT")
+  },
+  webhooks: {
+    paddeWebhookSecret: str("PADDE_WEBHOOK_SECRET")
+  },
+  integrations: {
+    infiniteCoreApiUrl: str("INFINITE_CORE_API_URL")
+  },
+  seed: {
+    testPassword: str("SEED_TEST_PASSWORD", "Test1234!")
+  }
+};
+
+// prismaClient.ts
+var import_client = require("@prisma/client");
 var globalForPrisma = globalThis;
 var prisma = globalForPrisma.prisma ?? new import_client.PrismaClient({
   datasources: {
-    db: { url: withMongoDriverTimeouts(process.env.DATABASE_URL ?? "") }
+    db: { url: databaseUrlForPrisma() }
   },
-  log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"]
+  log: appEnv.node.isDevelopment ? ["warn", "error"] : ["error"]
 });
-if (process.env.NODE_ENV !== "production") {
+if (!appEnv.node.isProduction) {
   globalForPrisma.prisma = prisma;
 }
 
@@ -91,14 +194,14 @@ var normalizeUrl = (value) => {
   if (value.startsWith("http://") || value.startsWith("https://")) return value;
   return `https://${value}`;
 };
-var accountId = cleanEnv(process.env.R2_ACCOUNT_ID);
-var accessKeyId = cleanEnv(process.env.R2_ACCESS_KEY_ID);
-var secretAccessKey = cleanEnv(process.env.R2_SECRET_ACCESS_KEY);
-var bucket = cleanEnv(process.env.R2_BUCKET_NAME);
-var publicBaseUrl = normalizeUrl(cleanEnv(process.env.R2_PUBLIC_BASE_URL));
-var apiPublicBase = normalizeUrl(cleanEnv(process.env.API_PUBLIC_URL)).replace(/\/$/, "");
+var accountId = cleanEnv(appEnv.r2.accountId);
+var accessKeyId = cleanEnv(appEnv.r2.accessKeyId);
+var secretAccessKey = cleanEnv(appEnv.r2.secretAccessKey);
+var bucket = cleanEnv(appEnv.r2.bucket);
+var publicBaseUrl = normalizeUrl(cleanEnv(appEnv.r2.publicBaseUrl));
+var apiPublicBase = normalizeUrl(cleanEnv(appEnv.http.apiPublicUrl)).replace(/\/$/, "");
 var endpoint = normalizeUrl(
-  cleanEnv(process.env.R2_ENDPOINT) || (accountId ? `${accountId}.r2.cloudflarestorage.com` : "")
+  cleanEnv(appEnv.r2.endpointRaw) || (accountId ? `${accountId}.r2.cloudflarestorage.com` : "")
 );
 var hasR2Config = Boolean(endpoint && accessKeyId && secretAccessKey && bucket);
 var r2Client = hasR2Config ? new import_client_s3.S3Client({
@@ -125,16 +228,16 @@ function buildFileUrl(publicId) {
 }
 
 // storageUtils.ts
-var import_path2 = __toESM(require("path"), 1);
+var import_path = __toESM(require("path"), 1);
 var LOCAL_UPLOADS_DIR = ".local-uploads";
 function getLocalUploadsBase() {
-  return import_path2.default.resolve(process.cwd(), LOCAL_UPLOADS_DIR);
+  return import_path.default.resolve(process.cwd(), LOCAL_UPLOADS_DIR);
 }
 function resolveLocalUploadFile(safeRelPath) {
   const normalized = sanitizeObjectKey(String(safeRelPath).replace(/\\/g, "/"));
   const base = getLocalUploadsBase();
-  const full = import_path2.default.resolve(base, normalized);
-  const baseSep = base.endsWith(import_path2.default.sep) ? base : base + import_path2.default.sep;
+  const full = import_path.default.resolve(base, normalized);
+  const baseSep = base.endsWith(import_path.default.sep) ? base : base + import_path.default.sep;
   const inside = full.toLowerCase() === base.toLowerCase() || full.toLowerCase().startsWith(baseSep.toLowerCase());
   if (!inside) return null;
   return full;
@@ -149,7 +252,7 @@ function normalizePublicIdQuery(raw) {
   return sanitizeObjectKey(s.replace(/\\/g, "/"));
 }
 function mimeFromStorageKey(keyOrPath) {
-  const ext = import_path2.default.extname(keyOrPath).toLowerCase();
+  const ext = import_path.default.extname(keyOrPath).toLowerCase();
   if (ext === ".pdf") return "application/pdf";
   if (ext === ".png") return "image/png";
   if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
@@ -165,8 +268,6 @@ var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
 var import_nodemailer = __toESM(require("nodemailer"), 1);
 var import_crypto = require("crypto");
 var AUTH_HEADER_PREFIX = "Bearer ";
-var JWT_ISSUER = process.env.JWT_ISSUER || "infinitecore-api";
-var JWT_AUDIENCE = process.env.JWT_AUDIENCE || "infinitecore-web";
 var SAFE_COLLECTION_SEGMENT = /^[A-Za-z0-9_-]{1,120}$/;
 var SAFE_DOC_ID = /^[A-Za-z0-9._:-]{1,180}$/;
 var SAFE_FIELD_NAME = /^[A-Za-z0-9_.-]{1,120}$/;
@@ -190,32 +291,29 @@ var USER_FIELDS = [
 ];
 var authFailureBuckets = /* @__PURE__ */ new Map();
 var smtpTransport = null;
-function getResetAppBaseUrl() {
-  return (process.env.APP_BASE_URL || "http://localhost:5173").replace(/\/$/, "");
-}
 function getSmtpTransport() {
   if (smtpTransport) return smtpTransport;
-  const host = process.env.SMTP_HOST?.trim();
-  const port = Number(process.env.SMTP_PORT || 587);
-  const user = process.env.SMTP_USER?.trim();
-  const pass = process.env.SMTP_PASS?.trim();
+  const host = appEnv.smtp.host;
+  const port = appEnv.smtp.port;
+  const user = appEnv.smtp.user;
+  const pass = appEnv.smtp.pass;
   if (!host || !Number.isFinite(port) || !user || !pass) return null;
   smtpTransport = import_nodemailer.default.createTransport({
     host,
     port,
-    secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true",
+    secure: appEnv.smtp.secure,
     auth: { user, pass }
   });
   return smtpTransport;
 }
 async function sendResetPasswordEmail(input) {
   const transporter = getSmtpTransport();
-  const resetLink = `${getResetAppBaseUrl()}/reset-password?email=${encodeURIComponent(input.to)}&token=${encodeURIComponent(input.token)}`;
+  const resetLink = `${resetAppBaseUrl()}/reset-password?email=${encodeURIComponent(input.to)}&token=${encodeURIComponent(input.token)}`;
   if (!transporter) {
     return { delivered: false, previewLink: resetLink };
   }
   await transporter.sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER || "no-reply@infinitecore.local",
+    from: appEnv.smtp.fromOrUser,
     to: input.to,
     subject: "Reinitialisation de votre mot de passe",
     text: `Bonjour,
@@ -230,20 +328,12 @@ Si vous n'etes pas a l'origine de cette demande, ignorez cet email.
   });
   return { delivered: true };
 }
-function getJwtSecret() {
-  const envSecret = process.env.JWT_SECRET?.trim();
-  if (envSecret) return envSecret;
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("JWT_SECRET est requis en production.");
-  }
-  return "dev-secret-change-me";
-}
 function signAuthToken(payload) {
   return import_jsonwebtoken.default.sign(payload, getJwtSecret(), {
     expiresIn: "7d",
     algorithm: "HS256",
-    issuer: JWT_ISSUER,
-    audience: JWT_AUDIENCE
+    issuer: appEnv.auth.jwtIssuer,
+    audience: appEnv.auth.jwtAudience
   });
 }
 function readAuthToken(req) {
@@ -257,8 +347,8 @@ function parseAuth(req) {
   try {
     const decoded = import_jsonwebtoken.default.verify(token, getJwtSecret(), {
       algorithms: ["HS256"],
-      issuer: JWT_ISSUER,
-      audience: JWT_AUDIENCE
+      issuer: appEnv.auth.jwtIssuer,
+      audience: appEnv.auth.jwtAudience
     });
     if (!decoded || typeof decoded.uid !== "string" || typeof decoded.email !== "string" || typeof decoded.role !== "string") {
       return null;
@@ -932,8 +1022,8 @@ function registerMongoApi(app) {
       return res.status(200).json({
         success: true,
         message: "Si ce compte existe, les instructions de r\xE9initialisation ont \xE9t\xE9 enregistr\xE9es.",
-        ...process.env.NODE_ENV !== "production" ? { resetTokenPreview: resetToken } : {},
-        ...process.env.NODE_ENV !== "production" && !mailResult.delivered ? { resetLinkPreview: mailResult.previewLink } : {}
+        ...!appEnv.node.isProduction ? { resetTokenPreview: resetToken } : {},
+        ...!appEnv.node.isProduction && !mailResult.delivered ? { resetLinkPreview: mailResult.previewLink } : {}
       });
     } catch (error) {
       console.error("[auth/password-reset/request]", error);
@@ -1153,7 +1243,7 @@ var ALLOWED_UPLOAD_EXTENSIONS = /* @__PURE__ */ new Set([
   ".csv"
 ]);
 function isAllowedUpload(file) {
-  const ext = import_path3.default.extname(file.originalname || "").toLowerCase();
+  const ext = import_path2.default.extname(file.originalname || "").toLowerCase();
   if (!ALLOWED_UPLOAD_EXTENSIONS.has(ext)) return false;
   if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimetype || "")) return false;
   return true;
@@ -1164,17 +1254,17 @@ function secureSecretEquals(expected, provided) {
   if (expectedBuf.length !== providedBuf.length) return false;
   return (0, import_crypto2.timingSafeEqual)(expectedBuf, providedBuf);
 }
-async function startServer() {
+async function createExpressApplication() {
   const app = (0, import_express.default)();
-  const PORT = Number.parseInt(process.env.PORT || "", 10) || 3e3;
-  const corsOrigins = (process.env.CORS_ORIGIN || "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173").split(",").map((v) => v.trim()).filter(Boolean);
-  const paddeWebhookSecret = process.env.PADDE_WEBHOOK_SECRET || "";
-  const r2AccountId = process.env.R2_ACCOUNT_ID || "";
-  const r2AccessKeyId = process.env.R2_ACCESS_KEY_ID || "";
-  const r2SecretAccessKey = process.env.R2_SECRET_ACCESS_KEY || "";
-  const r2Bucket = process.env.R2_BUCKET_NAME || "";
-  const r2PublicBaseUrl = process.env.R2_PUBLIC_BASE_URL || "";
-  const r2Endpoint = process.env.R2_ENDPOINT || (r2AccountId ? `https://${r2AccountId}.r2.cloudflarestorage.com` : "");
+  const port = appEnv.http.port;
+  const corsOrigins = appEnv.http.corsOriginRaw.split(",").map((v) => v.trim()).filter(Boolean);
+  const paddeWebhookSecret = appEnv.webhooks.paddeWebhookSecret;
+  const r2AccountId = appEnv.r2.accountId;
+  const r2AccessKeyId = appEnv.r2.accessKeyId;
+  const r2SecretAccessKey = appEnv.r2.secretAccessKey;
+  const r2Bucket = appEnv.r2.bucket;
+  const r2PublicBaseUrl = appEnv.r2.publicBaseUrl;
+  const r2Endpoint = appEnv.r2.endpointRaw || (r2AccountId ? `https://${r2AccountId}.r2.cloudflarestorage.com` : "");
   const canUseR2 = Boolean(r2Endpoint && r2AccessKeyId && r2SecretAccessKey && r2Bucket);
   if (!canUseR2) {
     console.warn(
@@ -1189,7 +1279,8 @@ async function startServer() {
         }
         return callback(new Error("Origine CORS non autoris\xE9e."));
       },
-      methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"]
+      methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT", "HEAD"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
     })
   );
   app.use((_, res, next) => {
@@ -1255,8 +1346,8 @@ async function startServer() {
       if (!absPath) {
         return res.status(400).json({ success: false, error: "Chemin de fichier invalide." });
       }
-      await import_fs2.promises.mkdir(import_path3.default.dirname(absPath), { recursive: true });
-      await import_fs2.promises.writeFile(absPath, req.file.buffer);
+      await import_fs.promises.mkdir(import_path2.default.dirname(absPath), { recursive: true });
+      await import_fs.promises.writeFile(absPath, req.file.buffer);
       const fileUrl = buildFileUrl(objectKey);
       return res.status(200).json({
         success: true,
@@ -1268,7 +1359,7 @@ async function startServer() {
       });
     } catch (error) {
       console.error("Erreur upload API:", error);
-      const msg = error instanceof Error && process.env.NODE_ENV !== "production" ? `Erreur interne du serveur. ${error.message}` : "Erreur interne du serveur.";
+      const msg = error instanceof Error && !appEnv.node.isProduction ? `Erreur interne du serveur. ${error.message}` : "Erreur interne du serveur.";
       return res.status(500).json({ success: false, error: msg });
     }
   });
@@ -1292,7 +1383,7 @@ async function startServer() {
         return res.status(400).json({ success: false, error: "Chemin invalide." });
       }
       try {
-        await import_fs2.promises.unlink(absPath);
+        await import_fs.promises.unlink(absPath);
       } catch (e) {
         const code = e && typeof e === "object" && "code" in e ? e.code : "";
         if (code !== "ENOENT") throw e;
@@ -1315,7 +1406,7 @@ async function startServer() {
           return res.status(400).json({ success: false, error: "Chemin invalide." });
         }
         try {
-          const stat = await import_fs2.promises.stat(absPath);
+          const stat = await import_fs.promises.stat(absPath);
           if (!stat.isFile()) {
             return res.status(404).json({ success: false, error: "Fichier introuvable." });
           }
@@ -1326,11 +1417,11 @@ async function startServer() {
           }
           throw e;
         }
-        const filename = import_path3.default.basename(safePath).replace(/"/g, "");
+        const filename = import_path2.default.basename(safePath).replace(/"/g, "");
         res.setHeader("Content-Type", mimeFromStorageKey(safePath));
         res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
         res.setHeader("Cache-Control", "private, max-age=3600");
-        const stream = (0, import_fs2.createReadStream)(absPath);
+        const stream = (0, import_fs.createReadStream)(absPath);
         stream.on("error", (err) => {
           console.error("[api/files/download] lecture disque:", absPath, err?.message);
           if (!res.headersSent) {
@@ -1361,7 +1452,7 @@ async function startServer() {
           return res.status(401).json({ success: false, error: "Webhook non autoris\xE9." });
         }
       }
-      if (!process.env.DATABASE_URL) {
+      if (!appEnv.database.url) {
         return res.status(503).json({
           success: false,
           error: "Base de donn\xE9es non configur\xE9e : d\xE9finissez DATABASE_URL (MongoDB) pour Prisma."
@@ -1384,7 +1475,7 @@ async function startServer() {
   });
   app.get("/api/webhooks/padde-ci", async (req, res) => {
     try {
-      if (!process.env.DATABASE_URL) {
+      if (!appEnv.database.url) {
         return res.status(503).json({ success: false, error: "Base de donn\xE9es non configur\xE9e (DATABASE_URL)." });
       }
       const rows = await prisma.paddeCiAudit.findMany({
@@ -1407,8 +1498,18 @@ async function startServer() {
       res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[infinitecore-api] http://0.0.0.0:${PORT}`);
+  return { app, port };
+}
+async function startServer() {
+  const { app, port } = await createExpressApplication();
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`[infinitecore-api] http://0.0.0.0:${port}`);
   });
 }
-startServer();
+if (process.env.SKIP_LISTEN !== "1") {
+  void startServer();
+}
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  createExpressApplication
+});

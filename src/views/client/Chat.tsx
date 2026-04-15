@@ -23,10 +23,10 @@ import {
   User,
   Zap,
 } from 'lucide-react';
-import { collection, doc, onSnapshot, orderBy, query, setDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, doc, onSnapshot, orderBy, query, setDoc, updateDoc } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 import { uploadFile } from '../../services/uploadService';
-import { useAuth } from '../../components/FirebaseProvider';
+import { useAuth } from '../../components/AuthProvider';
 import toast from 'react-hot-toast';
 import { formatFileSize } from '../../lib/formatFileSize';
 import { formatTimeShort } from '../../lib/formatTimeShort';

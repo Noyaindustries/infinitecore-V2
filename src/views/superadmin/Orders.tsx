@@ -15,8 +15,8 @@ import {
   ShieldCheck,
   Zap
 } from 'lucide-react';
-import { db } from '../../firebase';
-import { collection, onSnapshot, query, orderBy, doc, updateDoc, setDoc, getDoc } from 'firebase/firestore';
+import { db } from '@/lib/clientSdk';
+import { collection, onSnapshot, query, orderBy, doc, updateDoc, setDoc, getDoc } from '@/lib/mongoFirestore';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldAlert, Plus, Mail, Phone, CheckCircle, Clock, X, Copy, Trash2, Edit2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { collection, onSnapshot, query, where, setDoc, doc, deleteDoc, updateDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, onSnapshot, query, where, setDoc, doc, deleteDoc, updateDoc } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 import { createUserAsAdmin } from '../../utils/adminAuth';
 
 interface CommandoMember {
@@ -60,7 +60,7 @@ export default function SuperAdminCommando() {
     
     setIsSubmitting(true);
     try {
-      // 1. Create user in Firebase Auth using secondary app
+      // 1. Création du compte via l’API admin
       const authResult = await createUserAsAdmin(newMember.email, undefined, 'commando');
       
       if (!authResult.success || !authResult.uid) {
@@ -71,7 +71,7 @@ export default function SuperAdminCommando() {
       const firstName = nameParts[0];
       const lastName = nameParts.slice(1).join(' ');
 
-      // 2. Save user profile in Firestore
+      // 2. Profil utilisateur (documents MongoDB)
       await setDoc(doc(db, 'users', authResult.uid), {
         uid: authResult.uid,
         email: newMember.email,

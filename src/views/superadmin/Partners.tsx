@@ -1,8 +1,8 @@
 import React, { useState, useEffect, Fragment } from 'react';
 import { Search, Filter, Edit2, Save, X, Plus, Mail, Phone, CheckCircle, Clock, Copy, Briefcase, Trash2, Users, ExternalLink, Package, MessageSquare } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { collection, onSnapshot, query, where, setDoc, doc, updateDoc, deleteDoc, orderBy } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, onSnapshot, query, where, setDoc, doc, updateDoc, deleteDoc, orderBy } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 import { createUserAsAdmin } from '../../utils/adminAuth';
 
 interface PartnerMember {

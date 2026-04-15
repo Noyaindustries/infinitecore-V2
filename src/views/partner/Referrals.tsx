@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Copy, Download, Link2, UserPlus, Users } from 'lucide-react';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from '../../firebase';
-import { useAuth } from '../../components/FirebaseProvider';
+import { collection, onSnapshot } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
+import { useAuth } from '../../components/AuthProvider';
 import { Lead, leadService } from '../../services/leadService';
 
 type ReferredSignup = {

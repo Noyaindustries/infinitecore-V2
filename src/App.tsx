@@ -2,7 +2,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Toaster } from 'react-hot-toast';
 import { Suspense, lazy } from 'react';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { FirebaseProvider } from './components/FirebaseProvider';
+import { AuthProvider } from './components/AuthProvider';
 import CookieBanner from './components/CookieBanner';
 import GoogleEmailModal from './components/GoogleEmailModal';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -73,7 +73,7 @@ const ModuleDashboard = lazy(() => import('./views/module/Dashboard'));
 function App() {
   return (
     <ErrorBoundary>
-      <FirebaseProvider>
+      <AuthProvider>
         <Toaster
           position="bottom-center"
           containerClassName="!bottom-4 max-sm:!px-3 sm:!bottom-6"
@@ -193,7 +193,7 @@ function App() {
           </Routes>
           </Suspense>
         </Router>
-      </FirebaseProvider>
+      </AuthProvider>
     </ErrorBoundary>
   );
 }

@@ -1,125 +1,107 @@
-import { Handler } from '@netlify/functions';
-import { initializeApp, getApps } from 'firebase/app';
-import { getFirestore, collection, doc, setDoc, getDocs, query, where } from 'firebase/firestore';
-import { randomUUID } from 'crypto';
+/**
+ * Fonction Netlify : relaie les demandes PADDE-CI vers l’API Infinite Core (MongoDB),
+ * sans aucun SDK Firebase.
+ *
+ * Variables Netlify :
+ * - INFINITE_CORE_API_URL : URL de l’API Express, sans slash final (ex. https://api.example.com)
+ * - PADDE_WEBHOOK_SECRET : optionnel mais recommandé — même valeur que sur l’API
+ */
+import type { Handler } from "@netlify/functions";
+import { randomUUID } from "node:crypto";
+import { appEnv } from "./src/config/env";
 
-const firebaseConfig = {
-  apiKey: "AIzaSyBmSQsOxI4IJ7kSDn8z23gl6wZCgfzmGRU",
-  authDomain: "noya-industries-platform.firebaseapp.com",
-  projectId: "noya-industries-platform",
-  storageBucket: "noya-industries-platform.firebasestorage.app",
-  messagingSenderId: "994757523169",
-  appId: "1:994757523169:web:307dab266ab318dedae9a0",
-};
+const ALLOWED_ORIGINS = ["https://padde-ci.com", "https://www.padde-ci.com"];
 
-const firestoreDatabaseId = "ai-studio-42406826-d231-4e61-bda4-7369948f2694";
-
-// Éviter la réinitialisation à chaque invocation (warm instances)
-const app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
-const db = getFirestore(app, firestoreDatabaseId);
-
-const ALLOWED_ORIGINS = ['https://padde-ci.com', 'https://www.padde-ci.com'];
+function apiBase(): string {
+  const raw = (appEnv.integrations.infiniteCoreApiUrl || appEnv.http.apiPublicUrl || "").trim();
+  return raw.replace(/\/$/, "");
+}
 
 export const handler: Handler = async (event) => {
-  const reqOrigin =
-    event.headers.origin ?? event.headers.Origin ?? '';
+  const reqOrigin = event.headers.origin ?? event.headers.Origin ?? "";
   const corsOrigin =
     reqOrigin && ALLOWED_ORIGINS.includes(reqOrigin) ? reqOrigin : ALLOWED_ORIGINS[0];
 
-  const headers = {
-    'Access-Control-Allow-Origin': corsOrigin,
-    'Access-Control-Allow-Headers': 'Content-Type',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Origin": corsOrigin,
+    "Access-Control-Allow-Headers": "Content-Type, X-Webhook-Secret",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   };
 
-  if (event.httpMethod === 'OPTIONS') {
-    return { statusCode: 200, headers, body: '' };
+  if (event.httpMethod === "OPTIONS") {
+    return { statusCode: 200, headers, body: "" };
   }
 
+  const base = apiBase();
+  if (!base) {
+    console.error("padde-ci: INFINITE_CORE_API_URL (ou API_PUBLIC_URL) non défini.");
+    return {
+      statusCode: 503,
+      headers,
+      body: JSON.stringify({
+        success: false,
+        error: "API Infinite Core non configurée (INFINITE_CORE_API_URL).",
+      }),
+    };
+  }
+
+  const secret = appEnv.webhooks.paddeWebhookSecret.trim();
+  const forwardHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (secret) forwardHeaders["X-Webhook-Secret"] = secret;
+
   try {
-    if (event.httpMethod === 'POST') {
-      const data = JSON.parse(event.body || '{}');
+    const target = `${base}/api/webhooks/padde-ci`;
 
-      const auditTypeLabel =
-        data.type === 'audit-rapide' ? 'Rapide' :
-        data.type === 'audit-business' ? 'Business' : 'Institutionnel';
-
-      const clientName =
-        data.entreprise || data.dirigeant || data.denomination || 'Client PADDE-CI';
-
-      // 1. Créer une tâche dans le Pipeline Noya (visible par le Commando)
-      const taskId = `TSK-PADDE-${randomUUID().split('-')[0].toUpperCase()}`;
-      await setDoc(doc(db, 'tasks', taskId), {
-        id: taskId,
-        userId: 'system',
-        title: `Audit PADDE-CI: ${auditTypeLabel}`,
-        client: clientName,
-        columnId: 'nouveau',
-        isOrder: false,
-        source: 'padde-ci',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        description: `Demande d'audit depuis padde-ci.com\nType: ${data.type}\nContact: ${data.whatsapp || 'Non fourni'}\n\nDétails:\n${JSON.stringify(data, null, 2)}`
+    if (event.httpMethod === "POST") {
+      const body = event.body || "{}";
+      const res = await fetch(target, {
+        method: "POST",
+        headers: forwardHeaders,
+        body,
       });
-
-      // 2. Créer une commande dans les Commandes (visible par le SuperAdmin)
-      const orderId = `CMD-PADDE-${randomUUID().split('-')[0].toUpperCase()}`;
-      await setDoc(doc(db, 'orders', orderId), {
-        id: orderId,
-        userId: 'system',
-        clientName,
-        serviceName: `Audit PADDE-CI: ${auditTypeLabel}`,
-        status: 'Nouveau',
-        source: 'padde-ci',
-        createdAt: new Date().toISOString(),
-        details: data,
-      });
-
-      return {
-        statusCode: 200,
-        headers,
-        body: JSON.stringify({ success: true, message: "Demande d'audit reçue." }),
-      };
+      const text = await res.text();
+      return { statusCode: res.status, headers, body: text || JSON.stringify({ success: res.ok }) };
     }
 
-    // GET — liste les audits PADDE-CI pour padde-ci.com si besoin
-    if (event.httpMethod === 'GET') {
-      const q = query(
-        collection(db, 'orders'),
-        where('source', '==', 'padde-ci')
-      );
-      const snapshot = await getDocs(q);
-      const audits = snapshot.docs.map(d => {
-        const data = d.data();
-        return {
-          id: d.id,
-          type_audit: data.serviceName,
-          date: data.createdAt,
-          statut: data.status,
-          client: data.clientName,
-          donnees_completes: data.details || {}
-        };
-      });
-
+    if (event.httpMethod === "GET") {
+      const res = await fetch(target, { method: "GET", headers: secret ? { "X-Webhook-Secret": secret } : {} });
+      const text = await res.text();
+      let audits: unknown = [];
+      try {
+        audits = JSON.parse(text) as unknown;
+      } catch {
+        audits = [];
+      }
+      const normalized = Array.isArray(audits)
+        ? audits.map((row: Record<string, unknown>) => ({
+            id: row.id ?? randomUUID().slice(0, 8),
+            type_audit: row.type_audit ?? row.serviceName ?? "audit",
+            date: row.date ?? row.createdAt ?? new Date().toISOString(),
+            statut: row.statut ?? row.status ?? "",
+            client: row.client ?? row.clientName ?? "",
+            donnees_completes: row.donnees_completes ?? row.details ?? row.payload ?? {},
+          }))
+        : [];
       return {
-        statusCode: 200,
+        statusCode: res.ok ? 200 : res.status,
         headers,
-        body: JSON.stringify(audits),
+        body: JSON.stringify(normalized),
       };
     }
 
     return {
       statusCode: 405,
       headers,
-      body: JSON.stringify({ error: 'Method Not Allowed' }),
+      body: JSON.stringify({ error: "Method Not Allowed" }),
     };
-
   } catch (error) {
-    console.error('Erreur Netlify Function PADDE-CI:', error);
+    console.error("Erreur Netlify Function PADDE-CI:", error);
     return {
       statusCode: 500,
       headers,
-      body: JSON.stringify({ success: false, error: 'Erreur interne du serveur.' }),
+      body: JSON.stringify({ success: false, error: "Erreur interne du serveur." }),
     };
   }
 };

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
+import { collection, onSnapshot } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 import toast from 'react-hot-toast';
 
 export interface CommandoClientRow {

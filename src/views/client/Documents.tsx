@@ -1,8 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Upload, Download, FileText, FileImage, CreditCard, CheckCircle, PenTool, Folder, Trash2 } from 'lucide-react';
-import { db, auth } from '../../firebase';
-import { collection, onSnapshot, query, where, orderBy, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { db, auth } from '@/lib/clientSdk';
+import { collection, onSnapshot, query, where, orderBy, doc, setDoc, deleteDoc } from '@/lib/mongoFirestore';
 import { uploadFile } from '../../services/uploadService';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import toast from 'react-hot-toast';

@@ -22,12 +22,12 @@ import {
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { cn } from '../../lib/utils';
-import { db, auth } from '../../firebase';
-import { signOut } from 'firebase/auth';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { db, auth } from '@/lib/clientSdk';
+import { signOut } from '@/lib/mongoAuth';
+import { collection, onSnapshot } from '@/lib/mongoFirestore';
 import Logo from '../Logo';
 import { notificationService, Notification } from '../../services/notificationService';
-import { useAuth } from '../FirebaseProvider';
+import { useAuth } from '../AuthProvider';
 import WorkspaceSpaceSwitcher from '../WorkspaceSpaceSwitcher';
 import { getAccessibleWorkspaces } from '../../lib/workspaceSpaces';
 import { formatDistanceToNow } from 'date-fns';

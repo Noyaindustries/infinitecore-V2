@@ -7,8 +7,8 @@ import {
   query, 
   where, 
   orderBy 
-} from 'firebase/firestore';
-import { db } from '../firebase';
+} from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 import { handleFirestoreError, OperationType } from '../utils/firestoreErrorHandler';
 
 /** Cycle de vie facture (prestations / lignes gérées depuis Finance) */

@@ -1,4 +1,4 @@
-import { auth } from '../firebase';
+import { auth } from '@/lib/clientSdk';
 import toast from 'react-hot-toast';
 
 /** Ouvre le formulaire PADDE-CI (nouvel onglet) si l’utilisateur est connecté. */

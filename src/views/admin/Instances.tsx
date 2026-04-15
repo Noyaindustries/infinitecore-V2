@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Copy, Plus, Play, Pause, Settings, ExternalLink, X, Trash2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { collection, onSnapshot, query, orderBy, doc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, onSnapshot, query, orderBy, doc, setDoc, deleteDoc } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 import toast from 'react-hot-toast';
 
 interface Instance {

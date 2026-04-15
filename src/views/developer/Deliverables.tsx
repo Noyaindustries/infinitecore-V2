@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Upload, Link as LinkIcon, FileText, CheckCircle, AlertCircle, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useAuth } from '../../components/FirebaseProvider';
-import { db } from '../../firebase';
-import { collection, query, where, onSnapshot, addDoc } from 'firebase/firestore';
+import { useAuth } from '../../components/AuthProvider';
+import { db } from '@/lib/clientSdk';
+import { collection, query, where, onSnapshot, addDoc } from '@/lib/mongoFirestore';
 import { uploadFile } from '../../services/uploadService';
 
 export default function DeveloperDeliverables() {

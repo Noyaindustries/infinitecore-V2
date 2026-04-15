@@ -14,10 +14,10 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { useAuth } from '../../components/FirebaseProvider';
+import { useAuth } from '../../components/AuthProvider';
 import { Lead, LeadStatus, leadService } from '../../services/leadService';
-import { collection, onSnapshot } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, onSnapshot } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 
 const STATUS_LABELS: Record<LeadStatus, string> = {
   soumis: 'Soumis',

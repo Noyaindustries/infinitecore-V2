@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MoreHorizontal, Plus, FileSignature, ShoppingBag, X, Zap, Users } from 'lucide-react';
-import { db, auth } from '../../firebase';
-import { collection, onSnapshot, query, orderBy, doc, setDoc } from 'firebase/firestore';
+import { db, auth } from '@/lib/clientSdk';
+import { collection, onSnapshot, query, orderBy, doc, setDoc } from '@/lib/mongoFirestore';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
@@ -181,7 +181,7 @@ export default function KanbanPipeline() {
       if (!dataStr) return;
       const data = JSON.parse(dataStr);
       
-      const { updateDoc } = await import('firebase/firestore');
+      const { updateDoc } = await import('@/lib/mongoFirestore');
       
       if (data.isOrder) {
         if (targetColumnId !== 'nouveau') {

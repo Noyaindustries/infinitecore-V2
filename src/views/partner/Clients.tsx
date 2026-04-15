@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, User, X, Phone, Building2, Send, Search, Trash2, Clock, Briefcase, Sparkles, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useAuth } from '../../components/FirebaseProvider';
+import { useAuth } from '../../components/AuthProvider';
 import { leadService, Lead, LeadStatus } from '../../services/leadService';
 import { notificationService } from '../../services/notificationService';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { collection, doc, getDocs, onSnapshot, query, setDoc, where } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, doc, getDocs, onSnapshot, query, setDoc, where } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 
 type ReferredSignup = {
   id: string;

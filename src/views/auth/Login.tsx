@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Lock, Mail, ArrowRight } from 'lucide-react';
-import { GoogleAuthProvider, sendPasswordResetEmail, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth';
-import { collection, doc, getDoc, getDocs, query, setDoc, where } from 'firebase/firestore';
-import { auth, db } from '../../firebase';
-import { useAuth } from '../../components/FirebaseProvider';
+import { GoogleAuthProvider, sendPasswordResetEmail, signInWithEmailAndPassword, signInWithPopup, signOut } from '@/lib/mongoAuth';
+import { collection, doc, getDoc, getDocs, query, setDoc, where } from '@/lib/mongoFirestore';
+import { auth, db } from '@/lib/clientSdk';
+import { useAuth } from '../../components/AuthProvider';
 import { useStore } from '../../store/useStore';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import toast from 'react-hot-toast';
@@ -193,7 +193,7 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
       if (code === 'auth/popup-blocked') {
         toast.error('Le navigateur a bloqué la fenêtre Google. Autorisez les popups pour ce site.');
       } else if (code === 'auth/unauthorized-domain') {
-        toast.error('Ce domaine n’est pas autorisé dans Firebase. Contactez l’administrateur.');
+        toast.error('Ce domaine n’est pas autorisé pour la connexion. Contactez l’administrateur.');
       } else if (code === 'auth/popup-closed-by-user') {
         toast.error('Connexion Google annulée.');
       } else {

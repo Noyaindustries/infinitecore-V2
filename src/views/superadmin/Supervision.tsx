@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Activity, Server, Database, ShieldAlert, CheckCircle, AlertTriangle, Cpu, Globe, Zap, Search, Terminal } from 'lucide-react';
-import { collection, onSnapshot, query, orderBy, limit } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, onSnapshot, query, orderBy, limit } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import { motion } from 'framer-motion';
 import { cn } from '../../lib/utils';

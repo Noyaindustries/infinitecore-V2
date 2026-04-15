@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { paymentService, Payment, resolveFactureEtape, type FactureEtape } from '../../services/paymentService';
-import { db } from '../../firebase';
+import { db } from '@/lib/clientSdk';
 import {
   collection,
   onSnapshot,
@@ -32,7 +32,7 @@ import {
   limit,
   getDocs,
   deleteField,
-} from 'firebase/firestore';
+} from '@/lib/mongoFirestore';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   type InvoicePdfSettings,

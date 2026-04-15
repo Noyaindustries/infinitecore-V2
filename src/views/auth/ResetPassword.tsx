@@ -2,8 +2,8 @@ import React, { useMemo, useState } from "react";
 import { Link, useSearchParams, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { KeyRound, Lock, ArrowRight } from "lucide-react";
-import { auth } from "../../firebase";
-import { confirmPasswordReset } from "firebase/auth";
+import { auth } from "@/lib/clientSdk";
+import { confirmPasswordReset } from "@/lib/mongoAuth";
 import toast from "react-hot-toast";
 
 function passwordMeetsPolicy(password: string) {

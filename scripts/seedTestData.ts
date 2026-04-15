@@ -1,3 +1,4 @@
+import { appEnv } from "../src/config/env";
 import { prisma } from "../prismaClient";
 import bcrypt from "bcryptjs";
 
@@ -191,7 +192,7 @@ async function seedBusinessData() {
 }
 
 async function run() {
-  const seedPassword = process.env.SEED_TEST_PASSWORD || "Test1234!";
+  const seedPassword = appEnv.seed.testPassword;
   await seedUsers(seedPassword);
   await seedBusinessData();
   console.log("Seed test data termine.");

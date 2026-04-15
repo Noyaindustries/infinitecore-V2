@@ -8,8 +8,8 @@ import {
   query,
   where,
   orderBy,
-} from 'firebase/firestore';
-import { db } from '../firebase';
+} from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 
 export type LeadStatus =
   | 'soumis'

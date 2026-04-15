@@ -24,7 +24,7 @@ import {
   X,
   ExternalLink,
 } from 'lucide-react';
-import { useAuth } from '../../components/FirebaseProvider';
+import { useAuth } from '../../components/AuthProvider';
 import { dossierService, DossierStep, StepType, STEP_META, STEP_ORDER } from '../../services/dossierService';
 import { notificationService } from '../../services/notificationService';
 import toast from 'react-hot-toast';
@@ -32,6 +32,7 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '../../lib/utils';
 import { formatFileSize } from '../../lib/formatFileSize';
+import { absoluteUrlOnClient } from '../../lib/apiBase';
 
 
 /** Styles cohérents avec le thème sombre espace client */
@@ -57,23 +58,6 @@ const STEP_THEME: Record<
   },
 };
 
-/**
- * URL absolue pour iframe / nouvel onglet.
- * - Chemins relatifs `/api/...` : même origine que la page, sauf si `NEXT_PUBLIC_API_BASE_URL` est défini.
- */
-function resolveClientFileUrl(url: string): string {
-  if (!url) return '';
-  const u = url.trim();
-  if (u.startsWith('http://') || u.startsWith('https://')) return u;
-  if (typeof window !== 'undefined' && u.startsWith('//')) return `${window.location.protocol}${u}`;
-  if (typeof window !== 'undefined' && u.startsWith('/')) {
-    const apiBase = (process.env.NEXT_PUBLIC_API_BASE_URL ?? '').replace(/\/$/, '');
-    if (apiBase && /^https?:\/\//i.test(apiBase)) return `${apiBase}${u}`;
-    return `${window.location.origin}${u}`;
-  }
-  return u;
-}
-
 /** Étape 1 (audit) : nom de fichier de téléchargement toujours en .pdf */
 function dossierDownloadFileName(step: DossierStep): string {
   if (step.stepType !== 'audit') return step.fileName;
@@ -91,7 +75,7 @@ function fileConsultKind(fileName: string): 'pdf' | 'image' | 'other' {
 }
 
 function DocumentConsultModal({ step, onClose }: { step: DossierStep; onClose: () => void }) {
-  const url = resolveClientFileUrl(step.fileUrl);
+  const url = absoluteUrlOnClient(step.fileUrl);
   const kind = fileConsultKind(step.fileName);
   const stepIndex = STEP_ORDER.indexOf(step.stepType) + 1;
   const meta = STEP_META[step.stepType];
@@ -792,7 +776,7 @@ export default function ClientSuivi() {
                 Consulter ici
               </button>
               <a
-                href={resolveClientFileUrl(latestPerStep.audit.fileUrl)}
+                href={absoluteUrlOnClient(latestPerStep.audit.fileUrl)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/[0.05] px-4 py-3 text-sm font-semibold text-text-secondary transition-colors hover:border-noya-blue/40 hover:text-noya-blue"
@@ -801,7 +785,7 @@ export default function ClientSuivi() {
                 Nouvel onglet
               </a>
               <a
-                href={resolveClientFileUrl(latestPerStep.audit.fileUrl)}
+                href={absoluteUrlOnClient(latestPerStep.audit.fileUrl)}
                 download={dossierDownloadFileName(latestPerStep.audit)}
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/15 px-4 py-3 text-sm font-semibold text-text-secondary transition-colors hover:border-noya-green/40 hover:text-noya-green"
               >
@@ -989,7 +973,7 @@ export default function ClientSuivi() {
                           {stepType === 'audit' ? 'Consulter (étape 1)' : 'Consulter'}
                         </button>
                         <a
-                          href={resolveClientFileUrl(step.fileUrl)}
+                          href={absoluteUrlOnClient(step.fileUrl)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-noya-black"
@@ -998,7 +982,7 @@ export default function ClientSuivi() {
                           Onglet
                         </a>
                         <a
-                          href={resolveClientFileUrl(step.fileUrl)}
+                          href={absoluteUrlOnClient(step.fileUrl)}
                           download={dossierDownloadFileName(step)}
                           className="flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-noya-black"
                         >
@@ -1242,7 +1226,7 @@ export default function ClientSuivi() {
                           Consulter
                         </button>
                         <a
-                          href={resolveClientFileUrl(step.fileUrl)}
+                          href={absoluteUrlOnClient(step.fileUrl)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-semibold text-text-secondary transition-colors hover:border-noya-blue/40 hover:bg-noya-blue/5 hover:text-noya-blue"
@@ -1251,7 +1235,7 @@ export default function ClientSuivi() {
                           Onglet
                         </a>
                         <a
-                          href={resolveClientFileUrl(step.fileUrl)}
+                          href={absoluteUrlOnClient(step.fileUrl)}
                           download={dossierDownloadFileName(step)}
                           className="inline-flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-semibold text-text-secondary transition-colors hover:border-noya-green/40 hover:bg-noya-green/5 hover:text-noya-green"
                         >

@@ -1,7 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Layers } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { useAuth } from './FirebaseProvider';
+import { useAuth } from './AuthProvider';
 import {
   detectWorkspaceFromPath,
   getAccessibleWorkspaces,

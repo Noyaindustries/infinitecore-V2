@@ -1,5 +1,5 @@
-import { doc, onSnapshot, runTransaction, setDoc } from 'firebase/firestore';
-import { db } from '../firebase';
+import { doc, onSnapshot, runTransaction, setDoc } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 import {
   type InvoicePdfSettings,
   DEFAULT_INVOICE_SETTINGS,

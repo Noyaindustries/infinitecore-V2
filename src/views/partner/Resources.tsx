@@ -13,8 +13,8 @@ import {
   CheckCircle2,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, onSnapshot, query, orderBy } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 
 const TYPE_ICONS: Record<string, React.ElementType> = {
   PDF: FileText,

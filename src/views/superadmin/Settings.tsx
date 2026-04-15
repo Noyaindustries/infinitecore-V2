@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, Save, Globe, Shield, Bell, AlertTriangle, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
-import { db, auth } from '../../firebase';
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from '@/lib/mongoFirestore';
+import { db, auth } from '@/lib/clientSdk';
 
 export default function SuperAdminSettings() {
   const [settings, setSettings] = useState({

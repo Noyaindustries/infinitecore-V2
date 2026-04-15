@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { CheckCircle, Clock, Mail, Package, Shield, Users, Key, Edit2, Check, X } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { db } from '../../firebase';
-import { collection, onSnapshot, query, orderBy, doc, updateDoc, where } from 'firebase/firestore';
+import { db } from '@/lib/clientSdk';
+import { collection, onSnapshot, query, orderBy, doc, updateDoc, where } from '@/lib/mongoFirestore';
 
 interface UserData {
   uid: string;

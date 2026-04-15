@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../../components/FirebaseProvider';
+import { useAuth } from '../../components/AuthProvider';
 import { cn } from '../../lib/utils';
 import { useCommandoClients, clientDisplayName } from '../../hooks/useCommandoClients';
-import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, updateDoc, where } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, updateDoc, where } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 import { leadService } from '../../services/leadService';
 import toast from 'react-hot-toast';
 import {

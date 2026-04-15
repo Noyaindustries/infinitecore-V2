@@ -11,8 +11,8 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { collection, query, where, onSnapshot, orderBy, limit } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, query, where, onSnapshot, orderBy, limit } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import toast from 'react-hot-toast';

@@ -6,8 +6,8 @@ import {
   query, 
   orderBy,
   limit
-} from 'firebase/firestore';
-import { db } from '../firebase';
+} from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 import { handleFirestoreError, OperationType } from '../utils/firestoreErrorHandler';
 
 export interface Log {

@@ -1,89 +1,43 @@
-# Déploiement (Next.js + API Express)
+# Déploiement
 
-L’interface tourne sous **Next.js 15** ; le développement utilise **Turbopack** (`next dev --turbo`). L’API REST reste sur **Express** (`server.ts`), bundlée en `dist/server.cjs`.
+Analyse d’hébergement (prérequis, tableaux de variables, checklists) : **[HEBERGEMENT.md](HEBERGEMENT.md)**. Les clés lues au runtime sont définies dans **`src/config/env.ts`** (aligné sur **`.env.example`** / **`.env.vercel.example`**).
 
-**Arborescence** : les écrans React Router vivent dans `src/views/` (et non `src/pages/`, réservé par Next au routeur *Pages*). Les routes App Router sont dans `src/app/`.
+- **Vercel (recommandé)** : ce fichier + **`vercel.json`** + variables (voir ci‑dessous) — l’API Express est montée **sur le même projet** via **`pages/api/[[...path]].ts`** et `serverless-http` (pas d’hôte API séparé obligatoire).
+- **Tout sur un processus Node** (VPS, autre PaaS) : `npm run build` puis `npm start` — voir fin de page.
 
-## Développement local
+En local : **`npm run dev`** — Next + Express sur le même port (`scripts/devUnified.ts`).
 
-```bash
-npm install
-npm run dev
-```
+## Déploiement Vercel (pas à pas) — tout sur Vercel
 
-- **Next** : [http://localhost:3000](http://localhost:3000) (UI + proxy `/api` → port 3001)
-- **API** : [http://127.0.0.1:3001](http://127.0.0.1:3001) (Express seul)
+1. **Dépôt Git** : pousse ce repo sur GitHub / GitLab / Bitbucket.
+2. **[vercel.com](https://vercel.com)** → *Add New…* → *Project* → importe le dépôt. Laisse **Root Directory** à la racine ; le build utilise **`vercel.json`** (`npm ci` puis `npm run build:vercel` = `next build`).
+3. **Variables d’environnement** (onglet *Settings* → *Environment Variables*) pour **Production** et **Preview** — recopier le contenu utile de **`.env.example`** sur le projet Vercel (voir **`.env.vercel.example`** pour un modèle commenté). Indispensables en prod :
+   - **`DATABASE_URL`**, **`NEXTAUTH_SECRET`** (ou **`JWT_SECRET`**)
+   - **`NEXTAUTH_URL`** = URL publique du site (ex. `https://ton-projet.vercel.app`)
+   - **`API_PUBLIC_URL`** = en général la **même** base HTTPS que le site (ex. `https://ton-projet.vercel.app`) pour les liens et intégrations
+   - **`CORS_ORIGIN`** : inclure au minimum l’origine exacte du site Vercel (souvent identique à `NEXTAUTH_URL` sans chemin)
+   - **R2 / SMTP / webhooks** : comme sur **`.env.example`** si tu utilises ces fonctions
+4. **Deploy** : *Deployments* → *Redeploy* si tu changes des variables.
 
-Variables : `.env` à la racine (Prisma, JWT, etc.) comme avant.
+En CLI (à la racine du projet, après `npm i -g vercel` ou `npx vercel`) : `vercel` pour un preview, `vercel --prod` pour la production (connexion compte requise).
 
-## Production : Vercel (front) + Render (API)
+Routes utiles après déploiement :
 
-Je ne peux pas me connecter à ton compte **Vercel** ou **Render** depuis le dépôt : la config se fait dans leurs tableaux de bord. Suis la section suivante, puis lance **`npm run verify:deploy`** en local pour contrôler les URLs (Render puis proxy Vercel).
+- **`GET /health`** (route App Next) — sonde légère.
+- **`GET /api/...`** — Express (auth, données, etc.) ; cold start possible.
 
-### Configuration pas à pas
+**Limites** : fonctions serverless (durée max **`vercel.json`** → `maxDuration`), pas de disque persistant pour les uploads — utiliser **R2** (ou équivalent S3) en prod.
 
-#### A. Render — service Web **API** (Express)
+## Vercel + API Express sur un autre hôte (optionnel)
 
-1. Crée (ou ouvre) un **Web Service** Node lié à ce dépôt, branche de prod.
-2. **Build command** : `npm ci && npm run build:api`  
-   (inutile de lancer `next build` sur Render si tu ne sers que l’API ; voir `render.yaml`.)
-3. **Start command** : `node dist/server.cjs`
-4. **Variables d’environnement** (exemples de valeurs ; adapte les secrets) :
-   - `NODE_ENV` = `production`
-   - `DATABASE_URL` = chaîne MongoDB (Atlas, etc.)
-   - `JWT_SECRET`, `JWT_ISSUER`, `JWT_AUDIENCE` — comme en local / `.env.example`
-   - `CORS_ORIGIN` = liste d’origines séparées par des virgules, **sans espaces** après la virgule si tu veux éviter les pièges, incluant au minimum :  
-     `https://infinitecore.net,https://www.infinitecore.net`  
-     (ajoute ton URL Vercel preview si tu l’utilises.)
-   - `APP_BASE_URL` = `https://infinitecore.net` (liens e-mail reset mot de passe)
-   - `API_PUBLIC_URL` = URL **affichée par Render** pour ce service (ex. `https://infinitecore-api.onrender.com`) — utilisée pour certains liens fichiers côté API.
-5. Déploie et attends le statut **Live**. Teste dans le navigateur :  
-   `https://<ton-service>.onrender.com/health` → tu dois voir **`{"ok":true}`**.  
-   Si tu vois **« Not Found »** et que les en-têtes contiennent `x-render-routing: no-server`, le service ne tourne pas (crash au boot, mauvaise commande, mauvaise URL).
+Si tu préfères garder l’API sur Render / Railway / un VPS et **ne servir que le front** depuis un autre dépôt ou une autre config, ce n’est **plus** le scénario par défaut de ce repo : ici l’API intégrée à Vercel répond sous **`/api/*`**. Pour un front qui appelle une API **externe**, configure plutôt **`NEXT_PUBLIC_API_BASE_URL`** (URL visible navigateur) et **`CORS_ORIGIN`** sur l’API distante — ou un reverse proxy côté hébergeur.
 
-#### B. Vercel — front **Next.js**
+## Déploiement monolithique (sans Vercel)
 
-1. Projet **Framework Preset : Next.js** ; pas d’**Output Directory** type `dist` hérité de Vite.
-2. **Environment Variables** → **Production** (et **Preview** si besoin) :
-   - **`API_UPSTREAM`** = la même URL que sur Render pour l’API, **sans slash final**, ex. `https://infinitecore-api.onrender.com`  
-     Le fichier `src/app/api/[[...path]]/route.ts` proxifie `https://infinitecore.net/api/...` vers `API_UPSTREAM/api/...`.
-3. **Redeploy** le déploiement après toute modification de variable.
+`npm run build` → `next build` + `dist/server.cjs` + `dist/startUnified.cjs`, puis **`npm start`** (`node dist/startUnified.cjs`). Variables : voir **`.env.example`** (y compris `DATABASE_URL` sur ce même hôte).
 
-#### C. Vérification locale (recommandé)
-
-À la racine du dépôt :
-
-```bash
-npm run verify:deploy
-```
-
-Par défaut le script teste `https://infinitecore-api.onrender.com` et `https://infinitecore.net`. Pour d’autres URL :
-
-```bash
-node scripts/verifyDeploy.mjs https://ton-api.onrender.com https://ton-front.vercel.app
-```
-
-Interprétation rapide : **401 JSON** sur `/api/auth/me` **sans** cookie est **normal** (non authentifié) : l’API répond. **503 JSON** depuis Vercel indique **`API_UPSTREAM` manquant**. **« Not Found »** sur le proxy indique souvent l’API Render encore injoignable.
-
-### 1. API (Render) — rappel
-
-- Build API seul : `npm ci && npm run build:api` → `dist/server.cjs`
-- Start : `node dist/server.cjs`
-- Variables : `DATABASE_URL`, `JWT_*`, `CORS_ORIGIN`, `APP_BASE_URL`, `API_PUBLIC_URL` (URL publique de ce service Render).
-
-### 2. Front (Vercel) — rappel
-
-- Build : `next build` (ou `npm run build:next`).
-- Start : `next start` (défaut Vercel).
-
-**`API_UPSTREAM`** : voir section A–B ci-dessus.
-
-Optionnel : `NEXT_PUBLIC_API_BASE_URL` si le front appelle l’API en direct sans proxy (pense à **CORS** sur l’API).
-
-### 3. Tout sur un seul hôte (Node)
-
-Tu peux lancer `next start` derrière un reverse proxy et l’API sur un autre port avec un proxy Nginx vers `/api` — ou garder deux services pour plus de simplicité.
+Exemple de blueprint PaaS : **`render.yaml`** (commandes de build/start à aligner avec `package.json`).
 
 ## Turbopack
 
-`next dev --turbo` active Turbopack. La commande de build production reste en général `next build` (webpack) ; suis les releases Next si `--turbo` pour le build devient stable pour ta version.
+`npm run dev` active Turbopack. Le build prod Vercel utilise **`next build`** (webpack).

@@ -1,17 +1,31 @@
+import { publicApiBaseUrl } from "@/config/publicEnv";
+
 /**
- * Origine du backend Express (sans slash final).
- * Vide = requêtes relatives (proxy `/api` via Next en dev, ou même origine en prod).
- * Sinon : `NEXT_PUBLIC_API_BASE_URL` si le front appelle l’API sans rewrite.
+ * Base API côté client (sans slash final). Vide = URLs relatives `/api/...`
+ * (Vercel avec relais, ou `npm run dev` / `npm start` unifié).
+ * Variable : **`NEXT_PUBLIC_API_BASE_URL`** — voir `src/config/publicEnv.ts`.
  */
-export function getApiBaseUrl(): string {
-  const raw = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").trim();
-  if (!raw) return "";
-  return raw.replace(/\/$/, "");
+function apiOrigin(): string {
+  return publicApiBaseUrl();
 }
 
+/**
+ * `"/api/foo"` → absolu si `NEXT_PUBLIC_API_BASE_URL` est défini, sinon relatif.
+ */
 export function apiUrl(path: string): string {
-  const base = getApiBaseUrl();
+  const o = apiOrigin();
   const p = path.startsWith("/") ? path : `/${path}`;
-  if (!base) return p;
-  return `${base}${p}`;
+  return o ? `${o}${p}` : p;
+}
+
+/** Chemins `/…` en URL absolue (iframe, nouvel onglet). Uniquement côté client. */
+export function absoluteUrlOnClient(path: string): string {
+  const p = path.trim();
+  if (!p) return "";
+  if (/^https?:\/\//i.test(p)) return p;
+  if (typeof window === "undefined") return p;
+  if (p.startsWith("//")) return `${window.location.protocol}${p}`;
+  if (!p.startsWith("/")) return p;
+  const o = apiOrigin();
+  return o ? `${o}${p}` : `${window.location.origin}${p}`;
 }

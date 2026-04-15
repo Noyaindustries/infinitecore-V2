@@ -1,9 +1,9 @@
 import { Link, Outlet, useNavigate } from 'react-router-dom';
 import { Menu, X, ChevronDown } from 'lucide-react';
 import { useState, useEffect } from 'react';
-import { auth } from '../../firebase';
+import { auth } from '@/lib/clientSdk';
 import Logo from '../Logo';
-import { useAuth } from '../FirebaseProvider';
+import { useAuth } from '../AuthProvider';
 import MarketingV4Background from './MarketingV4Background';
 import { cn } from '../../lib/utils';
 import { userInitialLetter } from '../../lib/userProfile';

@@ -1,4 +1,4 @@
-import express from "express";
+import express, { type Express } from "express";
 import cors from "cors";
 import path from "path";
 import { createReadStream, promises as fs } from "fs";
@@ -6,6 +6,7 @@ import multer from "multer";
 import { randomUUID, timingSafeEqual } from "crypto";
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { appEnv } from "@/config/env";
 import { prisma } from "./prismaClient";
 import { buildFileUrl, sanitizeFolder } from "./_r2";
 import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } from "./storageUtils";
@@ -53,23 +54,22 @@ function secureSecretEquals(expected: string, provided: string) {
   return timingSafeEqual(expectedBuf, providedBuf);
 }
 
-async function startServer() {
+/** Application Express (routes `/api/*`, `/health`) sans `listen` — utilisée par `startServer` et par le dev unifié Next+API. */
+export async function createExpressApplication(): Promise<{ app: Express; port: number }> {
   const app = express();
-  const PORT = Number.parseInt(process.env.PORT || "", 10) || 3000;
-  const corsOrigins = (
-    process.env.CORS_ORIGIN ||
-    "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173"
-  )
+  const port = appEnv.http.port;
+  const corsOrigins = appEnv.http.corsOriginRaw
     .split(",")
     .map((v) => v.trim())
     .filter(Boolean);
-  const paddeWebhookSecret = process.env.PADDE_WEBHOOK_SECRET || "";
-  const r2AccountId = process.env.R2_ACCOUNT_ID || "";
-  const r2AccessKeyId = process.env.R2_ACCESS_KEY_ID || "";
-  const r2SecretAccessKey = process.env.R2_SECRET_ACCESS_KEY || "";
-  const r2Bucket = process.env.R2_BUCKET_NAME || "";
-  const r2PublicBaseUrl = process.env.R2_PUBLIC_BASE_URL || "";
-  const r2Endpoint = process.env.R2_ENDPOINT || (r2AccountId ? `https://${r2AccountId}.r2.cloudflarestorage.com` : "");
+  const paddeWebhookSecret = appEnv.webhooks.paddeWebhookSecret;
+  const r2AccountId = appEnv.r2.accountId;
+  const r2AccessKeyId = appEnv.r2.accessKeyId;
+  const r2SecretAccessKey = appEnv.r2.secretAccessKey;
+  const r2Bucket = appEnv.r2.bucket;
+  const r2PublicBaseUrl = appEnv.r2.publicBaseUrl;
+  const r2Endpoint =
+    appEnv.r2.endpointRaw || (r2AccountId ? `https://${r2AccountId}.r2.cloudflarestorage.com` : "");
   const canUseR2 = Boolean(r2Endpoint && r2AccessKeyId && r2SecretAccessKey && r2Bucket);
 
   if (!canUseR2) {
@@ -87,7 +87,8 @@ async function startServer() {
         }
         return callback(new Error("Origine CORS non autorisée."));
       },
-      methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+      methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT", "HEAD"],
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
     })
   );
   app.use((_, res, next) => {
@@ -182,7 +183,7 @@ async function startServer() {
     } catch (error) {
       console.error("Erreur upload API:", error);
       const msg =
-        error instanceof Error && process.env.NODE_ENV !== "production"
+        error instanceof Error && !appEnv.node.isProduction
           ? `Erreur interne du serveur. ${error.message}`
           : "Erreur interne du serveur.";
       return res.status(500).json({ success: false, error: msg });
@@ -287,7 +288,7 @@ async function startServer() {
         }
       }
 
-      if (!process.env.DATABASE_URL) {
+      if (!appEnv.database.url) {
         return res.status(503).json({
           success: false,
           error: "Base de données non configurée : définissez DATABASE_URL (MongoDB) pour Prisma.",
@@ -315,7 +316,7 @@ async function startServer() {
   // GET audits PADDE-CI (ex. admin.html) — lecture MongoDB
   app.get("/api/webhooks/padde-ci", async (req, res) => {
     try {
-      if (!process.env.DATABASE_URL) {
+      if (!appEnv.database.url) {
         return res.status(503).json({ success: false, error: "Base de données non configurée (DATABASE_URL)." });
       }
 
@@ -348,11 +349,19 @@ async function startServer() {
     }
   });
 
-  // L’UI est servie par Next.js (`next dev --turbo` / `next start`). Ce processus ne sert que les routes /api/*.
+  // L’UI est servie par Next.js (`next dev` / `next start`) sauf en dev unifié (`scripts/devUnified.ts`).
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`[infinitecore-api] http://0.0.0.0:${PORT}`);
+  return { app, port };
+}
+
+async function startServer() {
+  const { app, port } = await createExpressApplication();
+  app.listen(port, "0.0.0.0", () => {
+    console.log(`[infinitecore-api] http://0.0.0.0:${port}`);
   });
 }
 
-startServer();
+// Écoute uniquement pour `npm run start:api` (`START_LISTEN=1`). Jamais lors d’un import depuis Next (`pages/api`, dev unifié, etc.).
+if (process.env.START_LISTEN === "1") {
+  void startServer();
+}

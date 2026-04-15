@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, onAuthStateChanged } from 'firebase/auth';
-import { auth } from '../firebase';
+import { User, onAuthStateChanged } from '@/lib/mongoAuth';
+import { auth } from '@/lib/clientSdk';
 import { apiRequest } from '../lib/apiClient';
 
 /** Profil `users/*` — champs courants typés, le reste en index signature. */
@@ -16,7 +16,7 @@ export type AuthUserData = {
   partnerCode?: string;
   uid?: string;
   phone?: string;
-  /** Champs additionnels Firestore */
+  /** Champs additionnels côté document utilisateur */
   [key: string]: string | number | boolean | null | undefined;
 };
 
@@ -34,7 +34,7 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
-export const FirebaseProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<AuthUserData | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);

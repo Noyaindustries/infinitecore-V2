@@ -2,9 +2,9 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { User, Mail, Phone, MapPin, Building, CreditCard, Copy, CheckCircle, Save, Users, Wallet, FolderOpen, Camera, Trash2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { useAuth } from '../../components/FirebaseProvider';
-import { db } from '../../firebase';
-import { collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore';
+import { useAuth } from '../../components/AuthProvider';
+import { db } from '@/lib/clientSdk';
+import { collection, doc, onSnapshot, query, updateDoc, where } from '@/lib/mongoFirestore';
 import { deleteUploadedFile, uploadFile } from '../../services/uploadService';
 
 type LeadStatus = 'soumis' | 'contacte' | 'en_demo' | 'proposition' | 'signe' | 'gagne' | 'perdu';

@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, DollarSign, Clock, CheckCircle, TrendingUp, Building2 } from 'lucide-react';
-import { useAuth } from '../../components/FirebaseProvider';
+import { useAuth } from '../../components/AuthProvider';
 import { leadService, Lead, LeadStatus } from '../../services/leadService';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';

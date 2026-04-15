@@ -1,4 +1,4 @@
-import { db } from '../firebase';
+import { db } from '@/lib/clientSdk';
 import {
   collection,
   query,
@@ -10,7 +10,7 @@ import {
   doc,
   writeBatch,
   getDocs
-} from 'firebase/firestore';
+} from '@/lib/mongoFirestore';
 import { handleFirestoreError, OperationType } from '../utils/firestoreErrorHandler';
 
 export interface Notification {

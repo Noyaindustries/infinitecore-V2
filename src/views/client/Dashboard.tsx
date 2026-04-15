@@ -13,7 +13,7 @@ import {
   User,
   Zap,
 } from 'lucide-react';
-import { useAuth } from '../../components/FirebaseProvider';
+import { useAuth } from '../../components/AuthProvider';
 import { PADDE_CI_FREE_AUDITS } from '../../data/paddeCiFreeAudits';
 import { openPaddeCiAuditForm } from '../../utils/openPaddeCiAuditForm';
 import {

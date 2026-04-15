@@ -16,9 +16,9 @@ import {
   Globe,
   MessageSquare
 } from 'lucide-react';
-import { db } from '../../firebase';
-import { useAuth } from '../../components/FirebaseProvider';
-import { collection, onSnapshot, query, orderBy, where, doc, updateDoc, setDoc } from 'firebase/firestore';
+import { db } from '@/lib/clientSdk';
+import { useAuth } from '../../components/AuthProvider';
+import { collection, onSnapshot, query, orderBy, where, doc, updateDoc, setDoc } from '@/lib/mongoFirestore';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';

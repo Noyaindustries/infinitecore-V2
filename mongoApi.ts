@@ -4,6 +4,7 @@ import jwt from "jsonwebtoken";
 import nodemailer, { type Transporter } from "nodemailer";
 import { createHash, randomBytes, randomUUID } from "crypto";
 import { prisma } from "./prismaClient";
+import { appEnv, getJwtSecret, resetAppBaseUrl } from "@/config/env";
 
 export type AuthPayload = {
   uid: string;
@@ -25,8 +26,6 @@ type QueryOrder = {
 type DataOperation = "read" | "write";
 
 const AUTH_HEADER_PREFIX = "Bearer ";
-const JWT_ISSUER = process.env.JWT_ISSUER || "infinitecore-api";
-const JWT_AUDIENCE = process.env.JWT_AUDIENCE || "infinitecore-web";
 const SAFE_COLLECTION_SEGMENT = /^[A-Za-z0-9_-]{1,120}$/;
 const SAFE_DOC_ID = /^[A-Za-z0-9._:-]{1,180}$/;
 const SAFE_FIELD_NAME = /^[A-Za-z0-9_.-]{1,120}$/;
@@ -51,21 +50,17 @@ const USER_FIELDS = [
 const authFailureBuckets = new Map<string, { failures: number; windowEndsAt: number; blockedUntil: number }>();
 let smtpTransport: Transporter | null = null;
 
-function getResetAppBaseUrl() {
-  return (process.env.APP_BASE_URL || "http://localhost:5173").replace(/\/$/, "");
-}
-
 function getSmtpTransport(): Transporter | null {
   if (smtpTransport) return smtpTransport;
-  const host = process.env.SMTP_HOST?.trim();
-  const port = Number(process.env.SMTP_PORT || 587);
-  const user = process.env.SMTP_USER?.trim();
-  const pass = process.env.SMTP_PASS?.trim();
+  const host = appEnv.smtp.host;
+  const port = appEnv.smtp.port;
+  const user = appEnv.smtp.user;
+  const pass = appEnv.smtp.pass;
   if (!host || !Number.isFinite(port) || !user || !pass) return null;
   smtpTransport = nodemailer.createTransport({
     host,
     port,
-    secure: String(process.env.SMTP_SECURE || "").toLowerCase() === "true",
+    secure: appEnv.smtp.secure,
     auth: { user, pass },
   });
   return smtpTransport;
@@ -73,12 +68,12 @@ function getSmtpTransport(): Transporter | null {
 
 async function sendResetPasswordEmail(input: { to: string; token: string }) {
   const transporter = getSmtpTransport();
-  const resetLink = `${getResetAppBaseUrl()}/reset-password?email=${encodeURIComponent(input.to)}&token=${encodeURIComponent(input.token)}`;
+  const resetLink = `${resetAppBaseUrl()}/reset-password?email=${encodeURIComponent(input.to)}&token=${encodeURIComponent(input.token)}`;
   if (!transporter) {
     return { delivered: false as const, previewLink: resetLink };
   }
   await transporter.sendMail({
-    from: process.env.SMTP_FROM || process.env.SMTP_USER || "no-reply@infinitecore.local",
+    from: appEnv.smtp.fromOrUser,
     to: input.to,
     subject: "Reinitialisation de votre mot de passe",
     text: `Bonjour,\n\nUtilisez ce lien pour reinitialiser votre mot de passe:\n${resetLink}\n\nCe lien expire dans 30 minutes.\nSi vous n'etes pas a l'origine de cette demande, ignorez cet email.\n`,
@@ -87,21 +82,12 @@ async function sendResetPasswordEmail(input: { to: string; token: string }) {
   return { delivered: true as const };
 }
 
-function getJwtSecret() {
-  const envSecret = process.env.JWT_SECRET?.trim();
-  if (envSecret) return envSecret;
-  if (process.env.NODE_ENV === "production") {
-    throw new Error("JWT_SECRET est requis en production.");
-  }
-  return "dev-secret-change-me";
-}
-
 function signAuthToken(payload: AuthPayload) {
   return jwt.sign(payload, getJwtSecret(), {
     expiresIn: "7d",
     algorithm: "HS256",
-    issuer: JWT_ISSUER,
-    audience: JWT_AUDIENCE,
+    issuer: appEnv.auth.jwtIssuer,
+    audience: appEnv.auth.jwtAudience,
   });
 }
 
@@ -117,8 +103,8 @@ function parseAuth(req: Request): AuthPayload | null {
   try {
     const decoded = jwt.verify(token, getJwtSecret(), {
       algorithms: ["HS256"],
-      issuer: JWT_ISSUER,
-      audience: JWT_AUDIENCE,
+      issuer: appEnv.auth.jwtIssuer,
+      audience: appEnv.auth.jwtAudience,
     }) as AuthPayload;
     if (!decoded || typeof decoded.uid !== "string" || typeof decoded.email !== "string" || typeof decoded.role !== "string") {
       return null;
@@ -925,8 +911,8 @@ export function registerMongoApi(app: Express) {
       return res.status(200).json({
         success: true,
         message: "Si ce compte existe, les instructions de réinitialisation ont été enregistrées.",
-        ...(process.env.NODE_ENV !== "production" ? { resetTokenPreview: resetToken } : {}),
-        ...(process.env.NODE_ENV !== "production" && !mailResult.delivered ? { resetLinkPreview: mailResult.previewLink } : {}),
+        ...(!appEnv.node.isProduction ? { resetTokenPreview: resetToken } : {}),
+        ...(!appEnv.node.isProduction && !mailResult.delivered ? { resetLinkPreview: mailResult.previewLink } : {}),
       });
     } catch (error) {
       console.error("[auth/password-reset/request]", error);

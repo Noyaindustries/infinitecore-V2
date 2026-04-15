@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { collection, onSnapshot, orderBy, query } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, onSnapshot, orderBy, query } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 
 type LeadRow = {
   id: string;

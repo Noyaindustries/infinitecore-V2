@@ -22,8 +22,8 @@ import {
   Sparkles,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { collection, onSnapshot, query, orderBy, doc, addDoc, setDoc, deleteDoc } from 'firebase/firestore';
-import { db } from '../../firebase';
+import { collection, onSnapshot, query, orderBy, doc, addDoc, setDoc, deleteDoc } from '@/lib/mongoFirestore';
+import { db } from '@/lib/clientSdk';
 import { uploadFile } from '../../services/uploadService';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import { missionService, Mission } from '../../services/missionService';

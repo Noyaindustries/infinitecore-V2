@@ -1,5 +1,6 @@
 import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { appEnv } from "@/config/env";
 
 const cleanEnv = (value?: string) =>
   (value || "").trim().replace(/^['"]+|['"]+$/g, "");
@@ -10,15 +11,15 @@ const normalizeUrl = (value: string) => {
   return `https://${value}`;
 };
 
-const accountId = cleanEnv(process.env.R2_ACCOUNT_ID);
-const accessKeyId = cleanEnv(process.env.R2_ACCESS_KEY_ID);
-const secretAccessKey = cleanEnv(process.env.R2_SECRET_ACCESS_KEY);
-const bucket = cleanEnv(process.env.R2_BUCKET_NAME);
-const publicBaseUrl = normalizeUrl(cleanEnv(process.env.R2_PUBLIC_BASE_URL));
-/** URL publique de l’API (ex. https://infinitecore-api.onrender.com) — pour les liens /api/files/download quand le front est sur un autre domaine. */
-const apiPublicBase = normalizeUrl(cleanEnv(process.env.API_PUBLIC_URL)).replace(/\/$/, "");
+const accountId = cleanEnv(appEnv.r2.accountId);
+const accessKeyId = cleanEnv(appEnv.r2.accessKeyId);
+const secretAccessKey = cleanEnv(appEnv.r2.secretAccessKey);
+const bucket = cleanEnv(appEnv.r2.bucket);
+const publicBaseUrl = normalizeUrl(cleanEnv(appEnv.r2.publicBaseUrl));
+/** URL publique de l’API (HTTPS, sans slash final) — liens /api/files/download quand le front est sur un autre domaine. */
+const apiPublicBase = normalizeUrl(cleanEnv(appEnv.http.apiPublicUrl)).replace(/\/$/, "");
 const endpoint = normalizeUrl(
-  cleanEnv(process.env.R2_ENDPOINT) || (accountId ? `${accountId}.r2.cloudflarestorage.com` : "")
+  cleanEnv(appEnv.r2.endpointRaw) || (accountId ? `${accountId}.r2.cloudflarestorage.com` : "")
 );
 
 export const hasR2Config = Boolean(endpoint && accessKeyId && secretAccessKey && bucket);
