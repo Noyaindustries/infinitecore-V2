@@ -95,18 +95,30 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
     void fetchPartner();
   }, [isStaff, location.search]);
 
+  const navigateAfterLogin = async () => {
+    try {
+      const { apiRequest } = await import('../../lib/apiClient');
+      const meData = await apiRequest<{ success: boolean; userData?: { role?: string } }>('/api/auth/me');
+      navigate(homePathForRole(meData?.userData?.role), { replace: true });
+    } catch {
+      navigate('/dashboard', { replace: true });
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
       toast.success('Connexion réussie');
+      await navigateAfterLogin();
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : '';
       if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
         toast.error('Email ou mot de passe incorrect.');
       } else {
-        toast.error('Impossible de se connecter. Réessayez.');
+        const msg = err instanceof Error ? err.message : '';
+        toast.error(msg || 'Impossible de se connecter. Réessayez.');
       }
     } finally {
       setLoading(false);
@@ -142,6 +154,7 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
           return;
         }
         toast.success('Connexion réussie');
+        await navigateAfterLogin();
         return;
       }
 
@@ -188,6 +201,7 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
         });
       }
       toast.success('Connexion réussie');
+      await navigateAfterLogin();
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : '';
       if (code === 'auth/popup-blocked') {
