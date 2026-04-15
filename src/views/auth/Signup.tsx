@@ -29,6 +29,28 @@ export default function Signup() {
   const { addClient } = useStore();
   const [isSuccess, setIsSuccess] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+
+  const homePathForRole = (role: string | undefined): string => {
+    switch (role) {
+      case 'admin': return '/superadmin';
+      case 'commando': return '/admin';
+      case 'developer': return '/developer';
+      case 'partner': return '/partenaire';
+      case 'client':
+      default: return '/dashboard';
+    }
+  };
+
+  const navigateAfterSignup = async () => {
+    try {
+      const { apiRequest } = await import('../../lib/apiClient');
+      const meData = await apiRequest<{ success: boolean; userData?: { role?: string } }>('/api/auth/me');
+      navigate(homePathForRole(meData?.userData?.role), { replace: true });
+    } catch {
+      navigate('/dashboard', { replace: true });
+    }
+  };
+  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
   const [referralCode, setReferralCode] = useState<string | null>(null);
@@ -362,11 +384,7 @@ export default function Signup() {
       });
       
       setIsSuccess(true);
-      
-      // Redirect after 3 seconds
-      setTimeout(() => {
-        navigate(isAdminEmail ? '/superadmin' : '/dashboard');
-      }, 3000);
+      await navigateAfterSignup();
       
     } catch (error: any) {
       console.error('Registration error:', error);
@@ -482,9 +500,7 @@ export default function Signup() {
         });
 
         setIsSuccess(true);
-        setTimeout(() => {
-          navigate(isAdminEmail ? '/superadmin' : '/dashboard');
-        }, 3000);
+        await navigateAfterSignup();
       } else {
         // User already exists, just log them in
         const profile = userDoc.data();
@@ -493,17 +509,7 @@ export default function Signup() {
           return;
         }
         const role = typeof profile.role === 'string' ? profile.role : 'client';
-        if (role === 'admin') {
-          navigate('/superadmin');
-        } else if (role === 'commando') {
-          navigate('/admin');
-        } else if (role === 'developer') {
-          navigate('/developer');
-        } else if (role === 'partner') {
-          navigate('/partenaire');
-        } else {
-          navigate('/dashboard');
-        }
+        navigate(homePathForRole(role), { replace: true });
       }
     } catch (error: any) {
       const code = error?.code;
