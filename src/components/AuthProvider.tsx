@@ -2,16 +2,10 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged } from '@/lib/mongoAuth';
 import { auth } from '@/lib/clientSdk';
 import { apiRequest } from '../lib/apiClient';
+import { agentSessionLog } from '@/debug/agentSessionLog';
 
 function agentDebugLog(payload: Record<string, unknown>) {
-  if (typeof window === "undefined") return;
-  // #region agent log
-  fetch("http://127.0.0.1:27772/ingest/9581a084-44fc-4752-b649-5a3388314469", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "73b87a" },
-    body: JSON.stringify({ sessionId: "73b87a", timestamp: Date.now(), ...payload }),
-  }).catch(() => {});
-  // #endregion
+  agentSessionLog(payload);
 }
 
 /** Profil `users/*` — champs courants typés, le reste en index signature. */

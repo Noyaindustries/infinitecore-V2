@@ -1,16 +1,14 @@
 import { apiUrl } from "./apiBase";
+import { agentSessionLog } from "@/debug/agentSessionLog";
 
 const AUTH_TOKEN_KEY = "ic_auth_token";
+const USE_LEGACY_BEARER =
+  typeof process !== "undefined" &&
+  !!process.env &&
+  process.env.NEXT_PUBLIC_USE_LEGACY_BEARER === "1";
 
 function agentDebugLog(payload: Record<string, unknown>) {
-  if (typeof window === "undefined") return;
-  // #region agent log
-  fetch("http://127.0.0.1:27772/ingest/9581a084-44fc-4752-b649-5a3388314469", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "73b87a" },
-    body: JSON.stringify({ sessionId: "73b87a", timestamp: Date.now(), ...payload }),
-  }).catch(() => {});
-  // #endregion
+  agentSessionLog(payload);
 }
 
 function safeResolvedUrlForLog(resolvedUrl: string, method: string | undefined) {
@@ -32,11 +30,13 @@ const TIMEOUT_MESSAGE =
   "Délai dépassé : l’API ou la base de données ne répond pas. Vérifiez DATABASE_URL (Mongo, IP Atlas), le réseau, ou réessayez après un cold start Vercel.";
 
 export function getAuthToken(): string | null {
+  if (!USE_LEGACY_BEARER) return null;
   if (typeof window === "undefined") return null;
   return localStorage.getItem(AUTH_TOKEN_KEY);
 }
 
 export function setAuthToken(token: string | null) {
+  if (!USE_LEGACY_BEARER) return;
   if (typeof window === "undefined") return;
   if (!token) {
     localStorage.removeItem(AUTH_TOKEN_KEY);
@@ -63,7 +63,12 @@ async function fetchAndParse<T>(url: string, init: RequestInit, fetchSignal: Abo
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const response = await fetch(url, { ...init, headers, signal: fetchSignal });
+  const response = await fetch(url, {
+    ...init,
+    headers,
+    signal: fetchSignal,
+    credentials: init.credentials ?? "include",
+  });
   const text = await response.text();
   let parsed: unknown = {};
   if (text) {

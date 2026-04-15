@@ -27,6 +27,8 @@ type QueryOrder = {
 type DataOperation = "read" | "write";
 
 const AUTH_HEADER_PREFIX = "Bearer ";
+const AUTH_COOKIE_NAME = "ic_auth_token";
+const AUTH_COOKIE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SAFE_COLLECTION_SEGMENT = /^[A-Za-z0-9_-]{1,120}$/;
 const SAFE_DOC_ID = /^[A-Za-z0-9._:-]{1,180}$/;
 const SAFE_FIELD_NAME = /^[A-Za-z0-9_.-]{1,120}$/;
@@ -92,10 +94,54 @@ function signAuthToken(payload: AuthPayload) {
   });
 }
 
+function authCookieOptions() {
+  return {
+    httpOnly: true as const,
+    sameSite: "lax" as const,
+    secure: appEnv.node.isProduction,
+    path: "/",
+    maxAge: AUTH_COOKIE_TTL_MS,
+  };
+}
+
+function setAuthCookie(res: Response, token: string) {
+  res.cookie(AUTH_COOKIE_NAME, token, authCookieOptions());
+}
+
+function clearAuthCookie(res: Response) {
+  res.clearCookie(AUTH_COOKIE_NAME, {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: appEnv.node.isProduction,
+    path: "/",
+  });
+}
+
+function parseCookieValue(header: string | undefined, key: string): string | null {
+  if (!header) return null;
+  const cookies = header.split(";");
+  for (const cookie of cookies) {
+    const [namePart, ...valueParts] = cookie.split("=");
+    const name = String(namePart || "").trim();
+    if (name !== key) continue;
+    const rawValue = valueParts.join("=").trim();
+    if (!rawValue) return null;
+    try {
+      return decodeURIComponent(rawValue);
+    } catch {
+      return rawValue;
+    }
+  }
+  return null;
+}
+
 function readAuthToken(req: Request): string | null {
   const raw = req.headers.authorization;
-  if (!raw || !raw.startsWith(AUTH_HEADER_PREFIX)) return null;
-  return raw.slice(AUTH_HEADER_PREFIX.length).trim();
+  if (raw && raw.startsWith(AUTH_HEADER_PREFIX)) {
+    return raw.slice(AUTH_HEADER_PREFIX.length).trim();
+  }
+  const cookieHeader = typeof req.headers.cookie === "string" ? req.headers.cookie : undefined;
+  return parseCookieValue(cookieHeader, AUTH_COOKIE_NAME);
 }
 
 function parseAuth(req: Request): AuthPayload | null {
@@ -712,6 +758,7 @@ export function registerMongoApi(app: Express) {
 
       await ensureUserDocumentFromAccount(account);
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+      setAuthCookie(res, token);
       clearAuthFailures(authKey);
 
       return res.status(201).json({
@@ -804,6 +851,7 @@ export function registerMongoApi(app: Express) {
 
       await ensureUserDocumentFromAccount(account);
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+      setAuthCookie(res, token);
       clearAuthFailures(authKey);
 
       return res.status(200).json({
@@ -833,6 +881,7 @@ export function registerMongoApi(app: Express) {
   });
 
   app.post("/api/auth/logout", async (_req: Request, res: Response) => {
+    clearAuthCookie(res);
     return res.status(200).json({ success: true });
   });
 
@@ -912,6 +961,7 @@ export function registerMongoApi(app: Express) {
       await upsertDataDocument("users", account.uid, profileData, true);
 
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+      setAuthCookie(res, token);
       clearAuthFailures(authKey);
 
       return res.status(200).json({
