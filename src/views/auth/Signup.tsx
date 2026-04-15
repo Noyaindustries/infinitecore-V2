@@ -426,89 +426,40 @@ export default function Signup() {
       const userCredential = await signInWithPopup(auth, provider, {
         email: emailTrim || undefined,
         displayName: formData.fullName.trim() || undefined,
+        companyName: `${formData.fullName.trim() || 'Mon'}'s Company`,
+        industry: 'Non spécifié',
+        size: '1-5',
+        referredBy: referralCode || null,
+        referredByPartnerId: referrerId || null,
+        referredByPartnerName: referrerName?.trim() || null,
       });
-      const user = userCredential.user;
+      const u = userCredential.user as any;
+      const isNew = (userCredential as any).isNew;
 
-      // Check if user exists in Firestore
-      const userDocRef = doc(db, 'users', user.uid);
-      const userDoc = await getDoc(userDocRef);
-
-      if (!userDoc.exists()) {
-        const nameParts = (user.displayName || '').split(' ');
-        const firstName = nameParts[0] || '';
-        const lastName = nameParts.slice(1).join(' ') || '';
-        const isAdminEmail = user.email === 'superadmin@infinitecore.com';
-
-        // Create company
-        const companyId = `comp_${Date.now()}`;
+      if (isNew) {
         try {
-          await setDoc(doc(db, 'companies', companyId), {
-            id: companyId,
-            name: `${firstName}'s Company`,
+          await notifyReferralLeadToCommando({
+            signupUserId: u.uid,
+            firstName: u.displayName?.split(' ')[0] || '',
+            lastName: u.displayName?.split(' ').slice(1).join(' ') || '',
+            email: u.email || '',
+            phone: '',
+            companyName: `${u.displayName || 'Mon'}'s Company`,
             industry: 'Non spécifié',
-            size: '1-5',
-            pack: 'starter',
-            createdAt: new Date().toISOString()
           });
-        } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, `companies/${companyId}`);
-        }
-
-        // Create user profile
-        try {
-          await setDoc(userDocRef, {
-            uid: user.uid,
-            email: user.email || '',
-            firstName: firstName,
-            lastName: lastName,
-            phone: user.phoneNumber || '',
-            role: isAdminEmail ? 'admin' : 'client',
-            companyId: companyId,
-            referredBy: referralCode || null,
-            referredByPartnerId: referrerId || null,
-            referredByPartnerName: referrerName?.trim() || null,
-            createdAt: new Date().toISOString()
-          });
-        } catch (error) {
-          handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}`);
-        }
-
-        await notifyReferralLeadToCommando({
-          signupUserId: user.uid,
-          firstName,
-          lastName,
-          email: user.email || '',
-          phone: user.phoneNumber || '',
-          companyName: `${firstName}'s Company`,
-          industry: 'Non spécifié',
-        });
-        await ensureReferralLeadForPartner({
-          firstName,
-          lastName,
-          email: user.email || '',
-          phone: user.phoneNumber || '',
-          companyName: `${firstName}'s Company`,
-          industry: 'Non spécifié',
-        });
+        } catch (e) { console.error("Lead sync failed", e); }
 
         addClient({
-          name: user.displayName || user.email || 'Nouveau Client',
-          email: user.email || '',
-          company: `${firstName}'s Company`,
+          name: u.displayName || u.email || 'Nouveau Client',
+          email: u.email || '',
+          company: `${u.displayName || 'Mon'}'s Company`,
           pack: 'Pack Essentiel'
         });
 
         setIsSuccess(true);
         await navigateAfterSignup();
       } else {
-        // User already exists, just log them in
-        const profile = userDoc.data();
-        if (!profile) {
-          navigate('/dashboard');
-          return;
-        }
-        const role = typeof profile.role === 'string' ? profile.role : 'client';
-        navigate(homePathForRole(role), { replace: true });
+        navigate(homePathForRole(u.role), { replace: true });
       }
     } catch (error: any) {
       const code = error?.code;

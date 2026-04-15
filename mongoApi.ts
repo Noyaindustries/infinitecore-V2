@@ -785,15 +785,39 @@ export function registerMongoApi(app: Express) {
         return res.status(429).json({ success: false, error: "Trop de tentatives. Réessayez plus tard." });
       }
       const displayName = String(req.body?.displayName || "").trim();
+      const companyName = String(req.body?.companyName || "").trim();
+      const industry = String(req.body?.industry || "").trim();
+      const size = String(req.body?.size || "").trim();
+      const referredBy = req.body?.referredBy ? String(req.body.referredBy) : null;
+      const referredByPartnerId = req.body?.referredByPartnerId ? String(req.body.referredByPartnerId) : null;
+      const referredByPartnerName = req.body?.referredByPartnerName ? String(req.body.referredByPartnerName) : null;
+
       if (!email || !isValidEmail(email)) {
         registerAuthFailure(authKey);
         return res.status(400).json({ success: false, error: "Email requis." });
       }
 
       let account = await prisma.userAccount.findUnique({ where: { email } });
+      const isNew = !account;
+
       if (!account) {
         const [firstName = "", ...last] = displayName.split(" ");
         const uid = `usr_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
+        
+        // Handle company creation if provided
+        let companyId = null;
+        if (companyName) {
+          companyId = `comp_${Date.now()}`;
+          await upsertDataDocument("companies", companyId, {
+            id: companyId,
+            name: companyName,
+            industry: industry || "Non spécifié",
+            size: size || "1-5",
+            pack: "starter",
+            createdAt: new Date().toISOString(),
+          }, false);
+        }
+
         account = await prisma.userAccount.create({
           data: {
             uid,
@@ -802,22 +826,45 @@ export function registerMongoApi(app: Express) {
             lastName: last.join(" "),
             role: "client",
             provider: "google",
+            companyId,
+            referredBy,
             profile: {} as any,
           },
         });
       }
 
-      await ensureUserDocumentFromAccount(account);
+      // Ensure user document exists/is updated with metadata
+      const profileData: Record<string, any> = {
+        uid: account.uid,
+        email: account.email,
+        firstName: account.firstName || "",
+        lastName: account.lastName || "",
+        role: account.role,
+        createdAt: account.createdAt.toISOString(),
+      };
+      
+      if (isNew) {
+        if (account.companyId) profileData.companyId = account.companyId;
+        if (referredBy) profileData.referredBy = referredBy;
+        if (referredByPartnerId) profileData.referredByPartnerId = referredByPartnerId;
+        if (referredByPartnerName) profileData.referredByPartnerName = referredByPartnerName;
+      }
+
+      await upsertDataDocument("users", account.uid, profileData, true);
+
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
       clearAuthFailures(authKey);
 
       return res.status(200).json({
         success: true,
         token,
+        isNew,
         user: {
           uid: account.uid,
           email: account.email,
           displayName: [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email,
+          photoURL: account.photoURL || null,
+          role: account.role,
         },
       });
     } catch (error) {

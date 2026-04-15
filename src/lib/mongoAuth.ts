@@ -142,6 +142,13 @@ export type SignInWithGoogleOptions = {
   email?: string;
   /** Nom affiché côté API (sinon dérivé de la partie locale de l’email). */
   displayName?: string;
+  /** Métadonnées d’inscription (optionnel) */
+  companyName?: string;
+  industry?: string;
+  size?: string;
+  referredBy?: string | null;
+  referredByPartnerId?: string | null;
+  referredByPartnerName?: string | null;
 };
 
 export async function signInWithPopup(
@@ -169,18 +176,29 @@ export async function signInWithPopup(
   const trimmed = email.trim();
   const display =
     String(options?.displayName || "").trim() || trimmed.split("@")[0] || trimmed;
+
   const data = await apiRequest<{
     success: boolean;
     token: string;
-    user: { uid: string; email: string; displayName?: string | null; photoURL?: string | null };
+    isNew: boolean;
+    user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
   }>("/api/auth/google", {
     method: "POST",
-    body: JSON.stringify({ email: trimmed, displayName: display }),
+    body: JSON.stringify({
+      email: trimmed,
+      displayName: display,
+      companyName: options?.companyName,
+      industry: options?.industry,
+      size: options?.size,
+      referredBy: options?.referredBy,
+      referredByPartnerId: options?.referredByPartnerId,
+      referredByPartnerName: options?.referredByPartnerName,
+    }),
   });
   setAuthToken(data.token);
   authState.currentUser = toUser(data.user);
   emitAuthState();
-  return { user: authState.currentUser };
+  return { user: authState.currentUser, isNew: data.isNew };
 }
 
 export async function signOut(_auth: Auth) {
