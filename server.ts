@@ -40,6 +40,17 @@ const ALLOWED_UPLOAD_EXTENSIONS = new Set([
   ".txt",
   ".csv",
 ]);
+const DB_FILE_COLLECTION_PATH = "__file_blobs";
+const DB_FILE_PUBLIC_ID_PREFIX = "dbf/";
+const MAX_DB_FALLBACK_BYTES = 8 * 1024 * 1024; // 8 MB (reste sous la limite Mongo ~16 MB après base64)
+
+function isDbStoredPublicId(publicId: string) {
+  return publicId.startsWith(DB_FILE_PUBLIC_ID_PREFIX);
+}
+
+function dbDocIdFromPublicId(publicId: string) {
+  return publicId.slice(DB_FILE_PUBLIC_ID_PREFIX.length);
+}
 
 function isAllowedUpload(file: Express.Multer.File) {
   const ext = path.extname(file.originalname || "").toLowerCase();
@@ -98,6 +109,8 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   const r2Endpoint =
     appEnv.r2.endpointRaw || (r2AccountId ? `https://${r2AccountId}.r2.cloudflarestorage.com` : "");
   const canUseR2 = Boolean(r2Endpoint && r2AccessKeyId && r2SecretAccessKey && r2Bucket);
+  const isServerlessRuntime = Boolean(process.env.VERCEL || process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  const canUseLocalDiskFallback = !isServerlessRuntime;
 
   if (!canUseR2) {
     console.warn(
@@ -248,6 +261,49 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         });
       }
 
+      if (!canUseLocalDiskFallback) {
+        if (req.file.size > MAX_DB_FALLBACK_BYTES) {
+          return res.status(413).json({
+            success: false,
+            error:
+              "Fichier trop volumineux pour le fallback sans R2 (max 8 MB). " +
+              "Réduisez la taille ou configurez R2 pour les gros fichiers.",
+          });
+        }
+        const dbPublicId = `${DB_FILE_PUBLIC_ID_PREFIX}${objectKey}`;
+        await prisma.dataDocument.upsert({
+          where: {
+            collectionPath_docId: { collectionPath: DB_FILE_COLLECTION_PATH, docId: objectKey },
+          },
+          create: {
+            collectionPath: DB_FILE_COLLECTION_PATH,
+            docId: objectKey,
+            data: {
+              contentBase64: req.file.buffer.toString("base64"),
+              originalName: req.file.originalname,
+              mimetype: req.file.mimetype || "application/octet-stream",
+              size: req.file.size,
+            } as never,
+          },
+          update: {
+            data: {
+              contentBase64: req.file.buffer.toString("base64"),
+              originalName: req.file.originalname,
+              mimetype: req.file.mimetype || "application/octet-stream",
+              size: req.file.size,
+            } as never,
+          },
+        });
+        return res.status(200).json({
+          success: true,
+          url: buildFileUrl(dbPublicId),
+          publicId: dbPublicId,
+          name: req.file.originalname,
+          size: req.file.size,
+          mimetype: req.file.mimetype,
+        });
+      }
+
       // Sans R2 : stockage local (développement / secours)
       const absPath = resolveLocalUploadFile(objectKey);
       if (!absPath) {
@@ -281,6 +337,16 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       if (!safePath) {
         return res.status(400).json({ success: false, error: "publicId manquant." });
       }
+      if (isDbStoredPublicId(safePath)) {
+        const docId = dbDocIdFromPublicId(safePath);
+        if (!docId) {
+          return res.status(400).json({ success: false, error: "publicId invalide." });
+        }
+        await prisma.dataDocument.deleteMany({
+          where: { collectionPath: DB_FILE_COLLECTION_PATH, docId },
+        });
+        return res.status(200).json({ success: true });
+      }
 
       if (canUseR2 && s3) {
         await s3.send(
@@ -290,6 +356,9 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           })
         );
         return res.status(200).json({ success: true });
+      }
+      if (!canUseLocalDiskFallback) {
+        return res.status(404).json({ success: false, error: "Fichier introuvable." });
       }
 
       const absPath = resolveLocalUploadFile(safePath);
@@ -315,8 +384,38 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       if (!safePath) {
         return res.status(400).json({ success: false, error: "publicId manquant." });
       }
+      if (isDbStoredPublicId(safePath)) {
+        const docId = dbDocIdFromPublicId(safePath);
+        if (!docId) {
+          return res.status(400).json({ success: false, error: "publicId invalide." });
+        }
+        const row = await prisma.dataDocument.findUnique({
+          where: { collectionPath_docId: { collectionPath: DB_FILE_COLLECTION_PATH, docId } },
+        });
+        if (!row) {
+          return res.status(404).json({ success: false, error: "Fichier introuvable." });
+        }
+        const data = (row.data as Record<string, unknown>) || {};
+        const encoded = typeof data.contentBase64 === "string" ? data.contentBase64 : "";
+        if (!encoded) {
+          return res.status(404).json({ success: false, error: "Fichier introuvable." });
+        }
+        const mimetype = typeof data.mimetype === "string" ? data.mimetype : mimeFromStorageKey(docId);
+        const originalName =
+          typeof data.originalName === "string" && data.originalName.trim().length > 0
+            ? data.originalName
+            : path.basename(docId);
+        const buffer = Buffer.from(encoded, "base64");
+        res.setHeader("Content-Type", mimetype);
+        res.setHeader("Content-Disposition", `inline; filename="${originalName.replace(/"/g, "")}"`);
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        return res.status(200).send(buffer);
+      }
 
       if (!canUseR2 || !s3) {
+        if (!canUseLocalDiskFallback) {
+          return res.status(404).json({ success: false, error: "Fichier introuvable." });
+        }
         const absPath = resolveLocalUploadFile(safePath);
         if (!absPath) {
           return res.status(400).json({ success: false, error: "Chemin invalide." });

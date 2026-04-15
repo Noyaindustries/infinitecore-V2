@@ -2129,6 +2129,15 @@ var ALLOWED_UPLOAD_EXTENSIONS = /* @__PURE__ */ new Set([
   ".txt",
   ".csv"
 ]);
+var DB_FILE_COLLECTION_PATH = "__file_blobs";
+var DB_FILE_PUBLIC_ID_PREFIX = "dbf/";
+var MAX_DB_FALLBACK_BYTES = 8 * 1024 * 1024;
+function isDbStoredPublicId(publicId) {
+  return publicId.startsWith(DB_FILE_PUBLIC_ID_PREFIX);
+}
+function dbDocIdFromPublicId(publicId) {
+  return publicId.slice(DB_FILE_PUBLIC_ID_PREFIX.length);
+}
 function isAllowedUpload(file) {
   const ext = import_path2.default.extname(file.originalname || "").toLowerCase();
   if (!ALLOWED_UPLOAD_EXTENSIONS.has(ext)) return false;
@@ -2179,6 +2188,8 @@ async function createExpressApplication() {
   const r2PublicBaseUrl = appEnv.r2.publicBaseUrl;
   const r2Endpoint = appEnv.r2.endpointRaw || (r2AccountId ? `https://${r2AccountId}.r2.cloudflarestorage.com` : "");
   const canUseR2 = Boolean(r2Endpoint && r2AccessKeyId && r2SecretAccessKey && r2Bucket);
+  const isServerlessRuntime = Boolean(process.env.VERCEL || process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME);
+  const canUseLocalDiskFallback = !isServerlessRuntime;
   if (!canUseR2) {
     console.warn(
       "[upload] Variables R2 absentes \u2014 mode d\xE9veloppement : fichiers dans .local-uploads/ (non utilis\xE9 en prod sans R2)."
@@ -2308,6 +2319,46 @@ async function createExpressApplication() {
           mimetype: req.file.mimetype
         });
       }
+      if (!canUseLocalDiskFallback) {
+        if (req.file.size > MAX_DB_FALLBACK_BYTES) {
+          return res.status(413).json({
+            success: false,
+            error: "Fichier trop volumineux pour le fallback sans R2 (max 8 MB). R\xE9duisez la taille ou configurez R2 pour les gros fichiers."
+          });
+        }
+        const dbPublicId = `${DB_FILE_PUBLIC_ID_PREFIX}${objectKey}`;
+        await prisma.dataDocument.upsert({
+          where: {
+            collectionPath_docId: { collectionPath: DB_FILE_COLLECTION_PATH, docId: objectKey }
+          },
+          create: {
+            collectionPath: DB_FILE_COLLECTION_PATH,
+            docId: objectKey,
+            data: {
+              contentBase64: req.file.buffer.toString("base64"),
+              originalName: req.file.originalname,
+              mimetype: req.file.mimetype || "application/octet-stream",
+              size: req.file.size
+            }
+          },
+          update: {
+            data: {
+              contentBase64: req.file.buffer.toString("base64"),
+              originalName: req.file.originalname,
+              mimetype: req.file.mimetype || "application/octet-stream",
+              size: req.file.size
+            }
+          }
+        });
+        return res.status(200).json({
+          success: true,
+          url: buildFileUrl(dbPublicId),
+          publicId: dbPublicId,
+          name: req.file.originalname,
+          size: req.file.size,
+          mimetype: req.file.mimetype
+        });
+      }
       const absPath = resolveLocalUploadFile(objectKey);
       if (!absPath) {
         return res.status(400).json({ success: false, error: "Chemin de fichier invalide." });
@@ -2335,6 +2386,16 @@ async function createExpressApplication() {
       if (!safePath) {
         return res.status(400).json({ success: false, error: "publicId manquant." });
       }
+      if (isDbStoredPublicId(safePath)) {
+        const docId = dbDocIdFromPublicId(safePath);
+        if (!docId) {
+          return res.status(400).json({ success: false, error: "publicId invalide." });
+        }
+        await prisma.dataDocument.deleteMany({
+          where: { collectionPath: DB_FILE_COLLECTION_PATH, docId }
+        });
+        return res.status(200).json({ success: true });
+      }
       if (canUseR2 && s3) {
         await s3.send(
           new import_client_s32.DeleteObjectCommand({
@@ -2343,6 +2404,9 @@ async function createExpressApplication() {
           })
         );
         return res.status(200).json({ success: true });
+      }
+      if (!canUseLocalDiskFallback) {
+        return res.status(404).json({ success: false, error: "Fichier introuvable." });
       }
       const absPath = resolveLocalUploadFile(safePath);
       if (!absPath) {
@@ -2366,7 +2430,34 @@ async function createExpressApplication() {
       if (!safePath) {
         return res.status(400).json({ success: false, error: "publicId manquant." });
       }
+      if (isDbStoredPublicId(safePath)) {
+        const docId = dbDocIdFromPublicId(safePath);
+        if (!docId) {
+          return res.status(400).json({ success: false, error: "publicId invalide." });
+        }
+        const row = await prisma.dataDocument.findUnique({
+          where: { collectionPath_docId: { collectionPath: DB_FILE_COLLECTION_PATH, docId } }
+        });
+        if (!row) {
+          return res.status(404).json({ success: false, error: "Fichier introuvable." });
+        }
+        const data = row.data || {};
+        const encoded = typeof data.contentBase64 === "string" ? data.contentBase64 : "";
+        if (!encoded) {
+          return res.status(404).json({ success: false, error: "Fichier introuvable." });
+        }
+        const mimetype = typeof data.mimetype === "string" ? data.mimetype : mimeFromStorageKey(docId);
+        const originalName = typeof data.originalName === "string" && data.originalName.trim().length > 0 ? data.originalName : import_path2.default.basename(docId);
+        const buffer = Buffer.from(encoded, "base64");
+        res.setHeader("Content-Type", mimetype);
+        res.setHeader("Content-Disposition", `inline; filename="${originalName.replace(/"/g, "")}"`);
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        return res.status(200).send(buffer);
+      }
       if (!canUseR2 || !s3) {
+        if (!canUseLocalDiskFallback) {
+          return res.status(404).json({ success: false, error: "Fichier introuvable." });
+        }
         const absPath = resolveLocalUploadFile(safePath);
         if (!absPath) {
           return res.status(400).json({ success: false, error: "Chemin invalide." });

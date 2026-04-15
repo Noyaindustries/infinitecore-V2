@@ -41,6 +41,10 @@ export function uploadFile(
         /* ignore */
       }
       if (xhr.status < 200 || xhr.status >= 300) {
+        if (xhr.status === 401) {
+          reject(new Error("Session expirée. Reconnectez-vous puis réessayez l'upload."));
+          return;
+        }
         const detail = errBody?.error ? ` ${errBody.error}` : "";
         reject(new Error(`Upload échoué (${xhr.status}).${detail}`));
         return;
