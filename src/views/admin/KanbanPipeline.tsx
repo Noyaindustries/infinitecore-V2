@@ -116,6 +116,21 @@ export default function KanbanPipeline() {
     setIsModalOpen(true);
   };
 
+  const closeAddModal = () => {
+    if (isSubmitting) return;
+    const hasDraft = title.trim().length > 0 || client.trim().length > 0;
+    if (hasDraft) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    setIsModalOpen(false);
+    setTitle('');
+    setClient('');
+    setActiveColumnId(null);
+  };
+
   const handleSendContract = () => {
     toast.promise(
       new Promise((resolve) => setTimeout(resolve, 1500)),
@@ -413,7 +428,7 @@ export default function KanbanPipeline() {
             >
               <div className="flex justify-between items-center p-8 border-b border-border-subtle bg-surface-primary/50">
                 <h3 className="text-xl font-black text-text-primary uppercase tracking-tight">Injection Radar</h3>
-                <button title="Fermer la fenêtre" aria-label="Fermer la fenêtre" onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
+                <button title="Fermer la fenêtre" aria-label="Fermer la fenêtre" onClick={closeAddModal} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
                   <X size={24} />
                 </button>
               </div>
@@ -442,7 +457,7 @@ export default function KanbanPipeline() {
                 <div className="pt-4 flex justify-end gap-5">
                   <button 
                     type="button"
-                    onClick={() => setIsModalOpen(false)}
+                    onClick={closeAddModal}
                     className="px-6 py-3 text-[10px] font-black uppercase tracking-widest text-text-muted hover:text-text-primary transition-all"
                   >
                     Annuler

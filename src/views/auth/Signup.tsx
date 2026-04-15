@@ -87,6 +87,19 @@ export default function Signup() {
     confirmPassword: '',
   });
 
+  const handleCloseForm = () => {
+    const hasDraft = Object.values(formData).some((value) => value.trim().length > 0);
+    const shouldConfirm =
+      hasDraft || currentStep > 1 || awaitingEmailVerification || googleVerificationPending;
+    if (shouldConfirm) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    navigate('/');
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const ref = params.get('ref');
@@ -900,6 +913,13 @@ export default function Signup() {
               )}
 
               <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:flex-wrap sm:items-stretch">
+                <button
+                  type="button"
+                  onClick={handleCloseForm}
+                  className="w-full shrink-0 rounded-xl border border-[#2d2d3d] px-4 py-3 text-sm font-semibold text-[#9CA3AF] transition-colors hover:bg-white/5 hover:text-white sm:min-w-0 sm:flex-1"
+                >
+                  Fermer le formulaire
+                </button>
                 {currentStep > 1 && (
                   <button
                     type="button"

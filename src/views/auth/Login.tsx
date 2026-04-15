@@ -47,6 +47,18 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
   const [referrerId, setReferrerId] = useState<string | null>(null);
   const [resettingPassword, setResettingPassword] = useState(false);
 
+  const handleCloseForm = () => {
+    const shouldConfirm =
+      email.trim().length > 0 || password.trim().length > 0 || verificationCode.trim().length > 0 || loginStep > 1;
+    if (shouldConfirm) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    navigate('/');
+  };
+
   const getPartnerLabel = (data: { firstName?: string; lastName?: string; email?: string }, fallbackId: string) => {
     const fullName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
     return fullName || data.email || `Partenaire ${fallbackId}`;
@@ -521,14 +533,24 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
               </div>
             ) : null}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-noya-orange px-4 py-1.5 text-[13px] font-bold text-[#0b0f19] transition-colors hover:brightness-105 disabled:opacity-60 sm:py-2 sm:text-sm"
-            >
-              {loading ? 'Connexion…' : loginStep === 1 ? 'Continuer' : loginStep === 2 ? 'Recevoir mon code' : 'Valider le code'}
-              <ArrowRight className="h-4 w-4" />
-            </button>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={handleCloseForm}
+                disabled={loading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-surface-secondary px-4 py-1.5 text-[13px] font-semibold text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary disabled:opacity-60 sm:py-2 sm:text-sm"
+              >
+                Fermer le formulaire
+              </button>
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-noya-orange px-4 py-1.5 text-[13px] font-bold text-[#0b0f19] transition-colors hover:brightness-105 disabled:opacity-60 sm:py-2 sm:text-sm"
+              >
+                {loading ? 'Connexion…' : loginStep === 1 ? 'Continuer' : loginStep === 2 ? 'Recevoir mon code' : 'Valider le code'}
+                <ArrowRight className="h-4 w-4" />
+              </button>
+            </div>
 
             <div className="text-center">
               <Link to="/reset-password" className="text-[10px] text-text-muted transition-colors hover:text-text-primary sm:text-[11px]">

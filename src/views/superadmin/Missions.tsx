@@ -87,6 +87,53 @@ export default function SuperAdminMissions() {
     return () => { unsubMissions(); unsubDevs(); unsubClients(); unsubServices(); };
   }, []);
 
+  const closeCreateModal = () => {
+    if (isSubmitting) return;
+    const hasDraft =
+      form.title.trim().length > 0 ||
+      form.assignedTo.trim().length > 0 ||
+      form.clientId.trim().length > 0 ||
+      form.deadline.trim().length > 0 ||
+      form.description.trim().length > 0 ||
+      form.services.length > 0;
+    if (hasDraft) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    setIsModalOpen(false);
+  };
+
+  const closeEditModal = () => {
+    if (isSubmitting) return;
+    if (editingMission) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les modifications non enregistrées seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    setIsEditModalOpen(false);
+    setEditingMission(null);
+  };
+
+  const closeServiceModal = () => {
+    if (isSubmitting) return;
+    const hasDraft =
+      serviceForm.name.trim().length > 0 ||
+      Number(serviceForm.price) > 0 ||
+      Number(serviceForm.devCommission) > 0;
+    if (hasDraft) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    setIsServiceModalOpen(false);
+    setEditingService(null);
+    setServiceForm({ name: '', price: 0, devCommission: 0 });
+  };
+
   const getDevName = (uid: string) => {
     const dev = developers.find(d => d.id === uid);
     return dev ? `${dev.firstName || ''} ${dev.lastName || ''}`.trim() || dev.email : '—';
@@ -642,7 +689,7 @@ export default function SuperAdminMissions() {
           <div className="bg-surface-secondary rounded-3xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden border border-border-medium animate-in fade-in zoom-in duration-300">
             <div className="flex justify-between items-center p-8 border-b border-border-subtle bg-surface-primary/50 shrink-0">
               <h2 className="text-xl font-black text-text-primary uppercase tracking-widest">Nouveau Dossier Technique</h2>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
+              <button onClick={closeCreateModal} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
                 <X size={24} />
               </button>
             </div>
@@ -809,7 +856,7 @@ export default function SuperAdminMissions() {
 
               <div className="flex gap-4 pt-4 shrink-0">
                 <button
-                  type="button" onClick={() => setIsModalOpen(false)}
+                  type="button" onClick={closeCreateModal}
                   className="flex-1 px-8 py-4 text-text-secondary font-black uppercase tracking-widest hover:text-text-primary transition-all"
                 >
                   Avorter
@@ -832,10 +879,7 @@ export default function SuperAdminMissions() {
             <div className="flex justify-between items-center p-8 border-b border-border-subtle bg-surface-primary/50 shrink-0">
               <h2 className="text-xl font-black text-text-primary uppercase tracking-widest">Ajustement Mission</h2>
               <button 
-                onClick={() => {
-                  setIsEditModalOpen(false);
-                  setEditingMission(null);
-                }}
+                onClick={closeEditModal}
                 className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary"
               >
                 <X size={24} />
@@ -995,10 +1039,7 @@ export default function SuperAdminMissions() {
               <div className="flex gap-4 pt-4 shrink-0">
                 <button
                   type="button" 
-                  onClick={() => {
-                    setIsEditModalOpen(false);
-                    setEditingMission(null);
-                  }}
+                  onClick={closeEditModal}
                   className="flex-1 px-8 py-4 text-text-secondary font-black uppercase tracking-widest hover:text-text-primary transition-all"
                 >
                   Abandonner
@@ -1023,10 +1064,7 @@ export default function SuperAdminMissions() {
                 {editingService ? 'Ajuster Service' : 'Nouveau Service'}
               </h2>
               <button 
-                onClick={() => {
-                  setIsServiceModalOpen(false);
-                  setEditingService(null);
-                }} 
+                onClick={closeServiceModal} 
                 className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary"
               >
                 <X size={24} />
@@ -1064,7 +1102,7 @@ export default function SuperAdminMissions() {
               <div className="flex gap-4 pt-4">
                 <button
                   type="button"
-                  onClick={() => setIsServiceModalOpen(false)}
+                  onClick={closeServiceModal}
                   className="flex-1 px-6 py-3 text-text-secondary font-black uppercase tracking-widest hover:text-text-primary transition-all"
                 >
                   Annuler

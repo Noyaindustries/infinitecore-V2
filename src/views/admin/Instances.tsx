@@ -115,6 +115,31 @@ export default function Instances() {
     setIsModalOpen(true);
   };
 
+  const closeCreateModal = () => {
+    if (isSubmitting) return;
+    const hasDraft = newInstance.name.trim().length > 0 || newInstance.type.trim().length > 0;
+    if (hasDraft) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    setIsModalOpen(false);
+    setNewInstance({ name: '', type: '' });
+  };
+
+  const closeEditModal = () => {
+    if (isSubmitting) return;
+    if (editingInstance) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les modifications non enregistrées seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    setIsEditModalOpen(false);
+    setEditingInstance(null);
+  };
+
   return (
     <div className="space-y-8 px-2 py-4">
       <div className="flex justify-between items-center px-2">
@@ -237,7 +262,7 @@ export default function Instances() {
             >
               <div className="flex justify-between items-center p-8 border-b border-border-subtle bg-surface-primary/50">
                 <h3 className="text-xl font-black text-text-primary uppercase tracking-tight">Déploiement Vecteur</h3>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
+                <button onClick={closeCreateModal} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
                   <X size={24} />
                 </button>
               </div>
@@ -272,7 +297,7 @@ export default function Instances() {
                 <div className="pt-4 flex justify-end gap-5">
                   <button
                     type="button"
-                    onClick={() => setIsModalOpen(false)}
+                    onClick={closeCreateModal}
                     className="px-6 py-3 text-[10px] font-black uppercase tracking-widest text-text-muted hover:text-text-primary transition-all"
                   >
                     Annuler
@@ -307,7 +332,7 @@ export default function Instances() {
             >
               <div className="flex justify-between items-center p-8 border-b border-border-subtle bg-surface-primary/50">
                 <h3 className="text-xl font-black text-text-primary uppercase tracking-tight">Paramètres Vecteur</h3>
-                <button onClick={() => setIsEditModalOpen(false)} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
+                <button onClick={closeEditModal} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
                   <X size={24} />
                 </button>
               </div>
@@ -353,7 +378,7 @@ export default function Instances() {
                 <div className="pt-4 flex justify-end gap-5">
                   <button
                     type="button"
-                    onClick={() => setIsEditModalOpen(false)}
+                    onClick={closeEditModal}
                     className="px-6 py-3 text-[10px] font-black uppercase tracking-widest text-text-muted hover:text-text-primary transition-all"
                   >
                     Annuler

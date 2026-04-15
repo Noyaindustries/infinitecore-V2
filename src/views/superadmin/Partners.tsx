@@ -354,6 +354,35 @@ export default function SuperAdminPartners() {
     setIsModalOpen(false);
   };
 
+  const closeAddModal = (force = false) => {
+    if (isSubmitting) return;
+    const hasDraft =
+      !generatedPassword &&
+      (newPartner.name.trim().length > 0 ||
+        newPartner.company.trim().length > 0 ||
+        newPartner.email.trim().length > 0 ||
+        newPartner.phone.trim().length > 0);
+    if (!force && hasDraft) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    resetModal();
+  };
+
+  const closeEditModal = () => {
+    if (isSubmitting) return;
+    if (editingPartner) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les modifications non enregistrées seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    setIsEditModalOpen(false);
+    setEditingPartner(null);
+  };
+
   const copyPassword = () => {
     if (generatedPassword) {
       navigator.clipboard.writeText(generatedPassword);
@@ -599,7 +628,7 @@ export default function SuperAdminPartners() {
             <div className="flex justify-between items-center p-8 border-b border-border-subtle bg-surface-primary/50">
               <h2 className="text-xl font-black text-text-primary uppercase tracking-widest">Nouveau Partenaire</h2>
               <button 
-                onClick={resetModal}
+                onClick={() => closeAddModal()}
                 className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary"
                 title="Fermer"
               >
@@ -638,7 +667,7 @@ export default function SuperAdminPartners() {
                 </div>
                 
                 <button 
-                  onClick={resetModal}
+                  onClick={() => closeAddModal(true)}
                   className="w-full px-4 py-3 bg-noya-blue text-noya-black rounded-xl font-black uppercase tracking-widest text-[10px] hover:scale-105 transition-all shadow-lg"
                 >
                   Fermer la session
@@ -695,7 +724,7 @@ export default function SuperAdminPartners() {
                 <div className="pt-4 flex gap-3">
                   <button 
                     type="button"
-                    onClick={resetModal}
+                    onClick={() => closeAddModal()}
                     className="flex-1 px-4 py-3 bg-surface-tertiary text-text-secondary rounded-xl font-black uppercase tracking-widest text-[10px] hover:bg-surface-primary transition-all"
                   >
                     Annuler
@@ -720,10 +749,7 @@ export default function SuperAdminPartners() {
             <div className="flex justify-between items-center p-8 border-b border-border-subtle bg-surface-primary/50">
               <h2 className="text-xl font-black text-text-primary uppercase tracking-widest">Ajustement Profil</h2>
               <button 
-                onClick={() => {
-                  setIsEditModalOpen(false);
-                  setEditingPartner(null);
-                }}
+                onClick={closeEditModal}
                 className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary"
                 title="Fermer"
               >
@@ -776,7 +802,7 @@ export default function SuperAdminPartners() {
               <div className="pt-4 flex gap-3">
                 <button 
                   type="button"
-                  onClick={() => setIsEditModalOpen(false)}
+                  onClick={closeEditModal}
                   className="flex-1 px-4 py-3 bg-surface-tertiary text-text-secondary rounded-xl font-black uppercase tracking-widest text-[10px] transition-all"
                 >
                   Annuler

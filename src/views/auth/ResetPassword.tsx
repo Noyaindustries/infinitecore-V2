@@ -23,6 +23,21 @@ export default function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const handleCloseForm = () => {
+    const shouldConfirm =
+      email.trim().length > 0 ||
+      token.trim().length > 0 ||
+      newPassword.trim().length > 0 ||
+      confirmPassword.trim().length > 0;
+    if (shouldConfirm) {
+      const confirmed = window.confirm(
+        "Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues."
+      );
+      if (!confirmed) return;
+    }
+    navigate("/");
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !token.trim()) {
@@ -131,14 +146,24 @@ export default function ResetPassword() {
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full flex justify-center items-center gap-2 py-3 px-4 rounded-xl text-sm font-bold text-white bg-noya-accent hover:bg-[#e06b15] disabled:opacity-60 transition-colors"
-          >
-            {loading ? "Mise à jour..." : "Mettre à jour le mot de passe"}
-            <ArrowRight className="h-4 w-4" />
-          </button>
+          <div className="space-y-2">
+            <button
+              type="button"
+              onClick={handleCloseForm}
+              disabled={loading}
+              className="w-full flex justify-center items-center gap-2 py-3 px-4 rounded-xl text-sm font-semibold text-gray-200 border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-60 transition-colors"
+            >
+              Fermer le formulaire
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex justify-center items-center gap-2 py-3 px-4 rounded-xl text-sm font-bold text-white bg-noya-accent hover:bg-[#e06b15] disabled:opacity-60 transition-colors"
+            >
+              {loading ? "Mise à jour..." : "Mettre à jour le mot de passe"}
+              <ArrowRight className="h-4 w-4" />
+            </button>
+          </div>
         </form>
 
         <p className="mt-5 text-center text-xs text-gray-500">

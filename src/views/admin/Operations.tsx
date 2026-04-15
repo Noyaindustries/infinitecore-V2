@@ -168,9 +168,39 @@ export default function Operations() {
     setIsResourceModalOpen(true);
   };
 
-  const closeResourceModal = () => {
+  const closeResourceModal = (force = false) => {
+    if (resourceUploadProgress !== null) {
+      toast.error("Injection en cours, veuillez patienter.");
+      return;
+    }
+    const hasDraft =
+      resourceTitle.trim().length > 0 ||
+      resourceDescription.trim().length > 0 ||
+      resourceSelectedFile !== null;
+    if (!force && hasDraft) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
+      );
+      if (!confirmed) return;
+    }
     resetResourceInjectForm();
     setIsResourceModalOpen(false);
+  };
+
+  const closeAssignModal = () => {
+    const hasDraft =
+      newAssignment.devId.trim().length > 0 ||
+      newAssignment.title.trim().length > 0 ||
+      newAssignment.clientId.trim().length > 0 ||
+      newAssignment.deadline.trim().length > 0;
+    if (hasDraft) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    setIsAssignModalOpen(false);
+    setNewAssignment({ devId: '', title: '', clientId: '', deadline: '' });
   };
 
   const onResourceFilePicked = (fileList: FileList | null) => {
@@ -213,7 +243,7 @@ export default function Operations() {
         createdAt: new Date().toISOString(),
       });
       toast.success('Ressource injectée dans la bibliothèque.');
-      closeResourceModal();
+      closeResourceModal(true);
     } catch (err) {
       console.error('[Operations] inject resource:', err);
       toast.error("Impossible d'injecter la ressource. Vérifiez le fichier et réessayez.");
@@ -721,7 +751,7 @@ export default function Operations() {
                   <button
                     type="button"
                     title="Fermer"
-                    onClick={closeResourceModal}
+                    onClick={() => closeResourceModal()}
                     className="shrink-0 rounded-xl border border-white/10 p-2 text-text-muted transition-colors hover:border-luxe-champagne/30 hover:text-luxe-champagne-bright"
                   >
                     <X size={20} aria-hidden />
@@ -871,7 +901,7 @@ export default function Operations() {
                 <div className="flex flex-wrap items-center justify-end gap-3 border-t border-white/8 pt-5">
                   <button
                     type="button"
-                    onClick={closeResourceModal}
+                    onClick={() => closeResourceModal()}
                     disabled={resourceUploadProgress !== null}
                     className="rounded-xl border border-white/10 px-5 py-2.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted transition-colors hover:text-text-primary disabled:opacity-50"
                   >
@@ -904,7 +934,7 @@ export default function Operations() {
             >
               <div className="flex justify-between items-center p-8 border-b border-border-subtle bg-surface-primary/50">
                 <h3 className="text-xl font-black text-text-primary uppercase tracking-tight">Déploiement Mission</h3>
-                <button onClick={() => setIsAssignModalOpen(false)} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
+                <button onClick={closeAssignModal} className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary">
                   <X size={24} />
                 </button>
               </div>
@@ -964,7 +994,7 @@ export default function Operations() {
                 <div className="pt-4 flex justify-end gap-5">
                   <button
                     type="button"
-                    onClick={() => setIsAssignModalOpen(false)}
+                    onClick={closeAssignModal}
                     className="px-6 py-3 text-[10px] font-black uppercase tracking-widest text-text-muted hover:text-text-primary transition-all"
                   >
                     Annuler

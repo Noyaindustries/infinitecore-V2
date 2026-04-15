@@ -350,12 +350,43 @@ export default function Finance() {
     }
   };
 
-  const closePrestationModal = () => {
+  const closePrestationModal = (force = false) => {
+    if (isSubmitting) return;
+    const hasDraft =
+      prestationForm.clientId.trim().length > 0 ||
+      prestationForm.title.trim().length > 0 ||
+      prestationForm.amount.trim().length > 0 ||
+      prestationCreateStep > 1;
+    if (!force && hasDraft) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
+      );
+      if (!confirmed) return;
+    }
     setIsModalOpen(false);
     setPrestationEdit(null);
     setPrestationForm(emptyPrestationForm());
     setPrestationCreateStep(1);
     setClientFilter('');
+  };
+
+  const closeInvoiceSettingsModal = () => {
+    const lines = addressText
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean);
+    const normalizedDraft: InvoicePdfSettings = {
+      ...invoiceDraft,
+      companyAddressLines: lines.length ? lines : [...DEFAULT_INVOICE_SETTINGS.companyAddressLines],
+    };
+    const hasDraft = JSON.stringify(normalizedDraft) !== JSON.stringify(mergedInvoiceSettings);
+    if (hasDraft) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les modifications non enregistrées seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    setInvoiceSettingsOpen(false);
   };
 
   const openCreatePrestationModal = () => {
@@ -580,7 +611,7 @@ export default function Finance() {
       toast.success(
         'Prestation créée : cycle facture « génération » — émettez la facture PDF, puis encaissez quand le client a payé.'
       );
-      closePrestationModal();
+      closePrestationModal(true);
     } catch (error) {
       console.error(error);
       toast.error('Erreur lors de la création de la prestation.');
@@ -635,7 +666,7 @@ export default function Finance() {
       }
 
       toast.success('Prestation mise à jour.');
-      closePrestationModal();
+      closePrestationModal(true);
     } catch (error) {
       console.error(error);
       toast.error('Erreur lors de la mise à jour.');
@@ -1010,7 +1041,7 @@ export default function Finance() {
                 </div>
                 <button
                   type="button"
-                  onClick={closePrestationModal}
+                  onClick={() => closePrestationModal()}
                   aria-label="Fermer"
                   className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary shrink-0"
                 >
@@ -1080,7 +1111,7 @@ export default function Finance() {
                     <div className="mt-auto pt-4 flex flex-wrap justify-end gap-3 border-t border-border-subtle">
                       <button
                         type="button"
-                        onClick={closePrestationModal}
+                        onClick={() => closePrestationModal()}
                         className="px-6 py-3 text-[10px] font-black uppercase tracking-widest text-text-muted hover:text-text-primary transition-all"
                       >
                         Annuler
@@ -1203,7 +1234,7 @@ export default function Finance() {
                     <div className="p-6 sm:p-8 pt-4 border-t border-border-subtle bg-surface-primary/35 shrink-0 flex flex-wrap justify-end gap-3">
                       <button
                         type="button"
-                        onClick={closePrestationModal}
+                        onClick={() => closePrestationModal()}
                         className="px-6 py-3 text-[10px] font-black uppercase tracking-widest text-text-muted hover:text-text-primary transition-all"
                       >
                         Annuler
@@ -1252,7 +1283,7 @@ export default function Finance() {
                 </div>
                 <button
                   type="button"
-                  onClick={() => setInvoiceSettingsOpen(false)}
+                  onClick={closeInvoiceSettingsModal}
                   aria-label="Fermer"
                   className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary shrink-0"
                 >
@@ -1398,7 +1429,7 @@ export default function Finance() {
                 <div className="pt-2 flex justify-end gap-4 shrink-0">
                   <button
                     type="button"
-                    onClick={() => setInvoiceSettingsOpen(false)}
+                    onClick={closeInvoiceSettingsModal}
                     className="px-6 py-3 text-[10px] font-black uppercase tracking-widest text-text-muted hover:text-text-primary transition-all"
                   >
                     Annuler

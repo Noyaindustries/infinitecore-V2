@@ -145,28 +145,21 @@ export default function PartnerClients() {
     return true;
   };
 
-  const isFormReadyForSubmit = (): boolean => {
-    if (!form.firstName.trim() || !form.lastName.trim() || !form.companyName.trim() || !form.sector.trim() || !form.city.trim() || !form.employeesRange.trim() || !form.whatsapp.trim()) {
-      return false;
-    }
-    if (form.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
-      return false;
-    }
-    if (!confirmLeadSubmission) {
-      return false;
-    }
-    return true;
-  };
-
   const attemptCloseForm = () => {
-    if (currentStep < 3) {
-      toast.error('Terminez au moins jusqu’à la dernière étape avant de fermer.');
+    if (submitting) {
+      toast.error('Soumission en cours, veuillez patienter.');
       return;
     }
-    if (!isFormReadyForSubmit()) {
-      toast.error('Complétez les champs requis avant de fermer le formulaire.');
-      return;
+
+    const hasDraft = Object.values(form).some((value) => String(value).trim().length > 0);
+    const shouldConfirm = hasDraft || currentStep > 1 || confirmLeadSubmission;
+    if (shouldConfirm) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
+      );
+      if (!confirmed) return;
     }
+
     setIsModalOpen(false);
     resetForm();
   };

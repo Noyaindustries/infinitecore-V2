@@ -139,6 +139,35 @@ export default function SuperAdminDevelopers() {
     setIsModalOpen(false);
   };
 
+  const closeAddModal = (force = false) => {
+    if (isSubmitting) return;
+    const hasDraft =
+      !generatedPassword &&
+      (newDev.name.trim().length > 0 ||
+        newDev.role.trim().length > 0 ||
+        newDev.email.trim().length > 0 ||
+        newDev.phone.trim().length > 0);
+    if (!force && hasDraft) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    resetModal();
+  };
+
+  const closeEditModal = () => {
+    if (isSubmitting) return;
+    if (editingDev) {
+      const confirmed = window.confirm(
+        'Voulez-vous vraiment fermer ce formulaire ? Les modifications non enregistrées seront perdues.'
+      );
+      if (!confirmed) return;
+    }
+    setIsEditModalOpen(false);
+    setEditingDev(null);
+  };
+
   const copyPassword = () => {
     if (generatedPassword) {
       navigator.clipboard.writeText(generatedPassword);
@@ -245,7 +274,7 @@ export default function SuperAdminDevelopers() {
             <div className="flex justify-between items-center p-8 border-b border-border-subtle bg-surface-primary/50">
               <h2 className="text-xl font-black text-text-primary uppercase tracking-widest">Nouveau Staff Technique</h2>
               <button 
-                onClick={resetModal}
+                onClick={() => closeAddModal()}
                 className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary"
               >
                 <X size={20} />
@@ -283,7 +312,7 @@ export default function SuperAdminDevelopers() {
                 </div>
                 
                 <button 
-                  onClick={resetModal}
+                  onClick={() => closeAddModal(true)}
                   className="w-full px-8 py-4 bg-noya-blue text-noya-black rounded-2xl font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg"
                 >
                   Terminer la configuration
@@ -340,7 +369,7 @@ export default function SuperAdminDevelopers() {
                 <div className="pt-4 flex gap-4">
                   <button 
                     type="button"
-                    onClick={resetModal}
+                    onClick={() => closeAddModal()}
                     className="flex-1 px-6 py-3 text-text-muted font-black uppercase tracking-widest hover:text-text-primary transition-all"
                   >
                     Annuler
@@ -365,10 +394,7 @@ export default function SuperAdminDevelopers() {
             <div className="flex justify-between items-center p-8 border-b border-border-subtle bg-surface-primary/50">
               <h2 className="text-xl font-black text-text-primary uppercase tracking-widest">Édition Profil</h2>
               <button 
-                onClick={() => {
-                  setIsEditModalOpen(false);
-                  setEditingDev(null);
-                }}
+                onClick={closeEditModal}
                 className="p-2 hover:bg-surface-tertiary rounded-full transition-all text-text-secondary"
               >
                 <X size={20} />
@@ -410,7 +436,7 @@ export default function SuperAdminDevelopers() {
               <div className="pt-4 flex gap-4">
                 <button 
                   type="button"
-                  onClick={() => setIsEditModalOpen(false)}
+                  onClick={closeEditModal}
                   className="flex-1 px-6 py-3 text-text-muted font-black uppercase tracking-widest hover:text-text-primary transition-all"
                 >
                   Annuler
