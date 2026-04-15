@@ -50,8 +50,7 @@ export default function Signup() {
       navigate('/dashboard', { replace: true });
     }
   };
-  const [showPassword, setShowPassword] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+   const [isLoading, setIsLoading] = useState(false);
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
   const [referralCode, setReferralCode] = useState<string | null>(null);
   const [referrerName, setReferrerName] = useState<string | null>(null);
