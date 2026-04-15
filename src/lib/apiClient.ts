@@ -2,8 +2,14 @@ import { apiUrl } from "./apiBase";
 
 const AUTH_TOKEN_KEY = "ic_auth_token";
 
-/** Évite un spinner infini si l’API ou Mongo ne répond pas (réseau, cold start, etc.). */
-const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
+/**
+ * Plafond pour toute la requête (fetch + lecture du corps).
+ * `AbortController` seul ne garantit pas l’arrêt si le TCP reste bloqué ou si `response.text()` pend.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 25_000;
+
+const TIMEOUT_MESSAGE =
+  "Délai dépassé : l’API ou la base de données ne répond pas. Vérifiez DATABASE_URL (Mongo, IP Atlas), le réseau, ou réessayez après un cold start Vercel.";
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -19,7 +25,17 @@ export function setAuthToken(token: string | null) {
   localStorage.setItem(AUTH_TOKEN_KEY, token);
 }
 
-export async function apiRequest<T>(url: string, init: RequestInit = {}): Promise<T> {
+function mergeAbortSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
+  if (a.aborted) return a;
+  if (b.aborted) return b;
+  const merged = new AbortController();
+  const onAbort = () => merged.abort();
+  a.addEventListener("abort", onAbort, { once: true });
+  b.addEventListener("abort", onAbort, { once: true });
+  return merged.signal;
+}
+
+async function fetchAndParse<T>(url: string, init: RequestInit, fetchSignal: AbortSignal): Promise<T> {
   const token = getAuthToken();
   const headers = new Headers(init.headers || {});
   if (!headers.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
@@ -27,31 +43,7 @@ export async function apiRequest<T>(url: string, init: RequestInit = {}): Promis
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
-  const resolvedUrl = url.startsWith("http://") || url.startsWith("https://") ? url : apiUrl(url);
-
-  const controller = new AbortController();
-  const upstream = init.signal;
-  if (upstream) {
-    if (upstream.aborted) controller.abort();
-    else upstream.addEventListener("abort", () => controller.abort(), { once: true });
-  }
-  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS);
-
-  let response: Response;
-  try {
-    response = await fetch(resolvedUrl, { ...init, headers, signal: controller.signal });
-  } catch (e) {
-    const name = e instanceof Error ? e.name : "";
-    if (name === "AbortError") {
-      throw new Error(
-        "Délai dépassé : l’API ou la base de données ne répond pas assez vite. Vérifiez DATABASE_URL (Mongo), le réseau, ou réessayez après un cold start Vercel."
-      );
-    }
-    throw e;
-  } finally {
-    clearTimeout(timeoutId);
-  }
-
+  const response = await fetch(url, { ...init, headers, signal: fetchSignal });
   const text = await response.text();
   let parsed: unknown = {};
   if (text) {
@@ -84,4 +76,34 @@ export async function apiRequest<T>(url: string, init: RequestInit = {}): Promis
     );
   }
   return parsed as T;
+}
+
+export async function apiRequest<T>(url: string, init: RequestInit = {}): Promise<T> {
+  const resolvedUrl = url.startsWith("http://") || url.startsWith("https://") ? url : apiUrl(url);
+
+  const deadlineMs = DEFAULT_REQUEST_TIMEOUT_MS;
+  const outer = new AbortController();
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  const upstream = init.signal;
+  const fetchSignal = upstream ? mergeAbortSignals(outer.signal, upstream) : outer.signal;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => {
+      outer.abort();
+      reject(new Error(TIMEOUT_MESSAGE));
+    }, deadlineMs);
+  });
+
+  try {
+    return await Promise.race([fetchAndParse<T>(resolvedUrl, init, fetchSignal), timeoutPromise]);
+  } catch (e) {
+    const name = e instanceof Error ? e.name : "";
+    if (name === "AbortError") {
+      throw new Error(TIMEOUT_MESSAGE);
+    }
+    throw e;
+  } finally {
+    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  }
 }

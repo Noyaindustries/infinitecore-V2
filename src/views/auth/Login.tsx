@@ -98,6 +98,14 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
+    /** Filet de sécurité si une promesse ne se termine jamais (hors `apiRequest`). */
+    const safetyMs = 32_000;
+    const safetyId = window.setTimeout(() => {
+      setLoading(false);
+      toast.error(
+        'Connexion trop longue : vérifiez que `npm run dev` tourne, que MongoDB répond (DATABASE_URL, IP Atlas), et l’onglet Réseau pour `/api/auth/login`.'
+      );
+    }, safetyMs);
     try {
       await signInWithEmailAndPassword(auth, email.trim(), password);
       toast.success('Connexion réussie');
@@ -110,12 +118,20 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
         toast.error(msg || 'Impossible de se connecter. Réessayez.');
       }
     } finally {
+      window.clearTimeout(safetyId);
       setLoading(false);
     }
   };
 
   const handleGoogle = async () => {
     setLoading(true);
+    const safetyMs = 32_000;
+    const safetyId = window.setTimeout(() => {
+      setLoading(false);
+      toast.error(
+        'Connexion Google trop longue : vérifiez l’API, MongoDB et l’onglet Réseau pour `/api/auth/google`.'
+      );
+    }, safetyMs);
     try {
       const provider = new GoogleAuthProvider();
       const emailTrim = email.trim();
@@ -201,6 +217,7 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
         toast.error('Connexion Google impossible. Réessayez.');
       }
     } finally {
+      window.clearTimeout(safetyId);
       setLoading(false);
     }
   };

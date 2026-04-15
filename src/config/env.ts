@@ -30,7 +30,7 @@ export function databaseUrlForPrisma(): string {
   if (!trimmed || /serverSelectionTimeoutMS=/i.test(trimmed)) return trimmed;
   const ms =
     str("MONGODB_SERVER_SELECTION_TIMEOUT_MS") ||
-    (NODE_ENV === "development" ? "10000" : "20000");
+    (NODE_ENV === "development" ? "10000" : "8000");
   const sep = trimmed.includes("?") ? "&" : "?";
   return `${trimmed}${sep}serverSelectionTimeoutMS=${encodeURIComponent(ms)}&connectTimeoutMS=${encodeURIComponent(ms)}`;
 }
