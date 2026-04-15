@@ -6,7 +6,7 @@ import multer from "multer";
 import { randomUUID, timingSafeEqual } from "crypto";
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
-import { appEnv } from "@/config/env";
+import { appEnv, parseCorsOrigins } from "@/config/env";
 import { prisma } from "./prismaClient";
 import { buildFileUrl, sanitizeFolder } from "./_r2";
 import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } from "./storageUtils";
@@ -58,10 +58,7 @@ function secureSecretEquals(expected: string, provided: string) {
 export async function createExpressApplication(): Promise<{ app: Express; port: number }> {
   const app = express();
   const port = appEnv.http.port;
-  const corsOrigins = appEnv.http.corsOriginRaw
-    .split(",")
-    .map((v) => v.trim())
-    .filter(Boolean);
+  const corsOrigins = parseCorsOrigins(appEnv.http.corsOriginRaw);
   const paddeWebhookSecret = appEnv.webhooks.paddeWebhookSecret;
   const r2AccountId = appEnv.r2.accountId;
   const r2AccessKeyId = appEnv.r2.accessKeyId;
@@ -85,7 +82,8 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         if (!origin || corsOrigins.includes(origin)) {
           return callback(null, true);
         }
-        return callback(new Error("Origine CORS non autorisée."));
+        /** `false` sans Error : évite des 500 / preflight bizarres côté navigateur. */
+        return callback(null, false);
       },
       methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT", "HEAD"],
       allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],

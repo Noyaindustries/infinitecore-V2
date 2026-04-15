@@ -49,6 +49,27 @@ export function resetAppBaseUrl(): string {
   return raw.replace(/\/$/, "");
 }
 
+/**
+ * Parse `CORS_ORIGIN` : virgules, point-virgules, retours ligne, ou espaces entre URLs (tolérance Vercel / copier-coller).
+ */
+export function parseCorsOrigins(raw: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const chunk of String(raw || "")
+    .split(/[,;\n\r]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)) {
+    for (const part of chunk.split(/\s+/).map((s) => s.trim()).filter(Boolean)) {
+      if (!/^https?:\/\//i.test(part)) continue;
+      const normalized = part.replace(/\/$/, "");
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      out.push(normalized);
+    }
+  }
+  return out;
+}
+
 export const appEnv = {
   node: {
     env: NODE_ENV,

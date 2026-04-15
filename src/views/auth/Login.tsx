@@ -142,16 +142,69 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
       const userCredential = await signInWithPopup(auth, provider, {
         email: emailTrim || undefined,
       });
-      const u = userCredential.user as any;
+      const u = userCredential.user;
+      const userDocRef = doc(db, 'users', u.uid);
+      const userDoc = await getDoc(userDocRef);
 
       if (isStaff) {
-        if (u.role !== 'admin' && u.role !== 'commando') {
+        if (!userDoc.exists()) {
+          await signOut(auth);
+          toast.error('Aucun compte équipe n’est associé à cette adresse Google.');
+          return;
+        }
+        const role = userDoc.data()?.role as string | undefined;
+        if (role !== 'admin' && role !== 'commando') {
           await signOut(auth);
           toast.error('Ce compte n’a pas accès à l’espace équipe (commando ou admin uniquement).');
           return;
         }
+        toast.success('Connexion réussie');
+        return;
+      }
+
+      if (!userDoc.exists()) {
+        const nameParts = (u.displayName || '').split(' ');
+        const firstName = nameParts[0] || '';
+        const lastName = nameParts.slice(1).join(' ') || '';
+        const isAdminEmail = u.email === 'superadmin@infinitecore.com';
+        const companyId = `comp_${Date.now()}`;
+        try {
+          await setDoc(doc(db, 'companies', companyId), {
+            id: companyId,
+            name: `${firstName || 'Mon'}'s Company`,
+            industry: 'Non spécifié',
+            size: '1-5',
+            pack: 'starter',
+            createdAt: new Date().toISOString(),
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.CREATE, `companies/${companyId}`);
+        }
+        try {
+          await setDoc(userDocRef, {
+            uid: u.uid,
+            email: u.email || '',
+            firstName,
+            lastName,
+            phone: u.phoneNumber || '',
+            role: isAdminEmail ? 'admin' : 'client',
+            companyId,
+            referredBy: referralCode || null,
+            referredByPartnerId: referrerId || null,
+            referredByPartnerName: referrerName?.trim() || null,
+            createdAt: new Date().toISOString(),
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.CREATE, `users/${u.uid}`);
+        }
+        addClient({
+          name: u.displayName || u.email || 'Nouveau client',
+          email: u.email || '',
+          company: `${firstName || 'Mon'}'s Company`,
+          pack: 'Pack Essentiel',
+        });
+      }
       toast.success('Connexion réussie');
-      await navigateAfterLogin();
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : '';
       if (code === 'auth/popup-blocked') {
