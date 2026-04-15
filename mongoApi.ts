@@ -573,6 +573,10 @@ async function ensureUserDocumentFromAccount(account: {
 }
 
 export function registerMongoApi(app: Express) {
+  const dbUrl = appEnv.database.url;
+  const dbMasked = dbUrl ? `${dbUrl.slice(0, 15)}...${dbUrl.slice(-10)}` : "NON_DEFINIE";
+  console.log(`[mongoApi] Initialisation. DB: ${dbMasked}. CORS: ${appEnv.http.corsOriginRaw}`);
+
   app.get("/api/auth/me", async (req: Request, res: Response) => {
     try {
       const auth = parseAuth(req);

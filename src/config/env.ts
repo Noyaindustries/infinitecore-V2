@@ -97,7 +97,7 @@ export const appEnv = {
     /** Liste brute pour parser côté Express (CORS). */
     corsOriginRaw: str(
       "CORS_ORIGIN",
-      "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173"
+      "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,https://www.infinitecore.net,https://infinitecore.net,https://infinitecore-v2.vercel.app"
     ),
     apiPublicUrl: str("API_PUBLIC_URL"),
     port: int("PORT", 3000),
