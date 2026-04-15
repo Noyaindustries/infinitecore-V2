@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   ArrowRight, Star, Users, Wallet, FileSignature, Briefcase,
@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { db, auth } from '@/lib/clientSdk';
 import { collection, doc, setDoc } from '@/lib/mongoFirestore';
+import { apiRequest } from '@/lib/apiClient';
 import { useAuth } from '../../components/AuthProvider';
 import toast from 'react-hot-toast';
 import { PADDE_CI_FREE_AUDITS } from '../../data/paddeCiFreeAudits';
@@ -25,6 +26,23 @@ export default function ClientShop() {
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSent, setOrderSent] = useState(false);
+  const [openingPortal, setOpeningPortal] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get('checkout');
+    if (!checkout) return;
+    if (checkout === 'success') {
+      toast.success("Abonnement activé. Vous pouvez gérer votre offre via 'Gérer mes abonnements'.");
+    } else if (checkout === 'cancel') {
+      toast("Paiement annulé. Vous pouvez réessayer quand vous voulez.");
+    }
+    params.delete('checkout');
+    params.delete('orderId');
+    const next = params.toString();
+    const newUrl = `${window.location.pathname}${next ? `?${next}` : ''}${window.location.hash}`;
+    window.history.replaceState({}, '', newUrl);
+  }, []);
 
   const auditPadde = PADDE_CI_FREE_AUDITS.map((a) => ({
     ...a,
@@ -70,6 +88,28 @@ export default function ClientShop() {
     setIsSubmitting(true);
 
     try {
+      if (selectedService.isSubscription === true) {
+        const payload = await apiRequest<{
+          success: boolean;
+          checkoutUrl?: string;
+          error?: string;
+        }>('/api/stripe/checkout/subscription', {
+          method: 'POST',
+          body: JSON.stringify({
+            serviceId: selectedService.id,
+            serviceName: selectedService.title,
+            amount: selectedService.price,
+            billingCycle: selectedService.billingCycle || 'mensuel',
+            note: note.trim() || null,
+          }),
+        });
+        if (!payload?.checkoutUrl) {
+          throw new Error(payload?.error || "Impossible d'ouvrir la page de paiement.");
+        }
+        window.location.assign(payload.checkoutUrl);
+        return;
+      }
+
       const clientName = `${userData?.firstName || ''} ${userData?.lastName || ''}`.trim() || auth.currentUser.email || 'Client';
       const orderId = `CMD-${crypto.randomUUID().split('-')[0].toUpperCase()}`;
 
@@ -120,14 +160,45 @@ export default function ClientShop() {
     }
   };
 
+  const handleOpenBillingPortal = async () => {
+    if (!auth.currentUser) {
+      toast.error('Vous devez être connecté.');
+      return;
+    }
+    setOpeningPortal(true);
+    try {
+      const payload = await apiRequest<{ success: boolean; url?: string; error?: string }>(
+        '/api/stripe/billing-portal-session',
+        { method: 'POST' }
+      );
+      if (!payload.url) {
+        throw new Error(payload.error || "Impossible d'ouvrir le portail d'abonnement.");
+      }
+      window.location.assign(payload.url);
+    } catch (error) {
+      console.error('[ClientShop] billing portal:', error);
+      toast.error("Impossible d'ouvrir la gestion des abonnements.");
+    } finally {
+      setOpeningPortal(false);
+    }
+  };
+
   return (
     <div className="space-y-10 max-w-6xl mx-auto">
       <div>
         <h1 className="text-3xl font-bold text-text-primary tracking-tight">Boutique & Services — Catalogue Complet</h1>
         <div className="mt-4 bg-noya-blue/10 border-l-4 border-noya-blue p-4 rounded-r-lg">
           <p className="text-sm text-text-secondary">
-            <span className="font-bold text-noya-blue">NOTE</span> — Sélectionnez un service et envoyez votre demande. Notre équipe vous contactera dans la messagerie pour confirmer et organiser le paiement.
+            <span className="font-bold text-noya-blue">NOTE</span> — Les offres marquées mensuelles ouvrent un paiement Stripe sécurisé avec renouvellement automatique.
           </p>
+          <button
+            type="button"
+            onClick={() => void handleOpenBillingPortal()}
+            disabled={openingPortal}
+            className="mt-3 inline-flex items-center gap-2 rounded-lg border border-noya-blue/35 bg-noya-blue/15 px-3 py-2 text-xs font-semibold text-noya-blue transition-colors hover:bg-noya-blue/20 disabled:opacity-60"
+          >
+            {openingPortal ? 'Ouverture...' : 'Gérer mes abonnements'}
+          </button>
         </div>
       </div>
 

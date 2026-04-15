@@ -61,4 +61,25 @@ ko(
 ok(assertDataDocAuthorized(auth("client"), "read", "chats/u_client/messages", "m1"));
 ko(assertDataDocAuthorized(auth("client"), "read", "chats/u_other/messages", "m1"));
 
+// Client: validation dossier autorisée uniquement sur son propre clientId et statut "valide".
+ok(
+  assertDataDocAuthorized(auth("client"), "write", "dossier_steps", "step1", {
+    clientId: "u_client",
+    status: "valide",
+    validatedAt: "2026-01-01T00:00:00.000Z",
+  })
+);
+ko(
+  assertDataDocAuthorized(auth("client"), "write", "dossier_steps", "step1", {
+    clientId: "u_other",
+    status: "valide",
+  })
+);
+ko(
+  assertDataDocAuthorized(auth("client"), "write", "dossier_steps", "step1", {
+    clientId: "u_client",
+    status: "soumis",
+  })
+);
+
 console.log("RBAC tests passed");

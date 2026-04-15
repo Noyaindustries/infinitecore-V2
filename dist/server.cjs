@@ -70,6 +70,7 @@ var import_multer = __toESM(require("multer"), 1);
 var import_crypto3 = require("crypto");
 var import_client_s32 = require("@aws-sdk/client-s3");
 var import_s3_request_presigner2 = require("@aws-sdk/s3-request-presigner");
+var import_stripe = __toESM(require("stripe"), 1);
 
 // src/config/loadEnvFiles.ts
 var import_node_fs = require("node:fs");
@@ -207,6 +208,10 @@ var appEnv = {
   },
   webhooks: {
     paddeWebhookSecret: str("PADDE_WEBHOOK_SECRET")
+  },
+  stripe: {
+    secretKey: str("STRIPE_SECRET_KEY"),
+    webhookSecret: str("STRIPE_WEBHOOK_SECRET")
   },
   integrations: {
     infiniteCoreApiUrl: str("INFINITE_CORE_API_URL")
@@ -951,7 +956,7 @@ function getAllowedPrefixes(role, op) {
   }
   if (role === "client") {
     if (op === "read") return ["users", "notifications", "missions", "dossier_steps", "payments", "orders", "chats"];
-    return ["users", "notifications", "chats"];
+    return ["users", "notifications", "chats", "dossier_steps"];
   }
   return [];
 }
@@ -997,6 +1002,15 @@ function hasClientWritablePayload(auth, collectionPath, data) {
   if (isPath(collectionPath, "chats")) {
     const clientId = typeof data.clientId === "string" ? data.clientId : auth.uid;
     return clientId === auth.uid;
+  }
+  if (isPath(collectionPath, "dossier_steps")) {
+    const allowedKeys = /* @__PURE__ */ new Set(["status", "validatedAt", "clientId"]);
+    const keys = Object.keys(data);
+    if (!keys.length) return false;
+    if (keys.some((k) => !allowedKeys.has(k))) return false;
+    const clientId = typeof data.clientId === "string" ? data.clientId : "";
+    const status = typeof data.status === "string" ? data.status : "";
+    return clientId === auth.uid && status === "valide";
   }
   if (isPathPrefix(collectionPath, "chats/")) {
     const parts = collectionPath.split("/");
@@ -2132,6 +2146,26 @@ var ALLOWED_UPLOAD_EXTENSIONS = /* @__PURE__ */ new Set([
 var DB_FILE_COLLECTION_PATH = "__file_blobs";
 var DB_FILE_PUBLIC_ID_PREFIX = "dbf/";
 var MAX_DB_FALLBACK_BYTES = 8 * 1024 * 1024;
+var ORDERS_COLLECTION_PATH = "orders";
+var USERS_COLLECTION_PATH = "users";
+function normalizeBillingCycle(raw) {
+  const v = String(raw || "").trim().toLowerCase();
+  if (["mensuel", "monthly", "month", "mois"].includes(v)) return "month";
+  if (["annuel", "yearly", "annual", "year", "an"].includes(v)) return "year";
+  return null;
+}
+function subscriptionStatusFromStripe(raw) {
+  const status = String(raw || "").trim().toLowerCase();
+  if (["active", "trialing", "past_due", "incomplete", "incomplete_expired", "unpaid"].includes(status)) {
+    if (status === "unpaid") return "Impay\xE9";
+    return "Actif";
+  }
+  if (["canceled", "ended", "paused"].includes(status)) return "Annul\xE9";
+  return "Paiement en cours";
+}
+function readDataRowAsRecord(value) {
+  return value && typeof value === "object" ? value : {};
+}
 function isDbStoredPublicId(publicId) {
   return publicId.startsWith(DB_FILE_PUBLIC_ID_PREFIX);
 }
@@ -2181,6 +2215,8 @@ async function createExpressApplication() {
   const port = appEnv.http.port;
   const corsOrigins = parseCorsOrigins(appEnv.http.corsOriginRaw);
   const paddeWebhookSecret = appEnv.webhooks.paddeWebhookSecret;
+  const stripeSecretKey = appEnv.stripe.secretKey;
+  const stripeWebhookSecret = appEnv.stripe.webhookSecret;
   const r2AccountId = appEnv.r2.accountId;
   const r2AccessKeyId = appEnv.r2.accessKeyId;
   const r2SecretAccessKey = appEnv.r2.secretAccessKey;
@@ -2195,6 +2231,58 @@ async function createExpressApplication() {
       "[upload] Variables R2 absentes \u2014 mode d\xE9veloppement : fichiers dans .local-uploads/ (non utilis\xE9 en prod sans R2)."
     );
   }
+  const stripe = stripeSecretKey ? new import_stripe.default(stripeSecretKey, {
+    apiVersion: "2026-03-25.dahlia"
+  }) : null;
+  const appBaseUrl = resetAppBaseUrl();
+  const resolveStripeCustomerId = async (auth) => {
+    if (!stripe) return null;
+    const userRow = await prisma.dataDocument.findUnique({
+      where: {
+        collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH, docId: auth.uid }
+      }
+    });
+    const userData = readDataRowAsRecord(userRow?.data);
+    const existingCustomerId = String(userData.stripeCustomerId || "").trim();
+    if (existingCustomerId) return existingCustomerId;
+    const listed = await stripe.customers.list({
+      email: auth.email,
+      limit: 1
+    });
+    let customerId = listed.data[0]?.id || "";
+    if (!customerId) {
+      const created = await stripe.customers.create({
+        email: auth.email,
+        metadata: { userId: auth.uid }
+      });
+      customerId = created.id;
+    }
+    await prisma.dataDocument.upsert({
+      where: {
+        collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH, docId: auth.uid }
+      },
+      create: {
+        collectionPath: USERS_COLLECTION_PATH,
+        docId: auth.uid,
+        data: {
+          uid: auth.uid,
+          email: auth.email,
+          role: "client",
+          stripeCustomerId: customerId,
+          createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        }
+      },
+      update: {
+        data: {
+          ...userData,
+          stripeCustomerId: customerId,
+          updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+        }
+      }
+    });
+    return customerId;
+  };
   app.use(
     (0, import_cors.default)({
       origin(origin, callback) {
@@ -2220,7 +2308,17 @@ async function createExpressApplication() {
     res.setHeader("X-Frame-Options", "DENY");
     next();
   });
-  app.use(import_express.default.json({ limit: "1mb", strict: true }));
+  app.use(
+    import_express.default.json({
+      limit: "1mb",
+      strict: true,
+      verify: (req, _res, buf) => {
+        if ((req.url || "").startsWith("/api/stripe/webhook")) {
+          req.rawBody = Buffer.from(buf);
+        }
+      }
+    })
+  );
   app.use((req, res, next) => {
     const requestId = (0, import_crypto3.randomUUID)();
     req.headers["x-request-id"] = requestId;
@@ -2251,6 +2349,249 @@ async function createExpressApplication() {
     res.status(200).json({ ok: true });
   });
   registerMongoApi(app);
+  app.post("/api/stripe/checkout/subscription", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+      if (!stripe) {
+        return res.status(503).json({
+          success: false,
+          error: "Stripe non configur\xE9. Ajoutez STRIPE_SECRET_KEY."
+        });
+      }
+      const body = req.body ?? {};
+      const serviceId = String(body.serviceId || "").trim();
+      const serviceName = String(body.serviceName || "").trim();
+      const note = String(body.note || "").trim();
+      const amount = Number(body.amount);
+      const billingCycle = normalizeBillingCycle(body.billingCycle);
+      if (!serviceId || !serviceName || !Number.isFinite(amount) || amount <= 0 || !billingCycle) {
+        return res.status(400).json({ success: false, error: "Param\xE8tres abonnement invalides." });
+      }
+      const unitAmount = Math.round(amount);
+      const orderId = `CMD-${(0, import_crypto3.randomUUID)().split("-")[0].toUpperCase()}`;
+      const customerId = await resolveStripeCustomerId({ uid: auth.uid, email: auth.email });
+      const session = await stripe.checkout.sessions.create({
+        mode: "subscription",
+        success_url: `${appBaseUrl}/dashboard/boutique?checkout=success&orderId=${encodeURIComponent(orderId)}`,
+        cancel_url: `${appBaseUrl}/dashboard/boutique?checkout=cancel&orderId=${encodeURIComponent(orderId)}`,
+        customer: customerId || void 0,
+        customer_email: customerId ? void 0 : auth.email,
+        metadata: {
+          orderId,
+          userId: auth.uid,
+          serviceId,
+          billingCycle
+        },
+        subscription_data: {
+          metadata: {
+            orderId,
+            userId: auth.uid,
+            serviceId
+          }
+        },
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: "xof",
+              unit_amount: unitAmount,
+              recurring: { interval: billingCycle },
+              product_data: {
+                name: serviceName,
+                metadata: { serviceId }
+              }
+            }
+          }
+        ]
+      });
+      await prisma.dataDocument.upsert({
+        where: {
+          collectionPath_docId: { collectionPath: ORDERS_COLLECTION_PATH, docId: orderId }
+        },
+        create: {
+          collectionPath: ORDERS_COLLECTION_PATH,
+          docId: orderId,
+          data: {
+            id: orderId,
+            userId: auth.uid,
+            clientEmail: auth.email,
+            serviceName,
+            serviceId,
+            orderType: "abonnement",
+            isSubscription: true,
+            billingCycle,
+            amount: unitAmount,
+            currency: "XOF",
+            note: note || null,
+            status: "Paiement en cours",
+            subscriptionStatus: "checkout_pending",
+            stripeCheckoutSessionId: session.id,
+            createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+            updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        },
+        update: {
+          data: {
+            id: orderId,
+            userId: auth.uid,
+            clientEmail: auth.email,
+            serviceName,
+            serviceId,
+            orderType: "abonnement",
+            isSubscription: true,
+            billingCycle,
+            amount: unitAmount,
+            currency: "XOF",
+            note: note || null,
+            status: "Paiement en cours",
+            subscriptionStatus: "checkout_pending",
+            stripeCheckoutSessionId: session.id,
+            updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        }
+      });
+      return res.status(200).json({
+        success: true,
+        checkoutUrl: session.url,
+        sessionId: session.id,
+        orderId
+      });
+    } catch (error) {
+      console.error("[stripe/checkout/subscription]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app.post("/api/stripe/billing-portal-session", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+      if (!stripe) {
+        return res.status(503).json({
+          success: false,
+          error: "Stripe non configur\xE9. Ajoutez STRIPE_SECRET_KEY."
+        });
+      }
+      const customerId = await resolveStripeCustomerId({ uid: auth.uid, email: auth.email });
+      if (!customerId) {
+        return res.status(400).json({ success: false, error: "Client Stripe introuvable." });
+      }
+      const portalSession = await stripe.billingPortal.sessions.create({
+        customer: customerId,
+        return_url: `${appBaseUrl}/dashboard/boutique`
+      });
+      return res.status(200).json({
+        success: true,
+        url: portalSession.url
+      });
+    } catch (error) {
+      console.error("[stripe/billing-portal-session]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app.post("/api/stripe/webhook", async (req, res) => {
+    try {
+      if (!stripe) {
+        return res.status(503).json({ success: false, error: "Stripe non configur\xE9." });
+      }
+      let event;
+      const signature = req.headers["stripe-signature"];
+      const rawBody = req.rawBody;
+      if (stripeWebhookSecret) {
+        if (typeof signature !== "string" || !rawBody) {
+          return res.status(400).json({ success: false, error: "Webhook Stripe invalide." });
+        }
+        event = stripe.webhooks.constructEvent(rawBody, signature, stripeWebhookSecret);
+      } else {
+        event = req.body;
+      }
+      const upsertOrderPatch = async (orderId, patch) => {
+        const existing = await prisma.dataDocument.findUnique({
+          where: {
+            collectionPath_docId: { collectionPath: ORDERS_COLLECTION_PATH, docId: orderId }
+          }
+        });
+        if (!existing) return;
+        const current = readDataRowAsRecord(existing.data);
+        await prisma.dataDocument.update({
+          where: {
+            collectionPath_docId: { collectionPath: ORDERS_COLLECTION_PATH, docId: orderId }
+          },
+          data: {
+            data: {
+              ...current,
+              ...patch,
+              updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+            }
+          }
+        });
+      };
+      const updateBySubscriptionId = async (subscriptionId, patch) => {
+        const rows = await prisma.dataDocument.findMany({
+          where: { collectionPath: ORDERS_COLLECTION_PATH },
+          take: 5e3
+        });
+        for (const row of rows) {
+          const data = readDataRowAsRecord(row.data);
+          if (String(data.subscriptionId || "") !== subscriptionId) continue;
+          await upsertOrderPatch(row.docId, patch);
+        }
+      };
+      switch (event.type) {
+        case "checkout.session.completed": {
+          const session = event.data.object;
+          const orderId = String(session.metadata?.orderId || "").trim();
+          const subscriptionId = typeof session.subscription === "string" ? session.subscription : String(session.subscription?.id || "");
+          if (orderId) {
+            await upsertOrderPatch(orderId, {
+              status: "Actif",
+              paymentStatus: "paid",
+              stripeCheckoutSessionId: session.id,
+              subscriptionId: subscriptionId || null,
+              stripeCustomerId: session.customer ? String(session.customer) : null,
+              subscriptionStatus: "active",
+              activatedAt: (/* @__PURE__ */ new Date()).toISOString()
+            });
+          }
+          break;
+        }
+        case "customer.subscription.updated":
+        case "customer.subscription.deleted": {
+          const sub = event.data.object;
+          const subscriptionId = String(sub.id || "").trim();
+          const rawSub = sub;
+          if (subscriptionId) {
+            await updateBySubscriptionId(subscriptionId, {
+              status: subscriptionStatusFromStripe(sub.status),
+              subscriptionStatus: sub.status,
+              currentPeriodEnd: typeof rawSub.current_period_end === "number" ? new Date(rawSub.current_period_end * 1e3).toISOString() : null,
+              canceledAt: typeof rawSub.canceled_at === "number" ? new Date(rawSub.canceled_at * 1e3).toISOString() : null
+            });
+          }
+          break;
+        }
+        case "invoice.payment_failed": {
+          const invoice = event.data.object;
+          const rawInvoice = invoice;
+          const subscriptionId = typeof rawInvoice.subscription === "string" ? rawInvoice.subscription : String(rawInvoice.subscription?.id || "");
+          if (subscriptionId) {
+            await updateBySubscriptionId(subscriptionId, {
+              status: "Impay\xE9",
+              paymentStatus: "failed",
+              subscriptionStatus: "past_due"
+            });
+          }
+          break;
+        }
+        default:
+          break;
+      }
+      return res.status(200).json({ received: true });
+    } catch (error) {
+      console.error("[stripe/webhook]", error);
+      return res.status(400).json({ success: false, error: "Webhook Stripe invalide." });
+    }
+  });
   const s3 = canUseR2 ? new import_client_s32.S3Client({
     region: "auto",
     endpoint: r2Endpoint,
@@ -2516,12 +2857,53 @@ async function createExpressApplication() {
         });
       }
       const data = req.body;
+      const payload = data && typeof data === "object" ? data : {};
       const auditId = `PADDE-${Math.floor(1e3 + Math.random() * 9e3)}`;
+      const auditType = String(payload.type_audit || payload.type || payload.auditType || "Audit PADDE-CI").trim();
+      const clientName = String(
+        payload.clientName || payload.nom || payload.name || payload.entreprise || payload.company || "Client PADDE-CI"
+      ).trim();
+      const normalizedWhatsapp = String(payload.whatsapp || payload.telephone || payload.phone || "").trim();
       await prisma.paddeCiAudit.create({
         data: {
           id: auditId,
           payload: data ?? {},
           processed: false
+        }
+      });
+      await prisma.dataDocument.upsert({
+        where: {
+          collectionPath_docId: { collectionPath: ORDERS_COLLECTION_PATH, docId: auditId }
+        },
+        create: {
+          collectionPath: ORDERS_COLLECTION_PATH,
+          docId: auditId,
+          data: {
+            id: auditId,
+            source: "padde-ci",
+            status: "En attente",
+            createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+            clientName,
+            serviceName: `Audit PADDE-CI: ${auditType}`,
+            details: {
+              ...payload,
+              whatsapp: payload.whatsapp || payload.telephone || payload.phone || normalizedWhatsapp || null
+            }
+          }
+        },
+        update: {
+          data: {
+            id: auditId,
+            source: "padde-ci",
+            status: "En attente",
+            createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+            clientName,
+            serviceName: `Audit PADDE-CI: ${auditType}`,
+            details: {
+              ...payload,
+              whatsapp: payload.whatsapp || payload.telephone || payload.phone || normalizedWhatsapp || null
+            }
+          }
         }
       });
       res.status(200).json({ success: true, message: "Demande d'audit re\xE7ue et trait\xE9e avec succ\xE8s." });

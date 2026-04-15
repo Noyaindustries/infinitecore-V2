@@ -101,6 +101,7 @@ function App() {
             <Route path="/comms" element={<MarketingPage />} />
             <Route path="/store" element={<MarketingPage />} />
             <Route path="/tarifs" element={<Pricing />} />
+            <Route path="/contact" element={<Navigate to="/signup" replace />} />
             <Route path="/a-propos" element={<About />} />
             
             {/* Legal Routes */}

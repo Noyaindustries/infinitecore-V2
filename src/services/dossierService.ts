@@ -76,10 +76,11 @@ export const dossierService = {
   },
 
   // Client validates a step
-  async validateStep(stepId: string) {
+  async validateStep(stepId: string, clientId: string) {
     await updateDoc(doc(db, COL, stepId), {
       status: 'valide',
       validatedAt: new Date().toISOString(),
+      clientId,
     });
   },
 

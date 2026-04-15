@@ -520,7 +520,7 @@ function getAllowedPrefixes(role: string, op: DataOperation): string[] {
   }
   if (role === "client") {
     if (op === "read") return ["users", "notifications", "missions", "dossier_steps", "payments", "orders", "chats"];
-    return ["users", "notifications", "chats"];
+    return ["users", "notifications", "chats", "dossier_steps"];
   }
   return [];
 }
@@ -576,6 +576,15 @@ function hasClientWritablePayload(auth: AuthPayload, collectionPath: string, dat
   if (isPath(collectionPath, "chats")) {
     const clientId = typeof data.clientId === "string" ? data.clientId : auth.uid;
     return clientId === auth.uid;
+  }
+  if (isPath(collectionPath, "dossier_steps")) {
+    const allowedKeys = new Set(["status", "validatedAt", "clientId"]);
+    const keys = Object.keys(data);
+    if (!keys.length) return false;
+    if (keys.some((k) => !allowedKeys.has(k))) return false;
+    const clientId = typeof data.clientId === "string" ? data.clientId : "";
+    const status = typeof data.status === "string" ? data.status : "";
+    return clientId === auth.uid && status === "valide";
   }
   if (isPathPrefix(collectionPath, "chats/")) {
     const parts = collectionPath.split("/");

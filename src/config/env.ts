@@ -127,6 +127,10 @@ export const appEnv = {
   webhooks: {
     paddeWebhookSecret: str("PADDE_WEBHOOK_SECRET"),
   },
+  stripe: {
+    secretKey: str("STRIPE_SECRET_KEY"),
+    webhookSecret: str("STRIPE_WEBHOOK_SECRET"),
+  },
   integrations: {
     infiniteCoreApiUrl: str("INFINITE_CORE_API_URL"),
   },

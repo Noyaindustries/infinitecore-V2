@@ -279,9 +279,13 @@ export default function ClientSuivi() {
   }, [steps]);
 
   const handleValidate = async (step: DossierStep) => {
+    if (!user?.uid) {
+      toast.error('Session utilisateur introuvable.');
+      return;
+    }
     setValidating(step.id);
     try {
-      await dossierService.validateStep(step.id);
+      await dossierService.validateStep(step.id, user.uid);
       // Notify commando
       await notificationService.createNotification(
         'admin_general',

@@ -53,6 +53,7 @@
     "react-hot-toast": "^2.6.0",
     "react-router-dom": "^7.13.1",
     "serverless-http": "^4.0.0",
+    "stripe": "^22.0.1",
     "tailwind-merge": "^3.5.0",
     "zustand": "^5.0.12"
   },
