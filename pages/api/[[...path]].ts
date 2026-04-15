@@ -21,6 +21,7 @@ async function getHandler(): Promise<Handler> {
 }
 
 export const config = {
+  maxDuration: 60,
   api: {
     bodyParser: false,
     externalResolver: true,
