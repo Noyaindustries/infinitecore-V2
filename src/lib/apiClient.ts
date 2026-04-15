@@ -2,6 +2,9 @@ import { apiUrl } from "./apiBase";
 
 const AUTH_TOKEN_KEY = "ic_auth_token";
 
+/** Évite un spinner infini si l’API ou Mongo ne répond pas (réseau, cold start, etc.). */
+const DEFAULT_REQUEST_TIMEOUT_MS = 45_000;
+
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(AUTH_TOKEN_KEY);
@@ -25,7 +28,30 @@ export async function apiRequest<T>(url: string, init: RequestInit = {}): Promis
   if (token) headers.set("Authorization", `Bearer ${token}`);
 
   const resolvedUrl = url.startsWith("http://") || url.startsWith("https://") ? url : apiUrl(url);
-  const response = await fetch(resolvedUrl, { ...init, headers });
+
+  const controller = new AbortController();
+  const upstream = init.signal;
+  if (upstream) {
+    if (upstream.aborted) controller.abort();
+    else upstream.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+  const timeoutId = setTimeout(() => controller.abort(), DEFAULT_REQUEST_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(resolvedUrl, { ...init, headers, signal: controller.signal });
+  } catch (e) {
+    const name = e instanceof Error ? e.name : "";
+    if (name === "AbortError") {
+      throw new Error(
+        "Délai dépassé : l’API ou la base de données ne répond pas assez vite. Vérifiez DATABASE_URL (Mongo), le réseau, ou réessayez après un cold start Vercel."
+      );
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
   const text = await response.text();
   let parsed: unknown = {};
   if (text) {

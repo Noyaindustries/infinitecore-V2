@@ -725,6 +725,12 @@ export function registerMongoApi(app: Express) {
 
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     try {
+      if (!appEnv.database.url) {
+        return res.status(503).json({
+          success: false,
+          error: "Base de données non configurée (DATABASE_URL). L’authentification est indisponible.",
+        });
+      }
       const email = String(req.body?.email || "").trim().toLowerCase();
       const authKey = authBucketKey(req, email);
       if (isAuthTemporarilyBlocked(authKey)) {
