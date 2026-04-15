@@ -27,6 +27,8 @@ import {
   setDoc,
   doc,
   updateDoc,
+  addDoc,
+  getDoc,
   query,
   where,
   limit,
@@ -69,6 +71,7 @@ function toServiceSlug(title: string): string {
 
 export default function Finance() {
   const [payments, setPayments] = useState<Payment[]>([]);
+  const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [clients, setClients] = useState<any[]>([]);
@@ -98,6 +101,9 @@ export default function Finance() {
       setPayments(data);
       setLoading(false);
     });
+    const unsubscribeOrders = onSnapshot(collection(db, 'orders'), (snapshot) => {
+      setOrders(snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Record<string, unknown>) })));
+    });
     
     const unsubscribeClients = onSnapshot(collection(db, 'users'), (snapshot) => {
       type ClientRow = {
@@ -120,6 +126,7 @@ export default function Finance() {
 
     return () => {
       unsubscribe();
+      unsubscribeOrders();
       unsubscribeClients();
     };
   }, []);
@@ -143,6 +150,32 @@ export default function Finance() {
     () => clients.find((c) => c.id === prestationForm.clientId),
     [clients, prestationForm.clientId]
   );
+
+  const ordersById = useMemo(() => {
+    const map = new Map<string, Record<string, unknown>>();
+    for (const order of orders) {
+      map.set(String(order.id), order as Record<string, unknown>);
+    }
+    return map;
+  }, [orders]);
+
+  const ordersByPaymentId = useMemo(() => {
+    const map = new Map<string, Record<string, unknown>>();
+    for (const order of orders) {
+      const paymentId = String(order.paymentId || '').trim();
+      if (paymentId) map.set(paymentId, order as Record<string, unknown>);
+    }
+    return map;
+  }, [orders]);
+
+  const resolveOrderForPayment = (p: Payment): Record<string, unknown> | null => {
+    if (p.linkedOrderId) {
+      const byLinked = ordersById.get(p.linkedOrderId);
+      if (byLinked) return byLinked;
+    }
+    const byPaymentId = ordersByPaymentId.get(p.id);
+    return byPaymentId || null;
+  };
 
   const resolveClientName = (p: Payment): string => {
     const cid = p.clientId ?? p.userId;
@@ -373,6 +406,129 @@ export default function Finance() {
     return { client, title, amount };
   };
 
+  const resolvePartnerCommissionForClient = async (
+    client: (typeof clients)[number],
+    amount: number
+  ): Promise<{ partnerId: string; ratePercent: number; commissionAmount: number } | null> => {
+    const partnerId = String(client.referredByPartnerId || '').trim();
+    if (!partnerId) return null;
+
+    let ratePercent = 10;
+    try {
+      const partnerSnap = await getDoc(doc(db, 'users', partnerId));
+      if (partnerSnap.exists()) {
+        const partnerData = (partnerSnap.data() || {}) as Record<string, unknown>;
+        const parsedRate = Number(partnerData.commissionRate);
+        if (Number.isFinite(parsedRate) && parsedRate > 0) {
+          ratePercent = parsedRate;
+        }
+      }
+    } catch (error) {
+      console.warn('[Finance] impossible de lire commissionRate partenaire:', error);
+    }
+
+    const commissionAmount = Math.max(0, Math.round((amount * ratePercent) / 100));
+    if (!(commissionAmount > 0)) return null;
+    return { partnerId, ratePercent, commissionAmount };
+  };
+
+  const syncPartnerCommissionForOrder = async (params: {
+    orderId: string;
+    paymentId: string;
+    client: (typeof clients)[number];
+    serviceName: string;
+    amount: number;
+    now: string;
+  }) => {
+    const { orderId, paymentId, client, serviceName, amount, now } = params;
+
+    const commission = await resolvePartnerCommissionForClient(client, amount);
+    const existingCommissionSnap = await getDocs(
+      query(collection(db, 'partner_commissions'), where('orderId', '==', orderId), limit(1))
+    );
+    const existingCommissionDoc = existingCommissionSnap.empty ? null : existingCommissionSnap.docs[0];
+    const existingCommissionData = existingCommissionDoc
+      ? (existingCommissionDoc.data() as Record<string, unknown>)
+      : null;
+
+    if (!commission) {
+      await updateDoc(doc(db, 'orders', orderId), {
+        partnerCommissionPaid: false,
+        partnerCommissionPaidAt: null,
+        partnerCommissionPartnerId: null,
+        partnerCommissionAmount: null,
+        partnerCommissionRate: null,
+      });
+
+      if (existingCommissionDoc) {
+        await updateDoc(doc(db, 'partner_commissions', existingCommissionDoc.id), {
+          status: 'cancelled',
+          amount: 0,
+          ratePercent: null,
+          updatedAt: now,
+        });
+      }
+      return;
+    }
+
+    await updateDoc(doc(db, 'orders', orderId), {
+      partnerCommissionPaid: true,
+      partnerCommissionPaidAt: now,
+      partnerCommissionPartnerId: commission.partnerId,
+      partnerCommissionAmount: commission.commissionAmount,
+      partnerCommissionRate: commission.ratePercent,
+    });
+
+    if (existingCommissionDoc) {
+      await updateDoc(doc(db, 'partner_commissions', existingCommissionDoc.id), {
+        partnerId: commission.partnerId,
+        userId: client.id,
+        serviceName,
+        amount: commission.commissionAmount,
+        ratePercent: commission.ratePercent,
+        status: 'paid',
+        source: 'prestation_finance',
+        updatedAt: now,
+      });
+    } else {
+      await addDoc(collection(db, 'partner_commissions'), {
+        partnerId: commission.partnerId,
+        orderId,
+        userId: client.id,
+        serviceName,
+        amount: commission.commissionAmount,
+        ratePercent: commission.ratePercent,
+        status: 'paid',
+        source: 'prestation_finance',
+        createdAt: now,
+      });
+    }
+
+    const previousPartnerId = String(existingCommissionData?.partnerId || '').trim();
+    const previousAmount = Number(existingCommissionData?.amount || 0);
+    const shouldNotify =
+      !existingCommissionData ||
+      previousPartnerId !== commission.partnerId ||
+      previousAmount !== commission.commissionAmount;
+
+    if (shouldNotify) {
+      await addDoc(collection(db, 'notifications'), {
+        userId: commission.partnerId,
+        title: 'Commission versée',
+        message: `Une commission de ${commission.commissionAmount.toLocaleString('fr-FR')} FCFA (${commission.ratePercent}%) a été versée suite à la prestation « ${serviceName} » pour ${client.email || 'votre filleul'}.`,
+        type: 'billing',
+        read: false,
+        createdAt: now,
+        metadata: {
+          orderId,
+          paymentId,
+          amount: commission.commissionAmount,
+          ratePercent: commission.ratePercent,
+        },
+      });
+    }
+  };
+
   const handleCreateInvoice = async () => {
     const v = validatePrestationFields();
     if (!v) return;
@@ -382,6 +538,7 @@ export default function Finance() {
       const paymentId = `PAY-${crypto.randomUUID().split('-')[0].toUpperCase()}`;
       const orderId = `ORD-${crypto.randomUUID().split('-')[0].toUpperCase()}`;
       const slug = toServiceSlug(title);
+      const now = new Date().toISOString();
 
       await setDoc(doc(db, 'payments', paymentId), {
         id: paymentId,
@@ -394,7 +551,7 @@ export default function Finance() {
         clientEmail: client.email,
         userId: client.id,
         linkedOrderId: orderId,
-        createdAt: new Date().toISOString(),
+        createdAt: now,
       });
 
       await setDoc(doc(db, 'orders', orderId), {
@@ -408,7 +565,16 @@ export default function Finance() {
         clientEmail: client.email,
         amount,
         status: 'Validé',
-        createdAt: new Date().toISOString(),
+        createdAt: now,
+      });
+
+      await syncPartnerCommissionForOrder({
+        orderId,
+        paymentId,
+        client,
+        serviceName: title,
+        amount,
+        now,
       });
 
       toast.success(
@@ -454,6 +620,14 @@ export default function Finance() {
           userId: client.id,
           paymentId: prestationEdit.id,
           updatedAt: now,
+        });
+        await syncPartnerCommissionForOrder({
+          orderId,
+          paymentId: prestationEdit.id,
+          client,
+          serviceName: title,
+          amount,
+          now,
         });
         if (!prestationEdit.linkedOrderId) {
           await updateDoc(doc(db, 'payments', prestationEdit.id), { linkedOrderId: orderId });
@@ -641,6 +815,10 @@ export default function Finance() {
               ) : (
                 payments.map((p) => {
                   const factureStep = resolveFactureEtape(p);
+                  const linkedOrder = resolveOrderForPayment(p);
+                  const partnerCommissionAmount = Number(linkedOrder?.partnerCommissionAmount || 0);
+                  const partnerCommissionRate = Number(linkedOrder?.partnerCommissionRate || 0);
+                  const partnerCommissionPartnerId = String(linkedOrder?.partnerCommissionPartnerId || '').trim();
                   const montantTone =
                     factureStep === 'paye'
                       ? 'text-noya-green'
@@ -654,7 +832,23 @@ export default function Finance() {
                   return (
                   <tr key={p.id} className="border-b border-border-subtle hover:bg-surface-tertiary transition-all group/row">
                     <td className="p-4 md:p-6 font-black text-text-primary font-mono uppercase tracking-widest opacity-80 group-hover/row:text-noya-blue transition-colors hidden sm:table-cell">{p.id.substring(0, 8)}</td>
-                    <td className="p-4 md:p-6 text-text-secondary uppercase font-bold tracking-tight">{p.description || 'Service'}</td>
+                    <td className="p-4 md:p-6 text-text-secondary uppercase font-bold tracking-tight">
+                      <div className="space-y-1.5">
+                        <p className="text-text-secondary uppercase font-bold tracking-tight">{p.description || 'Service'}</p>
+                        {partnerCommissionAmount > 0 && (
+                          <span className="inline-flex items-center gap-2 rounded-full border border-noya-green/30 bg-noya-green/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-noya-green">
+                            Commission partenaire
+                            <span className="text-text-primary">{partnerCommissionAmount.toLocaleString('fr-FR')} FCFA</span>
+                            {partnerCommissionRate > 0 && (
+                              <span className="text-noya-green/80">({partnerCommissionRate}%)</span>
+                            )}
+                            {partnerCommissionPartnerId && (
+                              <span className="text-text-muted">· {partnerCommissionPartnerId.slice(0, 8)}</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+                    </td>
                     <td className="p-4 md:p-6 text-text-muted uppercase font-black text-[9px] tracking-widest hidden lg:table-cell">Virement Entrant</td>
                     <td className="p-4 md:p-6 text-text-muted font-bold font-mono uppercase hidden md:table-cell">{new Date(p.createdAt).toLocaleDateString('fr-FR')}</td>
                     <td className={`p-4 md:p-6 font-black text-right text-sm tracking-tighter ${montantTone}`}>
