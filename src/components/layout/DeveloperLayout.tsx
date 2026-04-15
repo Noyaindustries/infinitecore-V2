@@ -105,10 +105,10 @@ export default function DeveloperLayout() {
   return (
     <div className="min-h-screen bg-surface-primary flex font-sans text-text-primary">
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 sidebar-responsive bg-surface-secondary border-r border-border-subtle text-text-primary transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:block transition-transform duration-300 ease-in-out shadow-2xl lg:shadow-none`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-64 sidebar-responsive bg-black border-r border-border-subtle text-text-primary transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:block transition-transform duration-300 ease-in-out shadow-2xl lg:shadow-none`}>
         <div className="h-full flex flex-col">
-          <div className="h-[4.75rem] md:h-20 flex items-center px-6 border-b border-border-subtle bg-surface-secondary">
-            <Logo lightText={theme === 'dark'} className="h-13 md:h-14" />
+          <div className="h-[4.75rem] md:h-20 flex items-center px-6 border-b border-border-subtle bg-black">
+            <Logo lightText={theme === 'dark'} className="h-12 md:h-[5rem]" />
             <button
               onClick={() => setSidebarOpen(false)}
               className="ml-auto lg:hidden text-text-secondary hover:text-text-primary p-2"
@@ -137,7 +137,7 @@ export default function DeveloperLayout() {
           <div className="px-2 pb-2 shrink-0">
             <WorkspaceSpaceSwitcher variant="surface" className="border-t-0 pt-3 mt-0" onNavigate={() => setSidebarOpen(false)} />
           </div>
-          <div className="p-4 border-t border-border-subtle bg-surface-primary/30">
+          <div className="p-4 border-t border-border-subtle bg-black">
             <button onClick={handleLogout} className="w-full flex items-center px-4 py-3 text-text-muted hover:text-noya-red hover:bg-noya-red/5 rounded-xl transition-all group font-bold text-sm">
               <LogOut size={18} className="mr-3 group-hover:-translate-x-1 transition-transform" />
               Déconnexion
@@ -153,7 +153,7 @@ export default function DeveloperLayout() {
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-surface-primary">
-        <header className="h-16 bg-surface-secondary border-b border-border-subtle flex items-center justify-between px-6 lg:px-10 z-40 relative shadow-sm">
+        <header className="h-16 bg-black border-b border-border-subtle flex items-center justify-between px-6 lg:px-10 z-40 relative shadow-sm">
           <button
             onClick={() => setSidebarOpen(true)}
             className="lg:hidden text-text-secondary hover:text-text-primary p-2"
@@ -182,14 +182,14 @@ export default function DeveloperLayout() {
               >
                 <Bell size={18} />
                 {unreadCount > 0 && (
-                  <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-noya-orange text-white text-[10px] font-black flex items-center justify-center border-2 border-surface-secondary shadow-lg">
+                  <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-noya-orange text-white text-[10px] font-black flex items-center justify-center border-2 border-black shadow-lg">
                     {unreadCount}
                   </span>
                 )}
               </button>
 
               {showNotifications && (
-                <div className="absolute right-0 mt-3 w-80 bg-surface-secondary rounded-2xl shadow-2xl border border-border-medium py-3 z-50 overflow-hidden">
+                <div className="absolute right-0 mt-3 w-80 bg-black rounded-2xl shadow-2xl border border-border-medium py-3 z-50 overflow-hidden">
                   <div className="px-5 py-3 border-b border-border-subtle flex justify-between items-center bg-surface-primary/50">
                     <h3 className="font-black text-text-primary text-[10px] uppercase tracking-widest">Registre</h3>
                     {unreadCount > 0 && (
@@ -257,7 +257,7 @@ export default function DeveloperLayout() {
 
               {showProfileMenu && (
                 <div
-                  className="absolute right-0 top-full mt-3 w-80 bg-surface-secondary rounded-2xl shadow-2xl border border-border-medium py-2 z-50 overflow-hidden"
+                  className="absolute right-0 top-full mt-3 w-80 bg-black rounded-2xl shadow-2xl border border-border-medium py-2 z-50 overflow-hidden"
                   role="menu"
                 >
                   <div className="px-4 py-3 border-b border-border-subtle bg-surface-primary/60">

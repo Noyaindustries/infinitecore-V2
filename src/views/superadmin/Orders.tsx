@@ -16,7 +16,7 @@ import {
   Zap
 } from 'lucide-react';
 import { db } from '@/lib/clientSdk';
-import { collection, onSnapshot, query, orderBy, doc, updateDoc, setDoc, getDoc } from '@/lib/mongoFirestore';
+import { addDoc, collection, getDoc, getDocs, limit, onSnapshot, orderBy, query, where, doc, updateDoc, setDoc } from '@/lib/mongoFirestore';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -28,6 +28,36 @@ export default function SuperAdminOrders() {
   const [isSending, setIsSending] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+
+  const isSubscriptionOrder = (order: {
+    serviceName?: string;
+    serviceId?: string;
+    orderType?: string;
+    billingCycle?: string;
+    isSubscription?: boolean;
+    recurring?: boolean;
+    subscriptionId?: string;
+    planId?: string;
+  }) => {
+    if (order.isSubscription === true || order.recurring === true) return true;
+
+    const orderType = String(order.orderType || '').trim().toLowerCase();
+    if (orderType === 'subscription' || orderType === 'abonnement') return true;
+
+    const billingCycle = String(order.billingCycle || '').trim().toLowerCase();
+    if (['monthly', 'mensuel', 'yearly', 'annual', 'annuel'].includes(billingCycle)) return true;
+
+    if (String(order.subscriptionId || '').trim()) return true;
+    if (String(order.planId || '').trim()) return true;
+
+    const serviceId = String(order.serviceId || '').trim().toLowerCase();
+    if (['maint-mens', 'rs-starter', 'rs-croissance', 'rs-dominance'].includes(serviceId)) return true;
+
+    const serviceName = String(order.serviceName || '').trim().toLowerCase();
+    return ['abonnement', 'subscription', 'mensuel', 'monthly', 'annuel', 'yearly'].some((token) =>
+      serviceName.includes(token)
+    );
+  };
 
   useEffect(() => {
     const q = query(collection(db, 'orders'), orderBy('createdAt', 'desc'));
@@ -41,10 +71,112 @@ export default function SuperAdminOrders() {
     return () => unsubscribe();
   }, []);
 
-  const handleValidate = async (orderId: string, userId: string, serviceName: string) => {
-    setIsValidating(orderId);
+  const applyPartnerCommissionForValidatedOrder = async (order: {
+    id: string;
+    userId: string;
+    serviceName: string;
+    serviceId?: string;
+    orderType?: string;
+    billingCycle?: string;
+    isSubscription?: boolean;
+    recurring?: boolean;
+    subscriptionId?: string;
+    planId?: string;
+    clientEmail?: string;
+    amount?: number;
+    partnerCommissionPaid?: boolean;
+  }) => {
+    if (!order.userId) return;
+    if (order.partnerCommissionPaid) return;
+    if (!isSubscriptionOrder(order)) return;
+
+    const userRef = doc(db, 'users', order.userId);
+    const userSnap = await getDoc(userRef);
+    if (!userSnap.exists()) return;
+    const userData = (userSnap.data() || {}) as Record<string, unknown>;
+    const partnerId = String(userData.referredByPartnerId || '').trim();
+    if (!partnerId) return;
+
+    const email = String(userData.email || order.clientEmail || '').trim().toLowerCase();
+    if (!email) return;
+
+    const leadSnap = await getDocs(
+      query(
+        collection(db, 'leads'),
+        where('partnerId', '==', partnerId),
+        where('email', '==', email),
+        limit(1)
+      )
+    );
+    if (leadSnap.empty) return;
+
+    const leadDoc = leadSnap.docs[0];
+    const leadData = leadDoc.data() as Record<string, unknown>;
+    if (leadData.commissionPaid === true) return;
+    const commissionAmount = Number(leadData.commissionAmount || 0);
+    if (!(commissionAmount > 0)) return;
+
+    const now = new Date().toISOString();
+    await updateDoc(doc(db, 'leads', leadDoc.id), {
+      commissionPaid: true,
+      status: 'gagne',
+      updatedAt: now,
+      closedAt: String(leadData.closedAt || now),
+      commissionPaidAt: now,
+      commissionPaidOrderId: order.id,
+    });
+
+    await updateDoc(doc(db, 'orders', order.id), {
+      partnerCommissionPaid: true,
+      partnerCommissionPaidAt: now,
+      partnerCommissionLeadId: leadDoc.id,
+      partnerCommissionPartnerId: partnerId,
+      partnerCommissionAmount: commissionAmount,
+    });
+
+    await addDoc(collection(db, 'partner_commissions'), {
+      partnerId,
+      leadId: leadDoc.id,
+      orderId: order.id,
+      userId: order.userId,
+      serviceName: order.serviceName,
+      amount: commissionAmount,
+      status: 'paid',
+      createdAt: now,
+    });
+
+    await addDoc(collection(db, 'notifications'), {
+      userId: partnerId,
+      title: 'Commission versée',
+      message: `Une commission de ${commissionAmount.toLocaleString('fr-FR')} FCFA a été versée suite à la souscription de ${email}.`,
+      type: 'billing',
+      read: false,
+      createdAt: now,
+      metadata: {
+        orderId: order.id,
+        leadId: leadDoc.id,
+        amount: commissionAmount,
+      },
+    });
+  };
+
+  const handleValidate = async (order: {
+    id: string;
+    userId: string;
+    serviceName: string;
+    serviceId?: string;
+    orderType?: string;
+    billingCycle?: string;
+    isSubscription?: boolean;
+    recurring?: boolean;
+    subscriptionId?: string;
+    planId?: string;
+    clientEmail?: string;
+    partnerCommissionPaid?: boolean;
+  }) => {
+    setIsValidating(order.id);
     try {
-      await updateDoc(doc(db, 'orders', orderId), {
+      await updateDoc(doc(db, 'orders', order.id), {
         status: 'Validé',
         validatedAt: new Date().toISOString()
       });
@@ -53,13 +185,15 @@ export default function SuperAdminOrders() {
       const notifRef = doc(collection(db, 'notifications'));
       await setDoc(notifRef, {
         id: notifRef.id,
-        userId,
+        userId: order.userId,
         title: 'Commande validée',
-        message: `Votre commande pour "${serviceName}" a été validée par l'administrateur. Accès en cours de génération.`,
+        message: `Votre commande pour "${order.serviceName}" a été validée par l'administrateur. Accès en cours de génération.`,
         type: 'order',
         read: false,
         createdAt: new Date().toISOString()
       });
+
+      await applyPartnerCommissionForValidatedOrder(order);
 
       toast.success('Paiement confirmé et Commande validée !');
     } catch (error) {
@@ -190,13 +324,19 @@ export default function SuperAdminOrders() {
             <select
               value={filterStatus}
               onChange={e => setFilterStatus(e.target.value)}
+              title="Filtrer les commandes par statut"
+              aria-label="Filtrer les commandes par statut"
               className="px-4 py-3 bg-surface-secondary border border-border-subtle rounded-xl text-[10px] font-black uppercase tracking-widest text-text-secondary focus:ring-2 focus:ring-noya-blue outline-none cursor-pointer"
             >
               <option value="all">Tout Statut</option>
               <option value="pending">En attente ({pendingCount})</option>
               <option value="valid">Validés</option>
             </select>
-            <button className="px-4 py-3 bg-surface-secondary border border-border-subtle rounded-xl text-text-secondary hover:text-text-primary transition-all flex items-center gap-2">
+            <button
+              title="Ouvrir les options de filtre"
+              aria-label="Ouvrir les options de filtre"
+              className="px-4 py-3 bg-surface-secondary border border-border-subtle rounded-xl text-text-secondary hover:text-text-primary transition-all flex items-center gap-2"
+            >
               <Filter size={16} />
             </button>
           </div>
@@ -246,6 +386,15 @@ export default function SuperAdminOrders() {
                       <div className="flex items-center gap-2 mt-1">
                         <span className="p-1 px-1.5 bg-surface-primary text-text-muted rounded text-[8px] font-black uppercase tracking-widest border border-border-subtle">Module:</span>
                         <span className="text-xs text-text-secondary font-medium">{order.serviceName}</span>
+                        <span
+                          className={`inline-flex items-center px-2 py-0.5 rounded-md text-[8px] font-black uppercase tracking-widest border ${
+                            isSubscriptionOrder(order)
+                              ? 'bg-noya-green/10 text-noya-green border-noya-green/20'
+                              : 'bg-surface-tertiary text-text-muted border-border-subtle'
+                          }`}
+                        >
+                          {isSubscriptionOrder(order) ? 'Abonnement' : 'Service'}
+                        </span>
                       </div>
                     </td>
                     <td className="p-6 text-right">
@@ -273,7 +422,7 @@ export default function SuperAdminOrders() {
                       <div className="flex items-center justify-end gap-3">
                         {order.status !== 'Validé' ? (
                           <button
-                            onClick={() => handleValidate(order.id, order.userId, order.serviceName)}
+                            onClick={() => handleValidate(order)}
                             disabled={isValidating === order.id}
                             className="bg-noya-blue text-noya-black px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-lg disabled:opacity-50 flex items-center gap-2"
                           >
@@ -305,7 +454,11 @@ export default function SuperAdminOrders() {
                               )}
                             </button>
                             <div className="h-6 w-px bg-border-subtle mx-1" />
-                            <button className="p-2.5 text-text-dim hover:text-text-primary transition-colors">
+                            <button
+                              title="Plus d’actions"
+                              aria-label="Plus d’actions"
+                              className="p-2.5 text-text-dim hover:text-text-primary transition-colors"
+                            >
                               <MoreVertical size={18} />
                             </button>
                           </div>

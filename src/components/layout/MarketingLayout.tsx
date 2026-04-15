@@ -59,17 +59,21 @@ export default function MarketingLayout() {
 
       {/* HEADER — nav fixe floutée (infinitecore-v4.html) */}
       <header
-        className={`fixed left-0 right-0 top-0 z-[900] border-b border-white/[0.07] text-[#F5F7FF] transition-colors duration-300 ${
-          navSolid ? 'bg-[#03050d]/95' : 'bg-black/60'
-        } backdrop-blur-[24px] backdrop-saturate-[180%]`}
+        className={cn(
+          'fixed left-0 right-0 top-0 z-[900] border-b border-white/[0.07] bg-black text-[#F5F7FF] transition-[box-shadow,colors] duration-300',
+          navSolid && 'shadow-[0_10px_28px_-12px_rgba(0,0,0,0.75)]',
+        )}
       >
         <div className="container mx-auto flex h-[66px] min-w-0 items-center justify-between gap-2 px-3 sm:h-[76px] sm:px-6 md:h-[84px] lg:px-[52px]">
           <div className="flex min-w-0 flex-1 items-center justify-start">
             <Link
               to="/"
-              className="group/logo flex min-w-0 shrink items-center self-center transition-opacity duration-300 hover:opacity-90"
+              className="group/logo flex min-w-0 shrink items-center self-center outline-none focus-visible:ring-2 focus-visible:ring-[#6EA7EA]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-black rounded-sm"
             >
-              <Logo matchMarketingNav className="h-9 w-auto max-h-[2.75rem] sm:h-[3.5rem] sm:max-h-none md:h-[4rem] lg:h-[4.5rem]" />
+              <Logo
+                matchMarketingNav
+                className="h-12 w-auto shrink-0 md:h-[5rem]"
+              />
             </Link>
           </div>
           
@@ -88,7 +92,7 @@ export default function MarketingLayout() {
               </button>
               <div
                 aria-label="Solutions Infinite Core"
-                className="invisible absolute left-1/2 top-full z-[910] mt-2 w-[min(100vw-2rem,17rem)] -translate-x-1/2 translate-y-1 overflow-hidden rounded-lg border border-white/[0.08] bg-[#080D1E]/95 text-left opacity-0 shadow-xl backdrop-blur-xl transition-all duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100"
+                className="invisible absolute left-1/2 top-full z-[910] mt-2 w-[min(100vw-2rem,17rem)] -translate-x-1/2 translate-y-1 overflow-hidden rounded-lg border border-white/[0.08] bg-black text-left opacity-0 shadow-xl transition-all duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:visible group-focus-within:translate-y-0 group-focus-within:opacity-100"
               >
                 <Link to="/solutions" className={cn(dropdownItemClass, 'font-medium text-[#F5F7FF]')}>
                   Toutes les solutions
@@ -122,7 +126,7 @@ export default function MarketingLayout() {
                   <span className="hidden lg:inline">Mon espace</span>
                   <ChevronDown size={13} className="text-[#8E9EAE]" />
                 </button>
-                <div className="invisible absolute right-0 top-full z-[910] mt-2 min-w-[14rem] max-w-[18rem] translate-y-1 overflow-hidden rounded-lg border border-white/[0.08] bg-[#080D1E]/95 text-[#C8D0E0] opacity-0 shadow-xl backdrop-blur-xl transition-all duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100">
+                <div className="invisible absolute right-0 top-full z-[910] mt-2 min-w-[14rem] max-w-[18rem] translate-y-1 overflow-hidden rounded-lg border border-white/[0.08] bg-black text-[#C8D0E0] opacity-0 shadow-xl transition-all duration-200 group-hover:visible group-hover:translate-y-0 group-hover:opacity-100">
                   {workspaceLinks.map((space) => (
                     <Link key={space.id} to={space.to} className="block px-4 py-3 text-[13px] transition-colors hover:bg-white/[0.06] hover:text-[#F5F7FF]">
                       {space.label}
@@ -174,7 +178,7 @@ export default function MarketingLayout() {
             isMenuOpen ? 'max-h-[80vh] opacity-100' : 'pointer-events-none max-h-0 opacity-0'
           }`}
         >
-          <div className="space-y-3 border-t border-white/[0.07] bg-surface-primary/95 px-4 py-4 backdrop-blur-xl">
+          <div className="space-y-3 border-t border-white/[0.07] bg-black px-4 py-4">
             {/* Nav Links */}
             <nav className="space-y-1" aria-label="Navigation principale">
               <div>
@@ -292,7 +296,7 @@ export default function MarketingLayout() {
       </main>
 
       {/* FOOTER */}
-      <footer className="relative z-10 mt-auto border-t border-white/[0.07] bg-surface-primary text-[#5E6E84]">
+      <footer className="relative z-10 mt-auto border-t border-white/[0.07] bg-black text-[#5E6E84]">
         <div
           className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-[#E8961E]/30 to-transparent"
           aria-hidden
@@ -302,7 +306,7 @@ export default function MarketingLayout() {
             {/* Marque */}
             <div className="col-span-3 sm:col-span-2 lg:col-span-5 xl:col-span-4">
               <Link to="/" className="group/logo inline-block transition-opacity hover:opacity-90">
-                <Logo blendSurface="primary" className="h-12 sm:h-14 md:h-16" />
+                <Logo blendSurface="primary" className="h-12 md:h-[5rem]" />
               </Link>
               <p className="mt-2 max-w-[280px] text-[11px] font-normal leading-snug text-[#6B7A90] sm:text-[12px] sm:leading-relaxed">
                 The Operating System for African Business. Suite SaaS modulaire pour PME et grandes entreprises

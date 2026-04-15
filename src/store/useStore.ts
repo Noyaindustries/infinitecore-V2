@@ -1,5 +1,10 @@
 import { create } from 'zustand';
 
+const DEMO_STORE_ENABLED =
+  typeof process !== 'undefined' &&
+  !!process.env &&
+  process.env.NEXT_PUBLIC_ENABLE_DEMO_STORE === '1';
+
 export type Client = {
   id: string;
   name: string;
@@ -73,32 +78,34 @@ interface AppState {
 }
 
 export const useStore = create<AppState>((set) => ({
-  currentUser: { name: 'Super Admin', email: 'superadmin@infinitecore.com', company: 'Infinite Core' },
-  clients: [
+  currentUser: DEMO_STORE_ENABLED
+    ? { name: 'Super Admin', email: 'superadmin@infinitecore.com', company: 'Infinite Core' }
+    : { name: '', email: '', company: '' },
+  clients: DEMO_STORE_ENABLED ? [
     { id: 'CLI-1001', name: 'Super Admin', email: 'superadmin@infinitecore.com', company: 'Infinite Core', pack: 'Pack Business', date: 'Hier', status: 'Actif' }
-  ],
-  tickets: [
+  ] : [],
+  tickets: DEMO_STORE_ENABLED ? [
     { id: '#T-1042', subject: 'Problème accès galerie', status: 'En cours', date: 'Hier, 14:30', priority: 'Moyenne', clientName: 'Super Admin', clientEmail: 'superadmin@infinitecore.com', message: 'Je n\'arrive pas à voir les images de mon audit.' },
     { id: '#T-1038', subject: 'Question facture acompte', status: 'Nouveau', date: 'Aujourd\'hui, 09:15', priority: 'Basse', clientName: 'Super Admin', clientEmail: 'superadmin@infinitecore.com', message: 'Pouvez-vous me renvoyer la facture ?' },
-  ],
-  orders: [
+  ] : [],
+  orders: DEMO_STORE_ENABLED ? [
     { id: 'CMD-1001', serviceName: 'Module Infinite CRM', moduleId: 'crm', clientName: 'Super Admin', date: 'Hier', status: 'Nouveau' }
-  ],
-  tasks: [
+  ] : [],
+  tasks: DEMO_STORE_ENABLED ? [
     { id: '1', title: 'Audit PADDE-CI', client: 'Entreprise A', date: 'Aujourd\'hui', columnId: 'lead' },
     { id: '2', title: 'Demande Devis', client: 'Client B', date: 'Hier', columnId: 'lead' },
     { id: '3', title: 'Analyse préliminaire', client: 'Client C', date: 'Il y a 2j', columnId: 'diagnostic' },
     { id: '4', title: 'Visite site', client: 'Entreprise D', date: 'En cours', columnId: 'audit' },
     { id: '5', title: 'Envoi devis', client: 'Client E', date: 'En attente', columnId: 'proposition' },
     { id: '6', title: 'Démarrage projet', client: 'Client F', date: 'Signé', columnId: 'signe' }
-  ],
-  milestones: [
+  ] : [],
+  milestones: DEMO_STORE_ENABLED ? [
     { id: 1, title: 'Lead & Contact', status: 'completed', date: '10 Mars 2026', comment: 'Premier contact établi via le site web.' },
     { id: 2, title: 'Diagnostic', status: 'completed', date: '12 Mars 2026', comment: 'Analyse des besoins validée par l\'équipe Commando.' },
     { id: 3, title: 'Audit en cours', status: 'current', date: 'En cours', comment: 'Nos experts sont sur le terrain.' },
     { id: 4, title: 'Proposition Commerciale', status: 'pending', date: '-', comment: 'En attente de la finalisation de l\'audit.' },
     { id: 5, title: 'Contrat Signé', status: 'pending', date: '-', comment: 'Validation finale.' },
-  ],
+  ] : [],
   ownedModules: [],
   addClient: (client) => set((state) => {
     const newClient = {

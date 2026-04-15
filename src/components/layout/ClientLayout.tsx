@@ -101,9 +101,9 @@ export default function ClientLayout() {
   return (
     <div className="client-portal flex min-h-screen flex-col font-sans text-text-primary antialiased md:flex-row">
       {/* Mobile Header */}
-      <div className="relative z-50 flex min-h-[60px] items-center justify-between border-b border-white/[0.06] bg-[#060910]/85 px-4 py-3 text-text-primary backdrop-blur-xl md:hidden">
+      <div className="relative z-50 flex min-h-[60px] items-center justify-between border-b border-white/[0.06] bg-black px-4 py-3 text-text-primary md:hidden">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-luxe-champagne/35 to-transparent" aria-hidden />
-        <Logo lightText={theme === 'dark'} className="h-12" />
+        <Logo lightText={theme === 'dark'} className="h-12 md:h-[5rem]" />
         <button
           type="button"
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -117,7 +117,7 @@ export default function ClientLayout() {
       {/* Sidebar */}
       <aside
         className={cn(
-          'sidebar-responsive fixed z-50 flex w-64 shrink-0 flex-col border-r border-white/[0.06] bg-[#050810]/92 text-text-primary backdrop-blur-2xl transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]',
+          'sidebar-responsive fixed z-50 flex w-64 shrink-0 flex-col border-r border-white/[0.06] bg-black text-text-primary transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]',
           'top-[60px] h-[calc(100dvh-60px)] md:relative md:top-auto md:h-full md:translate-x-0',
           isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
         )}
@@ -125,7 +125,7 @@ export default function ClientLayout() {
         <div className="pointer-events-none absolute inset-y-0 right-0 w-px bg-linear-to-b from-luxe-champagne/25 via-luxe-champagne/10 to-transparent" aria-hidden />
         <div className="hidden p-6 md:block">
           <div className="mb-3">
-            <Logo lightText className="h-14 md:h-[3.75rem]" />
+            <Logo lightText className="h-12 md:h-[5rem]" />
           </div>
           <div className="h-px w-full bg-linear-to-r from-transparent via-luxe-champagne/30 to-transparent" aria-hidden />
           <div className="mt-4 flex items-center gap-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.24em] text-luxe-champagne/90">
@@ -156,7 +156,7 @@ export default function ClientLayout() {
               <div className="relative">
                 <item.icon size={20} className="shrink-0 opacity-90 group-hover:opacity-100" strokeWidth={1.75} />
                 {item.id === 'messagerie' && unreadChats > 0 && (
-                  <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-[#050810] bg-noya-red shadow-[0_0_8px_rgba(225,91,100,0.6)]" />
+                  <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-black bg-noya-red shadow-[0_0_8px_rgba(225,91,100,0.6)]" />
                 )}
               </div>
               <span className="tracking-wide">{item.label}</span>
@@ -183,7 +183,7 @@ export default function ClientLayout() {
       {/* Main Content */}
       <main className="flex h-screen flex-1 flex-col overflow-hidden bg-black/20 md:bg-black/25">
         {/* Desktop Header */}
-        <header className="sticky top-0 z-40 hidden border-b border-white/[0.06] bg-[#060910]/80 shadow-[0_12px_40px_-24px_rgba(0,0,0,0.8)] backdrop-blur-xl md:block">
+        <header className="sticky top-0 z-40 hidden border-b border-white/[0.06] bg-black shadow-[0_12px_40px_-24px_rgba(0,0,0,0.8)] md:block">
           <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-luxe-champagne/25 to-transparent" aria-hidden />
           <div className="flex items-center justify-between px-6 py-4">
             <div>
@@ -213,7 +213,7 @@ export default function ClientLayout() {
                 </button>
 
                 {showNotifications && (
-                  <div className="absolute right-0 z-50 mt-3 w-80 overflow-hidden rounded-2xl border border-white/10 bg-[#080c14]/95 py-2 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.65),0_0_0_1px_rgba(201,169,98,0.12)] backdrop-blur-xl">
+                  <div className="absolute right-0 z-50 mt-3 w-80 overflow-hidden rounded-2xl border border-white/10 bg-black py-2 shadow-[0_24px_48px_-12px_rgba(0,0,0,0.65),0_0_0_1px_rgba(201,169,98,0.12)]">
                     <div className="flex items-center justify-between border-b border-white/[0.06] px-4 py-3">
                       <h3 className="font-display text-lg font-medium text-text-primary">Notifications</h3>
                       <button

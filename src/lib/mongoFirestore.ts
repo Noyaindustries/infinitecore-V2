@@ -26,6 +26,7 @@ type QueryConstraint = QueryFilterConstraint | QueryOrderConstraint | QueryLimit
 type InternalDoc = { id: string; data: DocData };
 
 const POLL_INTERVAL_MS = 2000;
+const MAX_POLL_INTERVAL_MS = 15000;
 const DELETE_FIELD_SENTINEL = "__delete_field__";
 
 function randomId() {
@@ -277,6 +278,15 @@ export function onSnapshot<T = DocData>(
 ) {
   let active = true;
   let previousSignature = "";
+  let currentIntervalMs = POLL_INTERVAL_MS;
+  let timeoutId: number | null = null;
+
+  const scheduleNext = () => {
+    if (!active) return;
+    const hiddenMultiplier = typeof document !== "undefined" && document.hidden ? 2 : 1;
+    const nextDelay = Math.min(MAX_POLL_INTERVAL_MS, currentIntervalMs * hiddenMultiplier);
+    timeoutId = window.setTimeout(poll, nextDelay);
+  };
 
   const poll = async () => {
     if (!active) return;
@@ -289,22 +299,30 @@ export function onSnapshot<T = DocData>(
           : stableSerialize({ id: snapshot.id, exists: snapshot.exists(), data: snapshot.data() });
       if (signature !== previousSignature) {
         previousSignature = signature;
+        currentIntervalMs = POLL_INTERVAL_MS;
         if (snapshot instanceof QuerySnapshot) {
           (onNext as (snapshot: QuerySnapshot<T>) => void)(snapshot as QuerySnapshot<T>);
         } else {
           (onNext as (snapshot: DocumentSnapshot<T>) => void)(snapshot as DocumentSnapshot<T>);
         }
+      } else {
+        currentIntervalMs = Math.min(MAX_POLL_INTERVAL_MS, Math.round(currentIntervalMs * 1.5));
       }
     } catch (error) {
+      currentIntervalMs = Math.min(MAX_POLL_INTERVAL_MS, currentIntervalMs * 2);
       onError?.(error);
     } finally {
-      if (active) window.setTimeout(poll, POLL_INTERVAL_MS);
+      scheduleNext();
     }
   };
 
   void poll();
   return () => {
     active = false;
+    if (timeoutId !== null) {
+      window.clearTimeout(timeoutId);
+      timeoutId = null;
+    }
   };
 }
 

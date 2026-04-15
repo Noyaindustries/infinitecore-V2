@@ -22,6 +22,7 @@ type ReferredSignup = {
 
 const normalizePartnerCode = (code: string) => code.toUpperCase().replace('PART-USR', 'PART-INF');
 const buildPartnerCode = (uid?: string) => `PART-${(uid || '').substring(0, 6).toUpperCase().replace('USR', 'INF')}`;
+const buildPartnerCodeShort = (uid?: string) => `PART-${(uid || '').substring(0, 5).toUpperCase().replace('USR', 'INF')}`;
 
 function formatDate(value?: string) {
   if (!value) return '—';
@@ -37,7 +38,7 @@ export default function PartnerReferrals() {
   const [referredSignups, setReferredSignups] = useState<ReferredSignup[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
 
-  const referralCode = normalizePartnerCode(String(userData?.referralCode || buildPartnerCode(partnerUid)));
+  const referralCode = normalizePartnerCode(String(userData?.referralCode || userData?.partnerCode || buildPartnerCode(partnerUid)));
   const partnerCodeLegacy = normalizePartnerCode(String(userData?.partnerCode || ''));
   const referralLink = referralCode
     ? `${typeof window !== 'undefined' ? window.location.origin : 'https://infinitecore.app'}/signup?ref=${encodeURIComponent(referralCode)}`
@@ -52,7 +53,9 @@ export default function PartnerReferrals() {
       const referralKeys = new Set<string>([
         referralCode,
         normalizePartnerCode(String(userData?.referralCode || '')),
+        normalizePartnerCode(String(userData?.partnerCode || '')),
         normalizePartnerCode(buildPartnerCode(partnerUid)),
+        normalizePartnerCode(buildPartnerCodeShort(partnerUid)),
         partnerCodeLegacy,
         String(partnerUid || '').toUpperCase(),
       ].filter(Boolean));

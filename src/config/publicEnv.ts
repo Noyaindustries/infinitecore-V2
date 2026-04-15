@@ -7,3 +7,8 @@
 export function publicApiBaseUrl(): string {
   return (process.env.NEXT_PUBLIC_API_BASE_URL ?? "").trim().replace(/\/$/, "");
 }
+
+/** Client ID OAuth Google (console Google Cloud → identifiants → ID client Web). */
+export function publicGoogleClientId(): string {
+  return (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "").trim();
+}

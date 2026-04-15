@@ -1,6 +1,8 @@
 import { apiRequest, setAuthToken, getAuthToken } from "./apiClient";
 import { openGoogleEmailDialog } from "./googleSignInUI";
 import { agentSessionLog } from "@/debug/agentSessionLog";
+import { publicGoogleClientId } from "@/config/publicEnv";
+import { requestGoogleAccessToken } from "./googleIdentityServices";
 
 export interface User {
   uid: string;
@@ -246,6 +248,8 @@ export async function verifyEmailLoginCode(_auth: Auth, payload: { email: string
 export type SignInWithGoogleOptions = {
   /** Si renseigné, pas de modale (email déjà saisi sur login / signup). */
   email?: string;
+  /** Connexion page équipe : refuse les comptes non admin/commando. */
+  staffOnly?: boolean;
   /** Nom affiché côté API (sinon dérivé de la partie locale de l’email). */
   displayName?: string;
   /** Métadonnées d’inscription (optionnel) */
@@ -262,6 +266,52 @@ export async function signInWithPopup(
   provider: GoogleAuthProvider,
   options?: SignInWithGoogleOptions
 ) {
+  const googleClientId = publicGoogleClientId();
+
+  if (googleClientId && typeof window !== "undefined") {
+    const accessToken = await requestGoogleAccessToken(googleClientId);
+    const data = await apiRequest<{
+      success: boolean;
+      token?: string;
+      verificationRequired?: boolean;
+      challengeId?: string;
+      email?: string;
+      role?: string;
+      isNew: boolean;
+      user?: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
+    }>("/api/auth/google", {
+      method: "POST",
+      body: JSON.stringify({
+        accessToken,
+        staffOnly: Boolean(options?.staffOnly),
+        displayName: options?.displayName,
+        companyName: options?.companyName,
+        industry: options?.industry,
+        size: options?.size,
+        referredBy: options?.referredBy,
+        referredByPartnerId: options?.referredByPartnerId,
+        referredByPartnerName: options?.referredByPartnerName,
+      }),
+    });
+    if (data.verificationRequired) {
+      const emailOut = String(data.email || "").trim().toLowerCase();
+      return {
+        verificationRequired: true as const,
+        challengeId: data.challengeId || "",
+        email: emailOut,
+        role: String(data.role || "client"),
+        isNew: Boolean(data.isNew),
+      };
+    }
+    if (!data.user) {
+      throw new Error("Réponse Google invalide.");
+    }
+    setAuthToken(data.token || null);
+    authState.currentUser = toUser(data.user);
+    emitAuthState();
+    return { user: authState.currentUser, isNew: data.isNew };
+  }
+
   const fromOptions = String(options?.email || "").trim();
   const fromHint = String(provider.getCustomParameters().login_hint || "").trim();
   let email = fromOptions || fromHint;
@@ -296,6 +346,7 @@ export async function signInWithPopup(
     method: "POST",
     body: JSON.stringify({
       email: trimmed,
+      staffOnly: Boolean(options?.staffOnly),
       displayName: display,
       companyName: options?.companyName,
       industry: options?.industry,

@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -13,14 +17,41 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-    "plugins": [{ "name": "next" }],
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
     "experimentalDecorators": true,
     "useDefineForClassFields": false,
     "moduleDetection": "force",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": [
+        "./src/*"
+      ]
     }
   },
-  "include": ["next-env.d.ts", "src/env.d.ts", ".next/types/**/*.ts", "src/**/*", "pages/**/*", "server.ts", "mongoApi.ts", "prismaClient.ts", "_r2.ts", "storageUtils.ts", "scripts/**/*", "tests/**/*", "next.config.ts"],
-  "exclude": ["node_modules", "dist", ".next", ".local-uploads", "infinitecore-V2"]
+  "include": [
+    ".next/types/**/*.ts",
+    "_r2.ts",
+    "mongoApi.ts",
+    "next-env.d.ts",
+    "next.config.ts",
+    "pages/**/*",
+    "prismaClient.ts",
+    "scripts/**/*",
+    "server.ts",
+    "src/**/*",
+    "src/env.d.ts",
+    "storageUtils.ts",
+    "tests/**/*",
+    ".next-dev/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".next",
+    ".local-uploads",
+    "infinitecore-V2"
+  ]
 }

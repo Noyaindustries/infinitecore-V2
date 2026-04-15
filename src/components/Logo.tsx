@@ -80,7 +80,7 @@ export default function Logo({
   matchMarketingNav = false,
 }: LogoProps) {
   const [marketingImgFailed, setMarketingImgFailed] = useState(false);
-  const sizeClass = className.trim() || 'h-14 md:h-16';
+  const sizeClass = className.trim() || 'h-12 md:h-[5rem]';
   const blend = Boolean(blendSurface) && !matchMarketingNav;
   const imgBase =
     'block h-full max-h-full w-auto max-w-full object-contain object-left';
@@ -100,7 +100,7 @@ export default function Logo({
       <img
         src={LOGO_SRC}
         alt="Infinite Core"
-        className="pointer-events-none block h-full w-auto max-h-full max-w-full object-contain object-left opacity-90 transition-opacity duration-150 group-hover/logo:opacity-100"
+        className="pointer-events-none block h-full w-auto max-h-full max-w-full object-contain object-left opacity-100"
         onError={() => setMarketingImgFailed(true)}
       />
     )

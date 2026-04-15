@@ -37,10 +37,10 @@ export default function ClientShop() {
   const autresServicesPadde = [
     { id: 'presenz-one', title: 'PRESENZ One-Page', price: 75000, desc: 'Site web professionnel one-page + WhatsApp + Facebook + coaching 60 min', duration: '7 jours ouvrables', icon: Globe, color: 'text-green-500', bg: 'bg-green-50' },
     { id: 'presenz-pro', title: 'PRESENZ PRO + ERP', price: 250000, desc: 'Site complet multi-pages + fonctionnalités avancées + intégration ERP', duration: '15-21 jours', icon: LayoutTemplate, color: 'text-purple-500', bg: 'bg-purple-50' },
-    { id: 'maint-mens', title: 'Maintenance Mensuelle', price: 25000, desc: 'Hébergement, mises à jour, 2 modifications/mois, support WhatsApp', duration: 'Mensuel — en continu', icon: Wrench, color: 'text-gray-500', bg: 'bg-gray-50' },
-    { id: 'rs-starter', title: 'RS Formule Starter', price: 45000, desc: '8 visuels/mois Facebook + 4 visuels Instagram + coaching publication', duration: 'Mensuel', icon: Share2, color: 'text-pink-500', bg: 'bg-pink-50' },
-    { id: 'rs-croissance', title: 'RS Formule Croissance', price: 85000, desc: 'Starter + 4 Reels TikTok/Reels + 1 campagne Meta Ads + rapport mensuel', duration: 'Mensuel', icon: TrendingUp, color: 'text-orange-500', bg: 'bg-orange-50' },
-    { id: 'rs-dominance', title: 'RS Formule Dominance', price: 150000, desc: 'Croissance + carrousels + stories + 2 campagnes Ads + retargeting', duration: 'Mensuel', icon: Star, color: 'text-red-500', bg: 'bg-red-50' },
+    { id: 'maint-mens', title: 'Maintenance Mensuelle', price: 25000, desc: 'Hébergement, mises à jour, 2 modifications/mois, support WhatsApp', duration: 'Mensuel — en continu', icon: Wrench, color: 'text-gray-500', bg: 'bg-gray-50', isSubscription: true, billingCycle: 'mensuel' },
+    { id: 'rs-starter', title: 'RS Formule Starter', price: 45000, desc: '8 visuels/mois Facebook + 4 visuels Instagram + coaching publication', duration: 'Mensuel', icon: Share2, color: 'text-pink-500', bg: 'bg-pink-50', isSubscription: true, billingCycle: 'mensuel' },
+    { id: 'rs-croissance', title: 'RS Formule Croissance', price: 85000, desc: 'Starter + 4 Reels TikTok/Reels + 1 campagne Meta Ads + rapport mensuel', duration: 'Mensuel', icon: TrendingUp, color: 'text-orange-500', bg: 'bg-orange-50', isSubscription: true, billingCycle: 'mensuel' },
+    { id: 'rs-dominance', title: 'RS Formule Dominance', price: 150000, desc: 'Croissance + carrousels + stories + 2 campagnes Ads + retargeting', duration: 'Mensuel', icon: Star, color: 'text-red-500', bg: 'bg-red-50', isSubscription: true, billingCycle: 'mensuel' },
   ];
 
   const coreModules = [
@@ -80,6 +80,9 @@ export default function ClientShop() {
         clientEmail: auth.currentUser.email,
         serviceName: selectedService.title,
         serviceId: selectedService.id,
+        isSubscription: selectedService.isSubscription === true,
+        billingCycle: selectedService.billingCycle || null,
+        orderType: selectedService.isSubscription === true ? 'abonnement' : 'service',
         amount: selectedService.price,
         note: note.trim() || null,
         status: 'En attente',
@@ -280,7 +283,12 @@ export default function ClientShop() {
             >
               <div className="p-4 md:p-6 border-b border-border flex justify-between items-center bg-noya-black/50">
                 <h3 className="text-xl font-bold text-text-primary">Confirmer la demande</h3>
-                <button onClick={() => setSelectedService(null)} className="text-text-secondary hover:text-text-primary transition-colors">
+                <button
+                  onClick={() => setSelectedService(null)}
+                  title="Fermer la fenêtre"
+                  aria-label="Fermer la fenêtre"
+                  className="text-text-secondary hover:text-text-primary transition-colors"
+                >
                   <X size={24} />
                 </button>
               </div>

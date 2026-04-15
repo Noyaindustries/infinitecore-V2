@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { 
@@ -359,104 +359,126 @@ export default function Signup() {
     }
   };
 
-  const handleOAuth = async (providerName: 'google') => {
-    const confirmed = await openGoogleConfirmDialog({
-      title: 'Vérification de sécurité',
-      description: 'Confirmez l’ouverture de Google pour continuer la création ou la connexion à votre compte.',
-      confirmLabel: 'Continuer avec Google',
-      cancelLabel: 'Annuler',
-    });
-    if (!confirmed) {
-      toast.error('Connexion Google annulée.');
-      return;
-    }
-
-    setIsLoading(true);
-    try {
-      let provider;
-      if (providerName === 'google') {
-        provider = new GoogleAuthProvider();
-      }
-
-      if (!provider) {
-        throw new Error('Provider not initialized');
-      }
-
-      const emailTrim = formData.email.trim();
-      provider.setCustomParameters({
-        prompt: 'select_account',
-        ...(emailTrim ? { login_hint: emailTrim } : {}),
+  const runGoogleSignup = useCallback(
+    async () => {
+      const confirmed = await openGoogleConfirmDialog({
+        title: 'Vérification de sécurité',
+        description: 'Confirmez l’ouverture de Google pour continuer la création ou la connexion à votre compte.',
+        confirmLabel: 'Continuer avec Google',
+        cancelLabel: 'Annuler',
       });
-      const userCredential = await signInWithPopup(auth, provider, {
-        email: emailTrim || undefined,
-        displayName: formData.fullName.trim() || undefined,
-        companyName: `${formData.fullName.trim() || 'Mon'}'s Company`,
-        industry: 'Non spécifié',
-        size: '1-5',
-        referredBy: referralCode || null,
-        referredByPartnerId: referrerId || null,
-        referredByPartnerName: referrerName?.trim() || null,
-      });
-      if ('verificationRequired' in userCredential && userCredential.verificationRequired) {
-        if (!userCredential.challengeId) {
-          throw new Error("Challenge de vérification Google manquant.");
-        }
-        setGoogleVerificationPending(true);
-        setGoogleVerificationCode('');
-        setGoogleChallengeId(userCredential.challengeId);
-        setGoogleVerificationEmail(userCredential.email);
-        setGoogleIsNewUser(Boolean(userCredential.isNew));
-        toast.success('Code de vérification Google envoyé par email.');
+      if (!confirmed) {
+        toast.error('Connexion Google annulée.');
         return;
       }
-      const u = userCredential.user as any;
-      const isNew = (userCredential as any).isNew;
 
-      if (isNew) {
-        try {
-          await syncReferralSignupSideEffects({
-            signupUserId: u.uid,
-            firstName: u.displayName?.split(' ')[0] || '',
-            lastName: u.displayName?.split(' ').slice(1).join(' ') || '',
-            email: u.email || '',
-            phone: '',
-            companyName: `${u.displayName || 'Mon'}'s Company`,
-            industry: 'Non spécifié',
-          });
-        } catch (e) { console.error("Lead sync failed", e); }
-
-        addClient({
-          name: u.displayName || u.email || 'Nouveau Client',
-          email: u.email || '',
-          company: `${u.displayName || 'Mon'}'s Company`,
-          pack: 'Pack Essentiel'
-        });
-
-        setIsSuccess(true);
-        await navigateAfterSignup();
-      } else {
-        navigate(homePathForRole(u.role), { replace: true });
-      }
-    } catch (error: any) {
-      const code = error?.code;
-      const cancelled =
-        code === 'auth/popup-closed-by-user' ||
-        (typeof error?.message === 'string' && error.message.includes('Connexion Google annulée'));
-      if (cancelled) {
-        toast.error('Connexion Google annulée.');
-      } else {
-        console.error(`${providerName} signup error:`, error);
-        if (code === 'auth/popup-blocked') {
-          toast.error('Le popup a été bloqué par votre navigateur. Veuillez autoriser les popups pour ce site.');
-        } else if (code === 'auth/unauthorized-domain') {
-          toast.error('Ce domaine n\'est pas autorisé pour l\'inscription. Veuillez contacter l\'administrateur.');
-        } else {
-          toast.error(`Erreur lors de l'inscription avec ${providerName}.`);
+      setIsLoading(true);
+      try {
+        const providerName = 'google' as const;
+        let provider;
+        if (providerName === 'google') {
+          provider = new GoogleAuthProvider();
         }
+
+        if (!provider) {
+          throw new Error('Provider not initialized');
+        }
+
+        const emailTrim = formData.email.trim();
+        provider.setCustomParameters({
+          prompt: 'select_account',
+          ...(emailTrim ? { login_hint: emailTrim } : {}),
+        });
+        const userCredential = await signInWithPopup(auth, provider, {
+          email: emailTrim || undefined,
+          displayName: formData.fullName.trim() || undefined,
+          companyName: `${formData.fullName.trim() || 'Mon'}'s Company`,
+          industry: 'Non spécifié',
+          size: '1-5',
+          referredBy: referralCode || null,
+          referredByPartnerId: referrerId || null,
+          referredByPartnerName: referrerName?.trim() || null,
+        });
+        if ('verificationRequired' in userCredential && userCredential.verificationRequired) {
+          if (!userCredential.challengeId) {
+            throw new Error("Challenge de vérification Google manquant.");
+          }
+          const verifiedEmail = userCredential.email || emailTrim;
+          setGoogleVerificationPending(true);
+          setGoogleVerificationCode('');
+          setGoogleChallengeId(userCredential.challengeId);
+          setGoogleVerificationEmail(verifiedEmail);
+          setGoogleIsNewUser(Boolean(userCredential.isNew));
+          toast.success('Code de vérification Google envoyé par email.');
+          return;
+        }
+        const u = userCredential.user as { uid: string; email?: string | null; displayName?: string | null; role?: string };
+        const isNew = (userCredential as { isNew?: boolean }).isNew;
+
+        if (isNew) {
+          try {
+            await syncReferralSignupSideEffects({
+              signupUserId: u.uid,
+              firstName: u.displayName?.split(' ')[0] || '',
+              lastName: u.displayName?.split(' ').slice(1).join(' ') || '',
+              email: u.email || '',
+              phone: '',
+              companyName: `${u.displayName || 'Mon'}'s Company`,
+              industry: 'Non spécifié',
+            });
+          } catch (e) {
+            console.error("Lead sync failed", e);
+          }
+
+          addClient({
+            name: u.displayName || u.email || 'Nouveau Client',
+            email: u.email || '',
+            company: `${u.displayName || 'Mon'}'s Company`,
+            pack: 'Pack Essentiel'
+          });
+
+          setIsSuccess(true);
+          await navigateAfterSignup();
+        } else {
+          navigate(homePathForRole(u.role), { replace: true });
+        }
+      } catch (error: unknown) {
+        const code = error && typeof error === 'object' && 'code' in error ? (error as { code?: string }).code : '';
+        const cancelled =
+          code === 'auth/popup-closed-by-user' ||
+          (typeof (error as Error)?.message === 'string' && (error as Error).message.includes('Connexion Google annulée'));
+        if (cancelled) {
+          toast.error('Connexion Google annulée.');
+        } else {
+          console.error('google signup error:', error);
+          if (code === 'auth/popup-blocked') {
+            toast.error('Le popup a été bloqué par votre navigateur. Veuillez autoriser les popups pour ce site.');
+          } else if (code === 'auth/unauthorized-domain') {
+            toast.error("Ce domaine n'est pas autorisé pour l'inscription. Veuillez contacter l'administrateur.");
+          } else {
+            toast.error("Erreur lors de l'inscription avec Google.");
+          }
+        }
+      } finally {
+        setIsLoading(false);
       }
-    } finally {
-      setIsLoading(false);
-    }
+    },
+    [
+      formData.email,
+      formData.fullName,
+      referralCode,
+      referrerId,
+      referrerName,
+      addClient,
+      navigate,
+      navigateAfterSignup,
+      syncReferralSignupSideEffects,
+    ]
+  );
+
+  const handleOAuth = (providerName: 'google') => {
+    if (providerName !== 'google') return;
+    void runGoogleSignup();
   };
 
   const completeGoogleVerification = async () => {

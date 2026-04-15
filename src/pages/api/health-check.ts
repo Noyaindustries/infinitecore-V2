@@ -1,7 +1,7 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { prisma } from "../../prismaClient";
-import { agentSessionLog } from "../../src/debug/agentSessionLog";
-import { appEnv } from "../../src/config/env";
+import { prisma } from "../../../prismaClient";
+import { agentSessionLog } from "@/debug/agentSessionLog";
+import { appEnv } from "@/config/env";
 
 export default async function healthCheck(req: NextApiRequest, res: NextApiResponse) {
   const start = Date.now();
@@ -40,7 +40,7 @@ export default async function healthCheck(req: NextApiRequest, res: NextApiRespo
     agentSessionLog({
       runId: "initial",
       hypothesisId: "H7",
-      location: "pages/api/health-check.ts",
+      location: "src/pages/api/health-check.ts",
       message: "health_check_db_failed",
       data: {
         durationMs: duration,

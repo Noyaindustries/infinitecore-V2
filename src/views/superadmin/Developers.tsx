@@ -81,7 +81,7 @@ export default function SuperAdminDevelopers() {
         createdAt: new Date().toISOString()
       });
 
-      setGeneratedPassword(authResult.password);
+      setGeneratedPassword(authResult.invitationSent ? "Invitation envoyée par email" : "Invitation non envoyée");
       toast.success('Développeur ajouté avec succès.');
     } catch (error: any) {
       console.error("Error adding developer:", error);
@@ -258,7 +258,7 @@ export default function SuperAdminDevelopers() {
                   <CheckCircle className="shrink-0 mt-0.5" size={24} />
                   <div>
                     <p className="font-black uppercase tracking-tight text-sm">Accès créé avec succès</p>
-                    <p className="text-xs mt-1 opacity-80 leading-relaxed italic">Transmettez ces codes de manière sécurisée au nouveau membre de l'équipe.</p>
+                    <p className="text-xs mt-1 opacity-80 leading-relaxed italic">Le membre reçoit un email pour définir son mot de passe.</p>
                   </div>
                 </div>
                 
@@ -268,7 +268,7 @@ export default function SuperAdminDevelopers() {
                     <p className="font-bold text-text-primary px-4 py-3 bg-surface-secondary rounded-xl border border-border-subtle">{newDev.email}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-text-muted font-black uppercase tracking-widest mb-2">Mot de passe temporaire</p>
+                    <p className="text-[10px] text-text-muted font-black uppercase tracking-widest mb-2">Statut de l’invitation</p>
                     <div className="flex items-center justify-between bg-surface-secondary px-4 py-3 rounded-xl border border-border-subtle">
                       <code className="font-mono text-noya-blue text-sm font-bold tracking-widest">{generatedPassword}</code>
                       <button 

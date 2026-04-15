@@ -159,7 +159,7 @@ export default function AdminLayout() {
     <div className="commando-space flex h-[100dvh] max-h-[100dvh] min-h-0 flex-col overflow-hidden md:flex-row font-sans text-text-primary antialiased">
       {/* Mobile Header */}
       <div className="commando-header-bar md:hidden text-text-primary px-3 py-2.5 min-h-[56px] flex items-center gap-3 justify-between z-50 relative">
-        <Logo className="h-12 shrink-0" />
+        <Logo className="h-12 shrink-0 md:h-[5rem]" />
         <div className="flex min-w-0 flex-1 items-center justify-center gap-2.5 border-x border-white/[0.06] px-2">
           <div
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-luxe-champagne/35 bg-gradient-to-br from-luxe-champagne/25 to-noya-blue/15 font-display text-[11px] font-semibold uppercase tracking-wider text-luxe-champagne-bright shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]"
@@ -193,10 +193,10 @@ export default function AdminLayout() {
         "top-14 h-[calc(100dvh-3.5rem)] max-h-[calc(100dvh-3.5rem)] md:top-auto md:max-h-none",
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}>
-        <div className="hidden border-b border-white/[0.05] px-2.5 py-2 md:block">
+        <div className="hidden border-b border-white/[0.05] px-2.5 py-2.5 md:block">
           <div className="flex items-center gap-2">
             <div className="shrink-0 border-r border-luxe-champagne/20 pr-2">
-              <Logo className="h-7 w-auto" />
+              <Logo className="h-12 w-auto md:h-[5rem]" />
             </div>
             <div className="min-w-0 flex-1">
               <p className="truncate font-display text-[9px] font-medium uppercase leading-none tracking-[0.12em] text-luxe-champagne-bright/95">
@@ -229,7 +229,7 @@ export default function AdminLayout() {
               <div className="relative shrink-0 opacity-90 group-hover:opacity-100">
                 <item.icon size={20} strokeWidth={1.75} />
                 {item.id === 'messagerie' && unreadChats > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-noya-red border-2 border-noya-sidebar shadow-[0_0_8px_rgba(225,91,100,0.6)]" />
+                  <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-noya-red border-2 border-black shadow-[0_0_8px_rgba(225,91,100,0.6)]" />
                 )}
               </div>
               <span className="font-medium text-[13px] leading-snug tracking-tight">{item.label}</span>
@@ -264,14 +264,14 @@ export default function AdminLayout() {
             >
               <Bell size={20} strokeWidth={1.75} />
               {unreadCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-h-5 min-w-5 px-1 rounded-full bg-noya-red text-white text-[10px] font-bold flex items-center justify-center border-2 border-noya-sidebar shadow-lg">
+                <span className="absolute -top-0.5 -right-0.5 min-h-5 min-w-5 px-1 rounded-full bg-noya-red text-white text-[10px] font-bold flex items-center justify-center border-2 border-black shadow-lg">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
             </button>
 
             {showNotifications && (
-              <div className="absolute right-0 mt-3 w-[min(100vw-2rem,24rem)] rounded-2xl z-50 animate-in fade-in zoom-in duration-200 border border-luxe-champagne/20 bg-noya-sidebar/95 backdrop-blur-xl shadow-[0_24px_64px_-24px_rgba(0,0,0,0.75),0_0_0_1px_rgba(228,212,165,0.08)_inset] overflow-hidden">
+              <div className="absolute right-0 mt-3 w-[min(100vw-2rem,24rem)] rounded-2xl z-50 animate-in fade-in zoom-in duration-200 border border-luxe-champagne/20 bg-black shadow-[0_24px_64px_-24px_rgba(0,0,0,0.75),0_0_0_1px_rgba(228,212,165,0.08)_inset] overflow-hidden">
                 <div className="px-5 py-4 border-b border-white/[0.06] flex justify-between items-center bg-gradient-to-r from-luxe-champagne/[0.06] to-transparent">
                   <h3 className="font-semibold text-[10px] uppercase tracking-[0.22em] text-luxe-champagne-bright/90">Fil d&apos;actualité</h3>
                   {unreadCount > 0 && (
@@ -383,7 +383,7 @@ export default function AdminLayout() {
 
             {showProfileMenu && (
               <div
-                className="absolute right-0 top-full z-50 mt-3 w-[min(calc(100vw-2rem),18.5rem)] overflow-hidden rounded-2xl border border-luxe-champagne/22 bg-noya-sidebar/95 shadow-[0_28px_64px_-28px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(228,212,165,0.1)] backdrop-blur-xl animate-in fade-in zoom-in-95 duration-200"
+                className="absolute right-0 top-full z-50 mt-3 w-[min(calc(100vw-2rem),18.5rem)] overflow-hidden rounded-2xl border border-luxe-champagne/22 bg-black shadow-[0_28px_64px_-28px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(228,212,165,0.1)] animate-in fade-in zoom-in-95 duration-200"
                 role="menu"
               >
                 <div className="border-b border-white/[0.06] bg-gradient-to-r from-luxe-champagne/[0.08] via-transparent to-noya-blue/[0.06] px-4 py-3.5">

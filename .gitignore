@@ -10,6 +10,7 @@ node_modules/
 # Builds (générés par `npm run build`)
 dist/
 .next/
+.next-dev/
 
 # Logs et debug
 *.log

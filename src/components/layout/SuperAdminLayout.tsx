@@ -154,8 +154,8 @@ export default function SuperAdminLayout() {
   return (
     <div className="min-h-screen bg-surface-primary flex flex-col md:flex-row font-sans text-text-primary">
       {/* Mobile Header */}
-      <div className="md:hidden bg-surface-secondary border-b border-border-subtle text-text-primary px-4 py-3 min-h-[60px] flex justify-between items-center z-50 relative shadow-lg">
-        <Logo lightText={theme === 'dark'} className="h-14" />
+      <div className="md:hidden bg-black border-b border-border-subtle text-text-primary px-4 py-3 min-h-[60px] flex justify-between items-center z-50 relative shadow-lg">
+        <Logo lightText={theme === 'dark'} className="h-12 md:h-[5rem]" />
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)} className="p-2 transition-all hover:bg-white/10 rounded-lg">
           {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
@@ -163,13 +163,13 @@ export default function SuperAdminLayout() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "bg-surface-secondary border-r border-border-subtle text-text-primary w-64 sidebar-responsive flex-shrink-0 flex-col transition-transform duration-300 ease-in-out fixed z-50 md:relative md:h-full",
+        "bg-black border-r border-border-subtle text-text-primary w-64 sidebar-responsive flex-shrink-0 flex-col transition-transform duration-300 ease-in-out fixed z-50 md:relative md:h-full",
         "top-[60px] h-[calc(100dvh-60px)] md:top-auto",
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}>
         <div className="p-6 hidden md:block">
           <div className="mb-2">
-            <Logo lightText={theme === 'dark'} className="h-14 md:h-16" />
+            <Logo lightText={theme === 'dark'} className="h-12 md:h-[5rem]" />
           </div>
           <div className="text-xs text-text-secondary font-mono tracking-widest flex items-center gap-2 mt-2">
             <span className="w-2 h-2 rounded-full bg-noya-red shadow-[0_0_8px_rgba(225,91,100,0.8)] animate-pulse"></span>
@@ -215,7 +215,7 @@ export default function SuperAdminLayout() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-screen overflow-hidden bg-surface-primary">
         {/* Desktop Header */}
-        <header className="bg-surface-secondary shadow-sm sticky top-0 z-40 hidden md:block border-b border-border-subtle">
+        <header className="bg-black shadow-sm sticky top-0 z-40 hidden md:block border-b border-border-subtle">
           <div className="px-6 py-4 flex items-center justify-between">
             <h1 className="text-xl font-semibold text-text-primary">{getPageTitle()}</h1>
             <div className="flex items-center space-x-4">
@@ -246,7 +246,7 @@ export default function SuperAdminLayout() {
                 </button>
 
                 {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-80 bg-surface-secondary rounded-2xl shadow-xl border border-border-medium py-2 z-50">
+                  <div className="absolute right-0 mt-2 w-80 bg-black rounded-2xl shadow-xl border border-border-medium py-2 z-50">
                     <div className="px-4 py-2 border-b border-border-subtle flex justify-between items-center">
                       <h3 className="font-bold text-text-primary text-sm">Notifications</h3>
                       <button 
@@ -317,7 +317,7 @@ export default function SuperAdminLayout() {
 
                 {showProfileMenu && (
                   <div
-                    className="absolute right-0 top-full mt-3 w-80 bg-surface-secondary rounded-2xl shadow-xl border border-border-medium py-2 z-50 overflow-hidden"
+                    className="absolute right-0 top-full mt-3 w-80 bg-black rounded-2xl shadow-xl border border-border-medium py-2 z-50 overflow-hidden"
                     role="menu"
                   >
                     <div className="px-4 py-3 border-b border-border-subtle bg-surface-primary/50">

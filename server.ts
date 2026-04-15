@@ -135,8 +135,16 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   app.use(express.json({ limit: "1mb", strict: true }));
 
   app.use((req, res, next) => {
+    const requestId = randomUUID();
+    req.headers["x-request-id"] = requestId;
+    res.setHeader("X-Request-Id", requestId);
+    next();
+  });
+
+  app.use((req, res, next) => {
     const start = Date.now();
     const routePath = (req.path || req.url?.split("?")[0] || "").slice(0, 160);
+    const requestId = String(req.headers["x-request-id"] || "unknown");
     res.on("finish", () => {
       // #region agent log
       agentSessionLog({
@@ -148,6 +156,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           path: routePath,
           status: res.statusCode,
           durationMs: Date.now() - start,
+          requestId,
         },
       });
       // #endregion

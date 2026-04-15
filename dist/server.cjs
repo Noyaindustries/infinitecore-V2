@@ -67,7 +67,7 @@ function agentSessionLog(payload) {
 
 // server.ts
 var import_multer = __toESM(require("multer"), 1);
-var import_crypto2 = require("crypto");
+var import_crypto3 = require("crypto");
 var import_client_s32 = require("@aws-sdk/client-s3");
 var import_s3_request_presigner2 = require("@aws-sdk/s3-request-presigner");
 
@@ -309,7 +309,185 @@ function mimeFromStorageKey(keyOrPath) {
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
 var import_nodemailer = __toESM(require("nodemailer"), 1);
+var import_crypto2 = require("crypto");
+
+// src/api/dataRoutes.ts
 var import_crypto = require("crypto");
+function parseDataQueryInput(body) {
+  const raw = body ?? {};
+  const max = Number(raw.limit);
+  const offsetRaw = Number(raw.offset);
+  const limit = Number.isFinite(max) && max > 0 ? Math.min(max, 1e3) : 100;
+  const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.min(offsetRaw, 1e5) : 0;
+  return {
+    collectionPathRaw: String(raw.collectionPath || ""),
+    filtersRaw: raw.filters,
+    ordersRaw: raw.orders,
+    limit,
+    offset
+  };
+}
+function buildDbFiltersFromQueryFilters(filters) {
+  const dbFilters = [];
+  for (const filter of filters) {
+    const path4 = [filter.field];
+    switch (filter.operator) {
+      case "==":
+        dbFilters.push({ data: { path: path4, equals: filter.value } });
+        break;
+      case "!=":
+        dbFilters.push({ NOT: { data: { path: path4, equals: filter.value } } });
+        break;
+      case ">":
+        dbFilters.push({ data: { path: path4, gt: filter.value } });
+        break;
+      case ">=":
+        dbFilters.push({ data: { path: path4, gte: filter.value } });
+        break;
+      case "<":
+        dbFilters.push({ data: { path: path4, lt: filter.value } });
+        break;
+      case "<=":
+        dbFilters.push({ data: { path: path4, lte: filter.value } });
+        break;
+      default:
+        return null;
+    }
+  }
+  return dbFilters;
+}
+function registerDataRoutes(app, deps) {
+  app.post("/api/data/query", async (req, res) => {
+    try {
+      const auth = await deps.requireAuth(req, res);
+      if (!auth) return;
+      const parsed = parseDataQueryInput(req.body);
+      const collectionPath = deps.normalizeCollectionPath(parsed.collectionPathRaw);
+      const filters = deps.sanitizeFilters(parsed.filtersRaw);
+      const orders = deps.sanitizeOrders(parsed.ordersRaw);
+      if (!collectionPath || !deps.isSafeCollectionPath(collectionPath) || filters === null || orders === null) {
+        return res.status(400).json({ success: false, error: "Param\xE8tres de requ\xEAte invalides." });
+      }
+      const authz = deps.assertDataQueryAuthorized(auth, collectionPath, filters);
+      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
+      const dbFilters = buildDbFiltersFromQueryFilters(filters);
+      const dbWhere = dbFilters ? { AND: [{ collectionPath }, ...dbFilters] } : { collectionPath };
+      const rows = await deps.prisma.dataDocument.findMany({
+        where: dbWhere,
+        take: 5e3
+      });
+      const normalized = rows.map((row) => ({
+        docId: row.docId,
+        data: deps.coerceRecord(row.data)
+      }));
+      const filtered = dbFilters ? normalized : deps.applyFilters(normalized, filters);
+      const ordered = deps.applyOrder(filtered, orders);
+      const paged = ordered.slice(parsed.offset, parsed.offset + parsed.limit);
+      return res.status(200).json({
+        success: true,
+        docs: paged.map((row) => ({ id: row.docId, data: row.data }))
+      });
+    } catch (error) {
+      console.error("[data/query]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app.get("/api/data/doc", async (req, res) => {
+    try {
+      const auth = await deps.requireAuth(req, res);
+      if (!auth) return;
+      const collectionPath = deps.normalizeCollectionPath(String(req.query.collectionPath || ""));
+      const docId = String(req.query.docId || "").trim();
+      if (!collectionPath || !docId || !deps.isSafeCollectionPath(collectionPath) || !deps.isSafeDocId(docId)) {
+        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
+      }
+      const authz = deps.assertDataDocAuthorized(auth, "read", collectionPath, docId);
+      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
+      const row = await deps.prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath, docId } }
+      });
+      return res.status(200).json({
+        success: true,
+        exists: Boolean(row),
+        doc: row ? { id: row.docId, data: deps.coerceRecord(row.data) } : null
+      });
+    } catch (error) {
+      console.error("[data/doc:get]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app.post("/api/data/doc", async (req, res) => {
+    try {
+      const auth = await deps.requireAuth(req, res);
+      if (!auth) return;
+      const collectionPath = deps.normalizeCollectionPath(String(req.body?.collectionPath || ""));
+      const merge = Boolean(req.body?.merge);
+      const incoming = deps.coerceRecord(req.body?.data);
+      const docId = String(req.body?.docId || "").trim() || (0, import_crypto.randomUUID)().replace(/-/g, "");
+      if (!collectionPath || !deps.isSafeCollectionPath(collectionPath) || !deps.isSafeDocId(docId)) {
+        return res.status(400).json({ success: false, error: "collectionPath ou docId invalides." });
+      }
+      const authz = deps.assertDataDocAuthorized(auth, "write", collectionPath, docId, incoming);
+      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
+      await deps.upsertDataDocument(collectionPath, docId, incoming, merge);
+      return res.status(200).json({ success: true, docId });
+    } catch (error) {
+      console.error("[data/doc:post]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app.patch("/api/data/doc", async (req, res) => {
+    try {
+      const auth = await deps.requireAuth(req, res);
+      if (!auth) return;
+      const collectionPath = deps.normalizeCollectionPath(String(req.body?.collectionPath || ""));
+      const docId = String(req.body?.docId || "").trim();
+      const updates = deps.coerceRecord(req.body?.data);
+      const deleteKeys = Array.isArray(req.body?.deleteKeys) ? req.body.deleteKeys : [];
+      if (!collectionPath || !docId || !deps.isSafeCollectionPath(collectionPath) || !deps.isSafeDocId(docId) || !deleteKeys.every((key) => deps.isSafeFieldName(String(key)))) {
+        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
+      }
+      const authz = deps.assertDataDocAuthorized(auth, "write", collectionPath, docId, updates);
+      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
+      const existing = await deps.prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath, docId } }
+      });
+      if (!existing) return res.status(404).json({ success: false, error: "Document introuvable." });
+      const next = { ...deps.coerceRecord(existing.data), ...updates };
+      for (const key of deleteKeys) delete next[key];
+      await deps.prisma.dataDocument.update({
+        where: { collectionPath_docId: { collectionPath, docId } },
+        data: { data: next }
+      });
+      return res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("[data/doc:patch]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app.delete("/api/data/doc", async (req, res) => {
+    try {
+      const auth = await deps.requireAuth(req, res);
+      if (!auth) return;
+      const collectionPath = deps.normalizeCollectionPath(String(req.query.collectionPath || ""));
+      const docId = String(req.query.docId || "").trim();
+      if (!collectionPath || !docId || !deps.isSafeCollectionPath(collectionPath) || !deps.isSafeDocId(docId)) {
+        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
+      }
+      const authz = deps.assertDataDocAuthorized(auth, "write", collectionPath, docId);
+      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
+      await deps.prisma.dataDocument.deleteMany({
+        where: { collectionPath, docId }
+      });
+      return res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("[data/doc:delete]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+}
+
+// mongoApi.ts
 var AUTH_HEADER_PREFIX = "Bearer ";
 var AUTH_COOKIE_NAME = "ic_auth_token";
 var AUTH_COOKIE_TTL_MS = 7 * 24 * 60 * 60 * 1e3;
@@ -399,6 +577,24 @@ Si vous n'\xEAtes pas a l'origine de cette tentative de connexion, ignorez cet e
     html: `<p>Bonjour,</p><p>Voici votre code de verification Infinite Core :</p><p style="font-size: 24px; font-weight: 700; letter-spacing: 0.12em;">${input.code}</p><p>Il expire dans <strong>10 minutes</strong>.</p><p>Si vous n'\xEAtes pas a l'origine de cette tentative de connexion, ignorez cet email.</p>`
   });
   return { delivered: true };
+}
+async function googleUserProfileFromAccessToken(accessToken) {
+  const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  if (!res.ok) {
+    throw new Error("GOOGLE_USERINFO_FAILED");
+  }
+  const u = await res.json();
+  if (!u.email || u.email_verified !== true) {
+    throw new Error("GOOGLE_EMAIL_UNVERIFIED");
+  }
+  const email = u.email.trim().toLowerCase();
+  return {
+    email,
+    displayNameHint: String(u.name || "").trim() || email.split("@")[0] || email,
+    picture: u.picture ? String(u.picture).trim() : null
+  };
 }
 function signAuthToken(payload) {
   return import_jsonwebtoken.default.sign(payload, getJwtSecret(), {
@@ -514,7 +710,7 @@ function sendAuthPrismaError(res, logLabel, error) {
   return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
 }
 function sha256Hex(input) {
-  return (0, import_crypto.createHash)("sha256").update(input).digest("hex");
+  return (0, import_crypto2.createHash)("sha256").update(input).digest("hex");
 }
 function normalizeIp(raw) {
   return raw.trim().replace(/^::ffff:/, "") || "unknown";
@@ -532,34 +728,86 @@ function getClientIp(req) {
 function authBucketKey(req, email) {
   return `${getClientIp(req)}|${email || "unknown"}`;
 }
-function isAuthTemporarilyBlocked(key) {
+function authRateLimitDocId(key) {
+  return sha256Hex(`auth_rate_limit:${key}`);
+}
+function fallbackIsBlocked(key) {
   const now = Date.now();
   const bucket2 = authFailureBuckets.get(key);
   if (!bucket2) return false;
   if (bucket2.blockedUntil > now) return true;
-  if (bucket2.windowEndsAt < now) {
-    authFailureBuckets.delete(key);
-  }
+  if (bucket2.windowEndsAt < now) authFailureBuckets.delete(key);
   return false;
 }
-function registerAuthFailure(key) {
+function fallbackRegisterFailure(key) {
   const now = Date.now();
   const bucket2 = authFailureBuckets.get(key);
   if (!bucket2 || bucket2.windowEndsAt < now) {
-    authFailureBuckets.set(key, {
-      failures: 1,
-      windowEndsAt: now + AUTH_RATE_WINDOW_MS,
-      blockedUntil: 0
-    });
+    authFailureBuckets.set(key, { failures: 1, windowEndsAt: now + AUTH_RATE_WINDOW_MS, blockedUntil: 0 });
     return;
   }
   bucket2.failures += 1;
-  if (bucket2.failures >= AUTH_RATE_MAX_FAILURES) {
-    bucket2.blockedUntil = now + AUTH_RATE_BLOCK_MS;
+  if (bucket2.failures >= AUTH_RATE_MAX_FAILURES) bucket2.blockedUntil = now + AUTH_RATE_BLOCK_MS;
+}
+async function isAuthTemporarilyBlocked(key) {
+  try {
+    const now = Date.now();
+    const row = await prisma.dataDocument.findUnique({
+      where: { collectionPath_docId: { collectionPath: "auth_rate_limits", docId: authRateLimitDocId(key) } },
+      select: { data: true }
+    });
+    const data = coerceRecord(row?.data);
+    const blockedUntil = Number(data.blockedUntil || 0);
+    const windowEndsAt = Number(data.windowEndsAt || 0);
+    if (Number.isFinite(blockedUntil) && blockedUntil > now) return true;
+    if (Number.isFinite(windowEndsAt) && windowEndsAt > 0 && windowEndsAt < now) {
+      await prisma.dataDocument.deleteMany({
+        where: { collectionPath: "auth_rate_limits", docId: authRateLimitDocId(key) }
+      });
+    }
+    return false;
+  } catch {
+    return fallbackIsBlocked(key);
   }
 }
-function clearAuthFailures(key) {
+async function registerAuthFailure(key) {
+  try {
+    const now = Date.now();
+    const docId = authRateLimitDocId(key);
+    const row = await prisma.dataDocument.findUnique({
+      where: { collectionPath_docId: { collectionPath: "auth_rate_limits", docId } },
+      select: { data: true }
+    });
+    const current = coerceRecord(row?.data);
+    const currentWindowEnds = Number(current.windowEndsAt || 0);
+    const inWindow = Number.isFinite(currentWindowEnds) && currentWindowEnds >= now;
+    const failures = inWindow ? Number(current.failures || 0) + 1 : 1;
+    const windowEndsAt = inWindow ? currentWindowEnds : now + AUTH_RATE_WINDOW_MS;
+    const blockedUntil = failures >= AUTH_RATE_MAX_FAILURES ? now + AUTH_RATE_BLOCK_MS : 0;
+    await upsertDataDocument(
+      "auth_rate_limits",
+      docId,
+      {
+        keyHash: docId,
+        failures,
+        windowEndsAt,
+        blockedUntil,
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      },
+      false
+    );
+  } catch {
+    fallbackRegisterFailure(key);
+  }
+}
+async function clearAuthFailures(key) {
   authFailureBuckets.delete(key);
+  try {
+    await prisma.dataDocument.deleteMany({
+      where: { collectionPath: "auth_rate_limits", docId: authRateLimitDocId(key) }
+    });
+  } catch {
+  }
 }
 function isPrimitiveQueryValue(value) {
   return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
@@ -921,7 +1169,7 @@ function registerMongoApi(app) {
     try {
       const email = String(req.body?.email || "").trim().toLowerCase();
       const authKey = authBucketKey(req, email);
-      if (isAuthTemporarilyBlocked(authKey)) {
+      if (await isAuthTemporarilyBlocked(authKey)) {
         return res.status(429).json({ success: false, error: "Trop de tentatives. R\xE9essayez plus tard." });
       }
       const password = String(req.body?.password || "");
@@ -931,11 +1179,11 @@ function registerMongoApi(app) {
       const referredBy = req.body?.referredBy ? String(req.body.referredBy) : null;
       const phone = req.body?.phone ? String(req.body.phone) : null;
       if (!email || !password || !isValidEmail(email)) {
-        registerAuthFailure(authKey);
+        await registerAuthFailure(authKey);
         return res.status(400).json({ success: false, error: "Email et mot de passe requis." });
       }
       if (!isStrongPassword(password)) {
-        registerAuthFailure(authKey);
+        await registerAuthFailure(authKey);
         return res.status(400).json({
           success: false,
           error: "Mot de passe insuffisant (12+ caract\xE8res, majuscule, minuscule, chiffre et symbole)."
@@ -943,10 +1191,10 @@ function registerMongoApi(app) {
       }
       const existing = await prisma.userAccount.findUnique({ where: { email } });
       if (existing) {
-        registerAuthFailure(authKey);
+        await registerAuthFailure(authKey);
         return res.status(409).json({ success: false, error: "Cet email existe d\xE9j\xE0." });
       }
-      const challengeId = (0, import_crypto.randomUUID)().replace(/-/g, "");
+      const challengeId = (0, import_crypto2.randomUUID)().replace(/-/g, "");
       const verificationCode = generateNumericCode(6);
       const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
       const passwordHash = await import_bcryptjs.default.hash(password, 10);
@@ -982,7 +1230,7 @@ function registerMongoApi(app) {
           error: "Service email indisponible. Configurez SMTP avant la v\xE9rification par code."
         });
       }
-      clearAuthFailures(authKey);
+      await clearAuthFailures(authKey);
       return res.status(201).json({
         success: true,
         verificationRequired: true,
@@ -1042,7 +1290,7 @@ function registerMongoApi(app) {
       if (existing) {
         return res.status(409).json({ success: false, error: "Cet email existe d\xE9j\xE0." });
       }
-      const uid = `usr_${(0, import_crypto.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
+      const uid = `usr_${(0, import_crypto2.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
       const account = await prisma.userAccount.create({
         data: {
           uid,
@@ -1120,7 +1368,9 @@ function registerMongoApi(app) {
         const referralCode = normalizePartnerCode(String(data.referralCode || ""));
         const partnerCode = normalizePartnerCode(String(data.partnerCode || ""));
         const uid = String(data.uid || row.docId || "");
-        if (referralCode === ref || partnerCode === ref || uid === refRaw) {
+        const derivedCode5 = normalizePartnerCode(`PART-${uid.substring(0, 5).toUpperCase().replace("USR", "INF")}`);
+        const derivedCode6 = normalizePartnerCode(`PART-${uid.substring(0, 6).toUpperCase().replace("USR", "INF")}`);
+        if (referralCode === ref || partnerCode === ref || derivedCode5 === ref || derivedCode6 === ref || uid === refRaw) {
           return res.status(200).json({
             success: true,
             partner: {
@@ -1148,8 +1398,8 @@ function registerMongoApi(app) {
       }
       const referralCode = normalizePartnerCode(referralCodeRaw);
       const referredByPartnerIdRaw = String(req.body?.referredByPartnerId || "").trim();
-      const referredByPartnerId = referredByPartnerIdRaw || null;
-      const partnerLabel = String(req.body?.referredByPartnerName || "").trim() || "Partenaire Infinite";
+      let referredByPartnerId = referredByPartnerIdRaw || null;
+      let partnerLabel = String(req.body?.referredByPartnerName || "").trim() || "Partenaire Infinite";
       const signupUserId = String(req.body?.signupUserId || auth.uid).trim() || auth.uid;
       const firstName = String(req.body?.firstName || "").trim();
       const lastName = String(req.body?.lastName || "").trim();
@@ -1157,6 +1407,36 @@ function registerMongoApi(app) {
       const phone = String(req.body?.phone || "").trim();
       const companyName = String(req.body?.companyName || "").trim() || "Prospect parrain\xE9";
       const industry = String(req.body?.industry || "").trim() || "Non sp\xE9cifi\xE9";
+      if (!referredByPartnerId) {
+        const partnerRows = await prisma.dataDocument.findMany({
+          where: { collectionPath: "users" }
+        });
+        const resolvedPartner = partnerRows.find((row) => {
+          const data = coerceRecord(row.data);
+          const role = String(data.role || "").toLowerCase();
+          if (role !== "partner") return false;
+          const referral = normalizePartnerCode(String(data.referralCode || ""));
+          const partnerCode = normalizePartnerCode(String(data.partnerCode || ""));
+          const uid = String(data.uid || row.docId || "");
+          const derivedCode5 = normalizePartnerCode(`PART-${uid.substring(0, 5).toUpperCase().replace("USR", "INF")}`);
+          const derivedCode6 = normalizePartnerCode(`PART-${uid.substring(0, 6).toUpperCase().replace("USR", "INF")}`);
+          return referral === referralCode || partnerCode === referralCode || derivedCode5 === referralCode || derivedCode6 === referralCode || uid === referralCodeRaw;
+        });
+        if (resolvedPartner) {
+          const partnerData = coerceRecord(resolvedPartner.data);
+          referredByPartnerId = resolvedPartner.docId;
+          const resolvedName = `${String(partnerData.firstName || "")} ${String(partnerData.lastName || "")}`.trim();
+          partnerLabel = resolvedName || String(partnerData.email || "") || partnerLabel;
+        }
+      }
+      if (signupUserId) {
+        const userPatch = {
+          referredBy: referralCode,
+          referredByPartnerName: partnerLabel
+        };
+        if (referredByPartnerId) userPatch.referredByPartnerId = referredByPartnerId;
+        await upsertDataDocument("users", signupUserId, userPatch, true);
+      }
       const message = `Inscription via le lien de ${partnerLabel}: ${firstName} ${lastName} (${companyName}) - ${industry} - ${phone} - ref: ${referralCode}`;
       const metadata = {
         referralCode,
@@ -1182,7 +1462,7 @@ function registerMongoApi(app) {
         finalRecipients.map(
           (recipientId) => upsertDataDocument(
             "notifications",
-            (0, import_crypto.randomUUID)().replace(/-/g, ""),
+            (0, import_crypto2.randomUUID)().replace(/-/g, ""),
             {
               userId: recipientId,
               title: "Nouveau formulaire parrainage",
@@ -1206,7 +1486,7 @@ function registerMongoApi(app) {
           return String(data.partnerId || "") === referredByPartnerId && String(data.email || "").trim().toLowerCase() === email;
         });
         if (!alreadyExists) {
-          const leadId = (0, import_crypto.randomUUID)().replace(/-/g, "");
+          const leadId = (0, import_crypto2.randomUUID)().replace(/-/g, "");
           await upsertDataDocument(
             "leads",
             leadId,
@@ -1264,12 +1544,12 @@ function registerMongoApi(app) {
           emailDomain: email.includes("@") ? email.split("@")[1] : "invalid"
         }
       });
-      if (isAuthTemporarilyBlocked(authKey)) {
+      if (await isAuthTemporarilyBlocked(authKey)) {
         return res.status(429).json({ success: false, error: "Trop de tentatives. R\xE9essayez plus tard." });
       }
       const password = String(req.body?.password || "");
       if (!email || !password || !isValidEmail(email)) {
-        registerAuthFailure(authKey);
+        await registerAuthFailure(authKey);
         return res.status(400).json({ success: false, error: "Email et mot de passe requis." });
       }
       const dbLookupT0 = Date.now();
@@ -1287,7 +1567,7 @@ function registerMongoApi(app) {
         }
       });
       if (!account || !account.passwordHash) {
-        registerAuthFailure(authKey);
+        await registerAuthFailure(authKey);
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
       const bcryptT0 = Date.now();
@@ -1304,10 +1584,10 @@ function registerMongoApi(app) {
         }
       });
       if (!valid) {
-        registerAuthFailure(authKey);
+        await registerAuthFailure(authKey);
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
-      const challengeId = (0, import_crypto.randomUUID)().replace(/-/g, "");
+      const challengeId = (0, import_crypto2.randomUUID)().replace(/-/g, "");
       const verificationCode = generateNumericCode(6);
       const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
       await upsertDataDocument(
@@ -1337,7 +1617,7 @@ function registerMongoApi(app) {
           error: "Service email indisponible. Configurez SMTP avant la v\xE9rification par code."
         });
       }
-      clearAuthFailures(authKey);
+      await clearAuthFailures(authKey);
       return res.status(200).json({
         success: true,
         verificationRequired: true,
@@ -1435,38 +1715,83 @@ function registerMongoApi(app) {
   });
   app.post("/api/auth/google", async (req, res) => {
     try {
-      const email = String(req.body?.email || "").trim().toLowerCase();
-      const authKey = authBucketKey(req, email);
-      if (isAuthTemporarilyBlocked(authKey)) {
-        return res.status(429).json({ success: false, error: "Trop de tentatives. R\xE9essayez plus tard." });
-      }
-      const displayName = String(req.body?.displayName || "").trim();
+      const staffOnly = Boolean(req.body?.staffOnly);
+      const accessToken = String(req.body?.accessToken || "").trim();
+      const displayNameBody = String(req.body?.displayName || "").trim();
       const companyName = String(req.body?.companyName || "").trim();
       const industry = String(req.body?.industry || "").trim();
       const size = String(req.body?.size || "").trim();
       const referredBy = req.body?.referredBy ? String(req.body.referredBy) : null;
       const referredByPartnerId = req.body?.referredByPartnerId ? String(req.body.referredByPartnerId) : null;
       const referredByPartnerName = req.body?.referredByPartnerName ? String(req.body.referredByPartnerName) : null;
+      let email = "";
+      let googlePicture = null;
+      let googleDisplayHint = "";
+      if (accessToken) {
+        try {
+          const prof = await googleUserProfileFromAccessToken(accessToken);
+          email = prof.email;
+          googlePicture = prof.picture;
+          googleDisplayHint = prof.displayNameHint;
+        } catch {
+          return res.status(401).json({
+            success: false,
+            error: "Impossible de v\xE9rifier le compte Google (jeton invalide ou email non v\xE9rifi\xE9)."
+          });
+        }
+      } else {
+        email = String(req.body?.email || "").trim().toLowerCase();
+      }
+      const authKey = authBucketKey(req, email);
+      if (await isAuthTemporarilyBlocked(authKey)) {
+        return res.status(429).json({ success: false, error: "Trop de tentatives. R\xE9essayez plus tard." });
+      }
       if (!email || !isValidEmail(email)) {
-        registerAuthFailure(authKey);
+        if (accessToken) {
+          return res.status(401).json({ success: false, error: "Profil Google invalide." });
+        }
+        await registerAuthFailure(authKey);
         return res.status(400).json({ success: false, error: "Email requis." });
       }
+      if (staffOnly) {
+        const existingForStaff = await prisma.userAccount.findUnique({ where: { email } });
+        if (!existingForStaff) {
+          await registerAuthFailure(authKey);
+          return res.status(403).json({
+            success: false,
+            error: "Aucun compte \xE9quipe associ\xE9 \xE0 cet identifiant Google."
+          });
+        }
+        if (existingForStaff.role !== "admin" && existingForStaff.role !== "commando") {
+          await registerAuthFailure(authKey);
+          return res.status(403).json({
+            success: false,
+            error: "Ce compte n'a pas acc\xE8s \xE0 l'espace \xE9quipe (commando ou admin uniquement)."
+          });
+        }
+      }
+      const displayName = (displayNameBody || googleDisplayHint || email.split("@")[0] || email).trim() || email;
       let account = await prisma.userAccount.findUnique({ where: { email } });
       const isNew = !account;
       if (!account) {
         const [firstName = "", ...last] = displayName.split(" ");
-        const uid = `usr_${(0, import_crypto.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
+        const uid = `usr_${(0, import_crypto2.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
         let companyId = null;
         if (companyName) {
           companyId = `comp_${Date.now()}`;
-          await upsertDataDocument("companies", companyId, {
-            id: companyId,
-            name: companyName,
-            industry: industry || "Non sp\xE9cifi\xE9",
-            size: size || "1-5",
-            pack: "starter",
-            createdAt: (/* @__PURE__ */ new Date()).toISOString()
-          }, false);
+          await upsertDataDocument(
+            "companies",
+            companyId,
+            {
+              id: companyId,
+              name: companyName,
+              industry: industry || "Non sp\xE9cifi\xE9",
+              size: size || "1-5",
+              pack: "starter",
+              createdAt: (/* @__PURE__ */ new Date()).toISOString()
+            },
+            false
+          );
         }
         account = await prisma.userAccount.create({
           data: {
@@ -1496,8 +1821,28 @@ function registerMongoApi(app) {
         if (referredByPartnerId) profileData.referredByPartnerId = referredByPartnerId;
         if (referredByPartnerName) profileData.referredByPartnerName = referredByPartnerName;
       }
+      if (googlePicture) {
+        profileData.photoURL = googlePicture;
+      }
       await upsertDataDocument("users", account.uid, profileData, true);
-      const challengeId = (0, import_crypto.randomUUID)().replace(/-/g, "");
+      if (accessToken) {
+        await clearAuthFailures(authKey);
+        const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+        setAuthCookie(res, token);
+        const displayNameOut = [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email;
+        return res.status(200).json({
+          success: true,
+          user: {
+            uid: account.uid,
+            email: account.email,
+            role: account.role,
+            displayName: displayNameOut,
+            photoURL: googlePicture || null
+          },
+          isNew
+        });
+      }
+      const challengeId = (0, import_crypto2.randomUUID)().replace(/-/g, "");
       const verificationCode = generateNumericCode(6);
       const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
       await upsertDataDocument(
@@ -1527,7 +1872,7 @@ function registerMongoApi(app) {
           error: "Service email indisponible. Configurez SMTP avant la v\xE9rification par code."
         });
       }
-      clearAuthFailures(authKey);
+      await clearAuthFailures(authKey);
       return res.status(200).json({
         success: true,
         verificationRequired: true,
@@ -1552,7 +1897,7 @@ function registerMongoApi(app) {
       const requestedRole = String(req.body?.role || "client").trim().toLowerCase();
       const role = VALID_ROLES.has(requestedRole) ? requestedRole : "client";
       if (!email || !isValidEmail(email)) return res.status(400).json({ success: false, error: "Email requis." });
-      const generatedPassword = password || (0, import_crypto.randomUUID)().replace(/-/g, "").slice(0, 16);
+      const generatedPassword = password || (0, import_crypto2.randomUUID)().replace(/-/g, "").slice(0, 16);
       if (password && !isStrongPassword(password)) {
         return res.status(400).json({
           success: false,
@@ -1563,7 +1908,7 @@ function registerMongoApi(app) {
       if (existing) {
         return res.status(409).json({ success: false, error: "Cet email est d\xE9j\xE0 utilis\xE9." });
       }
-      const uid = `usr_${(0, import_crypto.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
+      const uid = `usr_${(0, import_crypto2.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
       const passwordHash = await import_bcryptjs.default.hash(generatedPassword, 10);
       const account = await prisma.userAccount.create({
         data: {
@@ -1576,7 +1921,43 @@ function registerMongoApi(app) {
         }
       });
       await ensureUserDocumentFromAccount(account);
-      return res.status(201).json({ success: true, uid: account.uid, password: generatedPassword });
+      const resetToken = (0, import_crypto2.randomBytes)(32).toString("hex");
+      const nowIso = (/* @__PURE__ */ new Date()).toISOString();
+      const expiresAtIso = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
+      await upsertDataDocument(
+        "auth_password_resets",
+        account.uid,
+        {
+          uid: account.uid,
+          email: account.email,
+          tokenHash: sha256Hex(resetToken),
+          requestedAt: nowIso,
+          expiresAt: expiresAtIso,
+          used: false,
+          requestedByAdminUid: auth.uid
+        },
+        false
+      );
+      const mailResult = await sendResetPasswordEmail({ to: account.email, token: resetToken });
+      if (!mailResult.delivered) {
+        await prisma.userAccount.delete({ where: { uid: account.uid } });
+        await prisma.dataDocument.deleteMany({
+          where: {
+            collectionPath: { in: ["users", "auth_password_resets"] },
+            docId: account.uid
+          }
+        });
+        return res.status(503).json({
+          success: false,
+          error: "Le compte n'a pas \xE9t\xE9 cr\xE9\xE9: SMTP est requis pour envoyer l'email d'initialisation."
+        });
+      }
+      return res.status(201).json({
+        success: true,
+        uid: account.uid,
+        invitationSent: true,
+        ...!appEnv.node.isProduction ? { resetTokenPreview: resetToken } : {}
+      });
     } catch (error) {
       console.error("[auth/admin-create]", error);
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
@@ -1601,7 +1982,7 @@ function registerMongoApi(app) {
           message: "Si ce compte existe, les instructions de r\xE9initialisation ont \xE9t\xE9 enregistr\xE9es."
         });
       }
-      const resetToken = (0, import_crypto.randomBytes)(32).toString("hex");
+      const resetToken = (0, import_crypto2.randomBytes)(32).toString("hex");
       const resetDocId = account.uid;
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       const expiresAtIso = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
@@ -1683,135 +2064,21 @@ function registerMongoApi(app) {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.post("/api/data/query", async (req, res) => {
-    try {
-      const auth = await requireAuth(req, res);
-      if (!auth) return;
-      const collectionPath = normalizeCollectionPath(String(req.body?.collectionPath || ""));
-      const filters = sanitizeFilters(req.body?.filters);
-      const orders = sanitizeOrders(req.body?.orders);
-      const max = Number(req.body?.limit);
-      const take = Number.isFinite(max) && max > 0 ? Math.min(max, 5e3) : void 0;
-      if (!collectionPath || !isSafeCollectionPath(collectionPath) || filters === null || orders === null) {
-        return res.status(400).json({ success: false, error: "Param\xE8tres de requ\xEAte invalides." });
-      }
-      const authz = assertDataQueryAuthorized(auth, collectionPath, filters);
-      if (authz.ok === false) {
-        return res.status(403).json({ success: false, error: authz.error });
-      }
-      const rows = await prisma.dataDocument.findMany({
-        where: { collectionPath }
-      });
-      const normalized = rows.map((row) => ({
-        docId: row.docId,
-        data: coerceRecord(row.data)
-      }));
-      const filtered = applyFilters(normalized, filters);
-      const ordered = applyOrder(filtered, orders);
-      const limited = take ? ordered.slice(0, take) : ordered;
-      return res.status(200).json({
-        success: true,
-        docs: limited.map((row) => ({ id: row.docId, data: row.data }))
-      });
-    } catch (error) {
-      console.error("[data/query]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
-    }
-  });
-  app.get("/api/data/doc", async (req, res) => {
-    try {
-      const auth = await requireAuth(req, res);
-      if (!auth) return;
-      const collectionPath = normalizeCollectionPath(String(req.query.collectionPath || ""));
-      const docId = String(req.query.docId || "").trim();
-      if (!collectionPath || !docId || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId)) {
-        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
-      }
-      const authz = assertDataDocAuthorized(auth, "read", collectionPath, docId);
-      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
-      const row = await prisma.dataDocument.findUnique({
-        where: { collectionPath_docId: { collectionPath, docId } }
-      });
-      return res.status(200).json({
-        success: true,
-        exists: Boolean(row),
-        doc: row ? { id: row.docId, data: coerceRecord(row.data) } : null
-      });
-    } catch (error) {
-      console.error("[data/doc:get]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
-    }
-  });
-  app.post("/api/data/doc", async (req, res) => {
-    try {
-      const auth = await requireAuth(req, res);
-      if (!auth) return;
-      const collectionPath = normalizeCollectionPath(String(req.body?.collectionPath || ""));
-      const merge = Boolean(req.body?.merge);
-      const incoming = coerceRecord(req.body?.data);
-      const docId = String(req.body?.docId || "").trim() || (0, import_crypto.randomUUID)().replace(/-/g, "");
-      if (!collectionPath || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId)) {
-        return res.status(400).json({ success: false, error: "collectionPath ou docId invalides." });
-      }
-      const authz = assertDataDocAuthorized(auth, "write", collectionPath, docId, incoming);
-      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
-      await upsertDataDocument(collectionPath, docId, incoming, merge);
-      return res.status(200).json({ success: true, docId });
-    } catch (error) {
-      console.error("[data/doc:post]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
-    }
-  });
-  app.patch("/api/data/doc", async (req, res) => {
-    try {
-      const auth = await requireAuth(req, res);
-      if (!auth) return;
-      const collectionPath = normalizeCollectionPath(String(req.body?.collectionPath || ""));
-      const docId = String(req.body?.docId || "").trim();
-      const updates = coerceRecord(req.body?.data);
-      const deleteKeys = Array.isArray(req.body?.deleteKeys) ? req.body.deleteKeys : [];
-      if (!collectionPath || !docId || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId) || !deleteKeys.every((key) => SAFE_FIELD_NAME.test(String(key)))) {
-        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
-      }
-      const authz = assertDataDocAuthorized(auth, "write", collectionPath, docId, updates);
-      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
-      const existing = await prisma.dataDocument.findUnique({
-        where: { collectionPath_docId: { collectionPath, docId } }
-      });
-      if (!existing) return res.status(404).json({ success: false, error: "Document introuvable." });
-      const next = { ...coerceRecord(existing.data), ...updates };
-      for (const key of deleteKeys) {
-        delete next[key];
-      }
-      await prisma.dataDocument.update({
-        where: { collectionPath_docId: { collectionPath, docId } },
-        data: { data: next }
-      });
-      return res.status(200).json({ success: true });
-    } catch (error) {
-      console.error("[data/doc:patch]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
-    }
-  });
-  app.delete("/api/data/doc", async (req, res) => {
-    try {
-      const auth = await requireAuth(req, res);
-      if (!auth) return;
-      const collectionPath = normalizeCollectionPath(String(req.query.collectionPath || ""));
-      const docId = String(req.query.docId || "").trim();
-      if (!collectionPath || !docId || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId)) {
-        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
-      }
-      const authz = assertDataDocAuthorized(auth, "write", collectionPath, docId);
-      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
-      await prisma.dataDocument.deleteMany({
-        where: { collectionPath, docId }
-      });
-      return res.status(200).json({ success: true });
-    } catch (error) {
-      console.error("[data/doc:delete]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
-    }
+  registerDataRoutes(app, {
+    prisma,
+    requireAuth,
+    normalizeCollectionPath,
+    isSafeCollectionPath,
+    isSafeDocId,
+    isSafeFieldName: (fieldName) => SAFE_FIELD_NAME.test(fieldName),
+    sanitizeFilters,
+    sanitizeOrders,
+    assertDataQueryAuthorized,
+    assertDataDocAuthorized,
+    coerceRecord,
+    applyFilters,
+    applyOrder,
+    upsertDataDocument
   });
 }
 
@@ -1852,7 +2119,7 @@ function secureSecretEquals(expected, provided) {
   const expectedBuf = Buffer.from(expected);
   const providedBuf = Buffer.from(provided);
   if (expectedBuf.length !== providedBuf.length) return false;
-  return (0, import_crypto2.timingSafeEqual)(expectedBuf, providedBuf);
+  return (0, import_crypto3.timingSafeEqual)(expectedBuf, providedBuf);
 }
 async function readAuthenticatedUser(req) {
   const auth = parseAuthFromRequest(req);
@@ -1924,8 +2191,15 @@ async function createExpressApplication() {
   });
   app.use(import_express.default.json({ limit: "1mb", strict: true }));
   app.use((req, res, next) => {
+    const requestId = (0, import_crypto3.randomUUID)();
+    req.headers["x-request-id"] = requestId;
+    res.setHeader("X-Request-Id", requestId);
+    next();
+  });
+  app.use((req, res, next) => {
     const start = Date.now();
     const routePath = (req.path || req.url?.split("?")[0] || "").slice(0, 160);
+    const requestId = String(req.headers["x-request-id"] || "unknown");
     res.on("finish", () => {
       agentSessionLog({
         hypothesisId: "H5",
@@ -1935,7 +2209,8 @@ async function createExpressApplication() {
           method: req.method,
           path: routePath,
           status: res.statusCode,
-          durationMs: Date.now() - start
+          durationMs: Date.now() - start,
+          requestId
         }
       });
     });
@@ -1992,7 +2267,7 @@ async function createExpressApplication() {
       const folderRaw = typeof req.body?.folder === "string" ? req.body.folder : "misc";
       const folder = sanitizeFolder(folderRaw);
       const safeOriginal = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const objectKey = `${folder}/${Date.now()}-${(0, import_crypto2.randomUUID)()}-${safeOriginal}`;
+      const objectKey = `${folder}/${Date.now()}-${(0, import_crypto3.randomUUID)()}-${safeOriginal}`;
       if (canUseR2 && s3) {
         await s3.send(
           new import_client_s32.PutObjectCommand({

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Lock, Mail, ArrowLeft, ArrowRight } from 'lucide-react';
@@ -56,6 +56,77 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
     if (!isAuthReady || !user || !userData) return;
     navigate(homePathForRole(userData.role), { replace: true });
   }, [isAuthReady, user, userData, navigate]);
+
+  const runGoogleSignIn = useCallback(
+    async () => {
+      const confirmed = await openGoogleConfirmDialog({
+        title: 'Vérification de sécurité',
+        description: isStaff
+          ? "Confirmez l'ouverture de Google pour accéder à l’espace équipe."
+          : 'Confirmez l’ouverture de Google pour continuer la connexion ou la création de compte.',
+        confirmLabel: 'Continuer avec Google',
+        cancelLabel: 'Annuler',
+      });
+      if (!confirmed) {
+        toast.error('Connexion Google annulée.');
+        return;
+      }
+
+      setLoading(true);
+      const safetyMs = 32_000;
+      const safetyId = window.setTimeout(() => {
+        setLoading(false);
+        toast.error(
+          'Connexion Google trop longue : vérifiez l’API, MongoDB et l’onglet Réseau pour `/api/auth/google`.'
+        );
+      }, safetyMs);
+      try {
+        const provider = new GoogleAuthProvider();
+        const emailTrim = email.trim();
+        provider.setCustomParameters({
+          prompt: 'select_account',
+          ...(emailTrim ? { login_hint: emailTrim } : {}),
+        });
+        const userCredential = await signInWithPopup(auth, provider, {
+          email: emailTrim || undefined,
+          staffOnly: isStaff,
+        });
+        if ('verificationRequired' in userCredential && userCredential.verificationRequired) {
+          if (!userCredential.challengeId) {
+            throw new Error("Impossible de démarrer la vérification email Google.");
+          }
+          if (isStaff && userCredential.role !== 'admin' && userCredential.role !== 'commando') {
+            toast.error('Ce compte n’a pas accès à l’espace équipe (commando ou admin uniquement).');
+            return;
+          }
+          const verifiedEmail = userCredential.email || emailTrim;
+          setEmail(verifiedEmail);
+          setLoginChallengeId(userCredential.challengeId);
+          setVerificationCode('');
+          setVerificationMethod('google');
+          setLoginStep(3);
+          toast.success('Code de vérification Google envoyé par email.');
+          return;
+        }
+        toast.success('Connexion réussie');
+      } catch (err: unknown) {
+        const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : '';
+        if (code === 'auth/popup-blocked') {
+          toast.error('Le navigateur a bloqué la fenêtre Google. Autorisez les popups pour ce site.');
+        } else if (code === 'auth/unauthorized-domain') {
+          toast.error('Ce domaine n’est pas autorisé pour la connexion. Contactez l’administrateur.');
+        } else if (code === 'auth/popup-closed-by-user') {
+          toast.error('Connexion Google annulée.');
+        } else {
+          toast.error('Connexion Google impossible. Réessayez.');
+        }
+      } finally {
+        window.clearTimeout(safetyId);
+        setLoading(false);
+      }
+    },
+    [email, isStaff]
+  );
 
   React.useEffect(() => {
     if (isStaff) return;
@@ -187,70 +258,8 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
     }
   };
 
-  const handleGoogle = async () => {
-    const confirmed = await openGoogleConfirmDialog({
-      title: 'Vérification de sécurité',
-      description: isStaff
-        ? "Confirmez l'ouverture de Google pour accéder à l’espace équipe."
-        : 'Confirmez l’ouverture de Google pour continuer la connexion ou la création de compte.',
-      confirmLabel: 'Continuer avec Google',
-      cancelLabel: 'Annuler',
-    });
-    if (!confirmed) {
-      toast.error('Connexion Google annulée.');
-      return;
-    }
-
-    setLoading(true);
-    const safetyMs = 32_000;
-    const safetyId = window.setTimeout(() => {
-      setLoading(false);
-      toast.error(
-        'Connexion Google trop longue : vérifiez l’API, MongoDB et l’onglet Réseau pour `/api/auth/google`.'
-      );
-    }, safetyMs);
-    try {
-      const provider = new GoogleAuthProvider();
-      const emailTrim = email.trim();
-      provider.setCustomParameters({
-        prompt: 'select_account',
-        ...(emailTrim ? { login_hint: emailTrim } : {}),
-      });
-      const userCredential = await signInWithPopup(auth, provider, {
-        email: emailTrim || undefined,
-      });
-      if ('verificationRequired' in userCredential && userCredential.verificationRequired) {
-        if (!userCredential.challengeId) {
-          throw new Error("Impossible de démarrer la vérification email Google.");
-        }
-        if (isStaff && userCredential.role !== 'admin' && userCredential.role !== 'commando') {
-          toast.error('Ce compte n’a pas accès à l’espace équipe (commando ou admin uniquement).');
-          return;
-        }
-        setEmail(userCredential.email || emailTrim);
-        setLoginChallengeId(userCredential.challengeId);
-        setVerificationCode('');
-        setVerificationMethod('google');
-        setLoginStep(3);
-        toast.success('Code de vérification Google envoyé par email.');
-        return;
-      }
-      toast.success('Connexion réussie');
-    } catch (err: unknown) {
-      const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : '';
-      if (code === 'auth/popup-blocked') {
-        toast.error('Le navigateur a bloqué la fenêtre Google. Autorisez les popups pour ce site.');
-      } else if (code === 'auth/unauthorized-domain') {
-        toast.error('Ce domaine n’est pas autorisé pour la connexion. Contactez l’administrateur.');
-      } else if (code === 'auth/popup-closed-by-user') {
-        toast.error('Connexion Google annulée.');
-      } else {
-        toast.error('Connexion Google impossible. Réessayez.');
-      }
-    } finally {
-      window.clearTimeout(safetyId);
-      setLoading(false);
-    }
+  const handleGoogle = () => {
+    void runGoogleSignIn();
   };
 
   const handlePasswordReset = async () => {

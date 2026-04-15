@@ -80,11 +80,10 @@ export default function SuperAdminCommando() {
         phone: newMember.phone || null,
         role: 'commando',
         jobTitle: newMember.role || 'Commando',
-        generatedPassword: authResult.password,
         createdAt: new Date().toISOString()
       });
 
-      setGeneratedPassword(authResult.password);
+      setGeneratedPassword(authResult.invitationSent ? "Invitation envoyée par email" : "Invitation non envoyée");
       toast.success('Membre ajouté avec succès.');
     } catch (error: any) {
       console.error("Error adding member:", error);
@@ -283,7 +282,7 @@ export default function SuperAdminCommando() {
                   <CheckCircle className="shrink-0 mt-0.5" size={24} />
                   <div>
                     <p className="font-black uppercase tracking-tight text-sm">Action Accomplie</p>
-                    <p className="text-xs mt-1 opacity-80 leading-relaxed italic">Nouveau profil opérationnel. Transmettez les accréditations suivantes.</p>
+                    <p className="text-xs mt-1 opacity-80 leading-relaxed italic">Nouveau profil opérationnel. Le compte est activable via email de réinitialisation.</p>
                   </div>
                 </div>
                 
@@ -293,7 +292,7 @@ export default function SuperAdminCommando() {
                     <p className="font-bold text-text-primary px-4 py-3 bg-surface-secondary rounded-xl border border-border-subtle">{newMember.email}</p>
                   </div>
                   <div>
-                    <p className="text-[10px] text-text-muted font-black uppercase tracking-widest mb-2">Clé de sécurité (Password)</p>
+                    <p className="text-[10px] text-text-muted font-black uppercase tracking-widest mb-2">Statut de l’invitation</p>
                     <div className="flex items-center justify-between bg-surface-secondary px-4 py-3 rounded-xl border border-border-subtle">
                       <code className="font-mono text-noya-blue text-sm font-bold tracking-widest">{generatedPassword}</code>
                       <button 

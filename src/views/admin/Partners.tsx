@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, Eye, Handshake, Link2, Users } from 'lucide-react';
-import { collection, onSnapshot } from '@/lib/mongoFirestore';
+import { collection, doc, onSnapshot, updateDoc } from '@/lib/mongoFirestore';
 import { db } from '@/lib/clientSdk';
+import toast from 'react-hot-toast';
 
 type UserRow = {
   id: string;
@@ -11,6 +12,7 @@ type UserRow = {
   email?: string;
   firstName?: string;
   lastName?: string;
+  referredBy?: string;
   referralCode?: string;
   partnerCode?: string;
   referredByPartnerId?: string;
@@ -26,6 +28,7 @@ type LeadRow = {
   email?: string;
   whatsapp?: string;
   status?: string;
+  commissionAmount?: number;
   createdAt?: string;
 };
 
@@ -81,8 +84,22 @@ export default function AdminPartners() {
     const clients = users.filter((u) => String(u.role || '').toLowerCase() === 'client');
     return partners.map((partner) => {
       const uid = String(partner.uid || partner.id);
+      const referralKeys = new Set<string>(
+        [
+          normalizePartnerCode(String(partner.referralCode || '')),
+          normalizePartnerCode(String(partner.partnerCode || '')),
+          normalizePartnerCode(buildPartnerCode(uid)),
+          String(uid || '').toUpperCase(),
+        ].filter(Boolean)
+      );
       const leadsForPartner = leads.filter((l) => String(l.partnerId || '') === uid);
-      const signupsForPartner = clients.filter((c) => String(c.referredByPartnerId || '') === uid);
+      const signupsForPartner = clients.filter((c) => {
+        const byPartnerId = String(c.referredByPartnerId || '') === uid;
+        const referredByRaw = String(c.referredBy || '');
+        const byReferralCode = referralKeys.has(normalizePartnerCode(referredByRaw));
+        const byLegacyUid = referredByRaw === uid;
+        return byPartnerId || byReferralCode || byLegacyUid;
+      });
       const lastLeadAt = leadsForPartner
         .map((l) => l.createdAt)
         .filter(Boolean)
@@ -137,6 +154,21 @@ export default function AdminPartners() {
     a.download = `partner_leads_${(partner?.name || partnerUid).replace(/\s+/g, '_').toLowerCase()}_${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleCommissionUpdate = async (leadId: string, value: string) => {
+    const numeric = Number(value);
+    const commissionAmount = Number.isFinite(numeric) && numeric >= 0 ? numeric : 0;
+    try {
+      await updateDoc(doc(db, 'leads', leadId), {
+        commissionAmount,
+        updatedAt: new Date().toISOString(),
+      });
+      toast.success('Commission enregistrée');
+    } catch (error) {
+      console.error('[AdminPartners] impossible de mettre à jour la commission:', error);
+      toast.error("Impossible d'enregistrer la commission");
+    }
   };
 
   return (
@@ -287,6 +319,7 @@ export default function AdminPartners() {
                     <th className="px-5 py-3 font-semibold">Email</th>
                     <th className="px-5 py-3 font-semibold">WhatsApp</th>
                     <th className="px-5 py-3 font-semibold">Statut</th>
+                    <th className="px-5 py-3 font-semibold">Commission (FCFA)</th>
                     <th className="px-5 py-3 font-semibold">Date</th>
                   </tr>
                 </thead>
@@ -298,6 +331,30 @@ export default function AdminPartners() {
                       <td className="px-5 py-3 text-text-secondary">{lead.email || '—'}</td>
                       <td className="px-5 py-3 text-text-secondary">{lead.whatsapp || '—'}</td>
                       <td className="px-5 py-3 text-text-primary">{lead.status || 'soumis'}</td>
+                      <td className="px-5 py-3">
+                        <input
+                          type="number"
+                          min={0}
+                          value={lead.commissionAmount ?? ''}
+                          onChange={(event) => {
+                            const value = event.target.value;
+                            setLeads((prev) =>
+                              prev.map((row) =>
+                                row.id === lead.id
+                                  ? {
+                                      ...row,
+                                      commissionAmount: value === '' ? undefined : Number(value),
+                                    }
+                                  : row
+                              )
+                            );
+                          }}
+                          onBlur={(event) => void handleCommissionUpdate(lead.id, event.target.value)}
+                          className="w-32 rounded-lg border border-white/10 bg-black/20 px-2.5 py-1.5 text-xs text-text-primary outline-none focus:border-noya-blue/40"
+                          placeholder="0"
+                          aria-label={`Commission du lead ${lead.id}`}
+                        />
+                      </td>
                       <td className="px-5 py-3 text-text-secondary">{formatDate(lead.createdAt)}</td>
                     </tr>
                   ))}

@@ -6,7 +6,7 @@ export const createUserAsAdmin = async (
   role?: 'admin' | 'commando' | 'developer' | 'partner' | 'client'
 ) => {
   try {
-    const result = await apiRequest<{ success: boolean; uid: string; password: string }>('/api/auth/admin-create', {
+    const result = await apiRequest<{ success: boolean; uid: string; invitationSent?: boolean }>('/api/auth/admin-create', {
       method: 'POST',
       body: JSON.stringify({
         email,
@@ -17,7 +17,7 @@ export const createUserAsAdmin = async (
 
     return {
       uid: result.uid,
-      password: result.password,
+      invitationSent: Boolean(result.invitationSent),
       success: true
     };
   } catch (error) {
@@ -25,7 +25,7 @@ export const createUserAsAdmin = async (
     const errorMessage = error instanceof Error ? error.message : "Erreur inconnue.";
     return {
       uid: null,
-      password: null,
+      invitationSent: false,
       success: false,
       error: errorMessage
     };

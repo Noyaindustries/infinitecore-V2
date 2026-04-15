@@ -24,10 +24,21 @@ function safeResolvedUrlForLog(resolvedUrl: string, method: string | undefined) 
  * Plafond pour toute la requête (fetch + lecture du corps).
  * `AbortController` seul ne garantit pas l’arrêt si le TCP reste bloqué ou si `response.text()` pend.
  */
-const DEFAULT_REQUEST_TIMEOUT_MS = 25_000;
+function resolveRequestTimeoutMs() {
+  const raw = Number.parseInt(String(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || ""), 10);
+  if (!Number.isFinite(raw)) return 45_000;
+  return Math.min(120_000, Math.max(5_000, raw));
+}
 
-const TIMEOUT_MESSAGE =
+const DEFAULT_REQUEST_TIMEOUT_MS = resolveRequestTimeoutMs();
+
+const TIMEOUT_MESSAGE_BASE =
   "Délai dépassé : l’API ou la base de données ne répond pas. Vérifiez DATABASE_URL (Mongo, IP Atlas), le réseau, ou réessayez après un cold start Vercel.";
+
+function buildTimeoutMessage(resolvedUrl: string, method?: string) {
+  const safe = safeResolvedUrlForLog(resolvedUrl, method);
+  return `${TIMEOUT_MESSAGE_BASE} [${safe.method} ${safe.pathname}]`;
+}
 
 export function getAuthToken(): string | null {
   if (!USE_LEGACY_BEARER) return null;
@@ -107,67 +118,96 @@ export async function apiRequest<T>(url: string, init: RequestInit = {}): Promis
   const resolvedUrl = url.startsWith("http://") || url.startsWith("https://") ? url : apiUrl(url);
 
   const deadlineMs = DEFAULT_REQUEST_TIMEOUT_MS;
-  const outer = new AbortController();
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const startedAt = Date.now();
+  const method = String(init.method || "GET").toUpperCase();
+  const timeoutMessage = buildTimeoutMessage(resolvedUrl, init.method);
+  const isTimeoutMessage = (msg: string) =>
+    msg === TIMEOUT_MESSAGE_BASE || msg === timeoutMessage || msg.startsWith(`${TIMEOUT_MESSAGE_BASE} [`);
 
-  const upstream = init.signal;
-  const fetchSignal = upstream ? mergeAbortSignals(outer.signal, upstream) : outer.signal;
+  const canRetry =
+    method === "GET" ||
+    method === "HEAD" ||
+    method === "OPTIONS" ||
+    (method === "POST" && (resolvedUrl.includes("/api/data/query") || resolvedUrl.includes("/api/data/doc?")));
 
-  // #region agent log
-  agentDebugLog({
-    location: "apiClient.ts:apiRequest:start",
-    message: "apiRequest_start",
-    runId: "initial",
-    hypothesisId: "H2",
-    data: { ...safeResolvedUrlForLog(resolvedUrl, init.method), deadlineMs, hasUpstreamSignal: !!upstream },
-  });
-  // #endregion
+  const runAttempt = async (attempt: number): Promise<T> => {
+    const outer = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    const upstream = init.signal;
+    const fetchSignal = upstream ? mergeAbortSignals(outer.signal, upstream) : outer.signal;
 
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(() => {
-      outer.abort();
-      reject(new Error(TIMEOUT_MESSAGE));
-    }, deadlineMs);
-  });
-
-  try {
-    const out = await Promise.race([fetchAndParse<T>(resolvedUrl, init, fetchSignal), timeoutPromise]);
     // #region agent log
     agentDebugLog({
-      location: "apiClient.ts:apiRequest:success",
-      message: "apiRequest_success",
+      location: "apiClient.ts:apiRequest:start",
+      message: "apiRequest_start",
       runId: "initial",
-      hypothesisId: "H1",
-      data: { ...safeResolvedUrlForLog(resolvedUrl, init.method), elapsedMs: Date.now() - startedAt },
-    });
-    // #endregion
-    return out;
-  } catch (e) {
-    const name = e instanceof Error ? e.name : "";
-    const msg = e instanceof Error ? e.message : String(e);
-    const elapsedMs = Date.now() - startedAt;
-    // #region agent log
-    agentDebugLog({
-      location: "apiClient.ts:apiRequest:catch",
-      message: "apiRequest_error",
-      runId: "initial",
-      hypothesisId: name === "AbortError" || msg === TIMEOUT_MESSAGE ? "H1" : "H3",
+      hypothesisId: "H2",
       data: {
         ...safeResolvedUrlForLog(resolvedUrl, init.method),
-        elapsedMs,
         deadlineMs,
-        errorName: name,
-        isTimeoutMessage: msg === TIMEOUT_MESSAGE,
-        messageSnippet: msg.slice(0, 120),
+        hasUpstreamSignal: !!upstream,
+        attempt,
       },
     });
     // #endregion
-    if (name === "AbortError") {
-      throw new Error(TIMEOUT_MESSAGE);
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => {
+        outer.abort();
+        reject(new Error(timeoutMessage));
+      }, deadlineMs);
+    });
+
+    try {
+      const out = await Promise.race([fetchAndParse<T>(resolvedUrl, init, fetchSignal), timeoutPromise]);
+      // #region agent log
+      agentDebugLog({
+        location: "apiClient.ts:apiRequest:success",
+        message: "apiRequest_success",
+        runId: "initial",
+        hypothesisId: "H1",
+        data: { ...safeResolvedUrlForLog(resolvedUrl, init.method), elapsedMs: Date.now() - startedAt, attempt },
+      });
+      // #endregion
+      return out;
+    } catch (e) {
+      const name = e instanceof Error ? e.name : "";
+      const msg = e instanceof Error ? e.message : String(e);
+      const elapsedMs = Date.now() - startedAt;
+      // #region agent log
+      agentDebugLog({
+        location: "apiClient.ts:apiRequest:catch",
+        message: "apiRequest_error",
+        runId: "initial",
+        hypothesisId: name === "AbortError" || isTimeoutMessage(msg) ? "H1" : "H3",
+        data: {
+          ...safeResolvedUrlForLog(resolvedUrl, init.method),
+          elapsedMs,
+          deadlineMs,
+          errorName: name,
+          isTimeoutMessage: isTimeoutMessage(msg),
+          messageSnippet: msg.slice(0, 120),
+          attempt,
+        },
+      });
+      // #endregion
+      if (name === "AbortError") {
+        throw new Error(timeoutMessage);
+      }
+      throw e;
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
     }
-    throw e;
-  } finally {
-    if (timeoutId !== undefined) clearTimeout(timeoutId);
+  };
+
+  try {
+    return await runAttempt(1);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    if (!canRetry || !isTimeoutMessage(msg)) throw e;
+
+    // Petite pause pour laisser un cold start API se terminer.
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    return runAttempt(2);
   }
 }

@@ -120,8 +120,8 @@ Il n’y a pas de `db:migrate` classique type SQL : le provider est **MongoDB** 
 
 Résumé dans **[DEPLOY.md](DEPLOY.md)** ; variables Vercel (même style que `.env.example`) : **[.env.vercel.example](.env.vercel.example)**.
 
-- **Vercel** (Next + Express sous **`/api`**) : variables comme **`.env.example`** sur le projet Vercel — voir **`.env.vercel.example`** et **[DEPLOY.md](DEPLOY.md)**.
-- **Un seul serveur Node** : `npm run build` puis `npm start`.
+- **Cible officielle**: **Vercel** (Next + Express sous **`/api`**) : variables comme **`.env.example`** sur le projet Vercel — voir **`.env.vercel.example`** et **[DEPLOY.md](DEPLOY.md)**.
+- **Alternative legacy** (non prioritaire): déploiement monolithique Node (`npm run build` puis `npm start`).
 
 ## Dépannage
 

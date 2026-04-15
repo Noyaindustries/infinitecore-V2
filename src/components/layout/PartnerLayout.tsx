@@ -103,8 +103,8 @@ export default function PartnerLayout() {
   return (
     <div className="min-h-screen bg-noya-black flex flex-col md:flex-row font-sans text-text-primary">
       {/* Mobile Header */}
-      <div className="md:hidden bg-[#0A1020] border-b border-white/5 text-[#F2F4F8] px-4 py-3 min-h-[60px] flex justify-between items-center z-50 relative">
-        <Logo lightText className="h-14" />
+      <div className="md:hidden bg-black border-b border-white/5 text-[#F2F4F8] px-4 py-3 min-h-[60px] flex justify-between items-center z-50 relative">
+        <Logo lightText className="h-12 md:h-[5rem]" />
         <button onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
           {isMobileMenuOpen ? <X size={24} /> : <Menu size={24} />}
         </button>
@@ -112,13 +112,13 @@ export default function PartnerLayout() {
 
       {/* Sidebar */}
       <aside className={cn(
-        "bg-noya-sidebar border-r border-white/5 text-text-primary w-64 sidebar-responsive flex-shrink-0 flex-col transition-transform duration-300 ease-in-out fixed z-50 md:relative md:h-full",
+        "bg-black border-r border-white/5 text-text-primary w-64 sidebar-responsive flex-shrink-0 flex-col transition-transform duration-300 ease-in-out fixed z-50 md:relative md:h-full",
         "top-[60px] h-[calc(100dvh-60px)] md:top-auto",
         isMobileMenuOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       )}>
         <div className="p-6 hidden md:block">
           <div className="mb-2">
-            <Logo lightText className="h-14 md:h-16" />
+            <Logo lightText className="h-12 md:h-[5rem]" />
           </div>
           <div className="text-xs text-text-secondary font-mono tracking-widest flex items-center gap-2 mt-2">
             <span className="w-2 h-2 rounded-full bg-noya-green shadow-[0_0_8px_rgba(43,198,115,0.8)] animate-pulse"></span>
@@ -158,7 +158,7 @@ export default function PartnerLayout() {
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-h-0 md:min-h-screen overflow-hidden bg-noya-black text-text-primary">
         {/* Top bar */}
-        <header className="bg-noya-sidebar border-b border-white/5 px-6 py-3 hidden md:flex items-center justify-end gap-4 z-40 relative">
+        <header className="bg-black border-b border-white/5 px-6 py-3 hidden md:flex items-center justify-end gap-4 z-40 relative">
           {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
@@ -185,7 +185,7 @@ export default function PartnerLayout() {
             </button>
 
             {showNotifications && (
-              <div className="absolute right-0 mt-2 w-80 bg-[#0D1320] rounded-2xl shadow-xl border border-white/10 py-2 z-50">
+              <div className="absolute right-0 mt-2 w-80 bg-black rounded-2xl shadow-xl border border-white/10 py-2 z-50">
                 <div className="px-4 py-2 border-b border-white/5 flex justify-between items-center">
                   <h3 className="font-bold text-[#F2F4F8] text-sm">Notifications</h3>
                   {unreadCount > 0 && (
@@ -257,7 +257,7 @@ export default function PartnerLayout() {
 
             {showProfileMenu && (
               <div
-                className="absolute right-0 top-full mt-2 w-72 bg-[#0D1320] rounded-2xl shadow-xl border border-white/10 py-2 z-50 overflow-hidden"
+                className="absolute right-0 top-full mt-2 w-72 bg-black rounded-2xl shadow-xl border border-white/10 py-2 z-50 overflow-hidden"
                 role="menu"
               >
                 <div className="px-4 py-3 border-b border-white/10">

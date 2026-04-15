@@ -6,6 +6,7 @@ import { createHash, randomBytes, randomUUID } from "crypto";
 import { prisma } from "./prismaClient";
 import { appEnv, getJwtSecret, resetAppBaseUrl } from "@/config/env";
 import { agentSessionLog } from "./src/debug/agentSessionLog";
+import { registerDataRoutes } from "./src/api/dataRoutes";
 
 export type AuthPayload = {
   uid: string;
@@ -115,6 +116,30 @@ async function sendLoginVerificationEmail(input: { to: string; code: string }) {
       `<p>Si vous n'êtes pas a l'origine de cette tentative de connexion, ignorez cet email.</p>`,
   });
   return { delivered: true as const };
+}
+
+/** Vérifie un jeton d’accès OAuth Google et renvoie l’email **vérifié** côté Google. */
+async function googleUserProfileFromAccessToken(accessToken: string): Promise<{
+  email: string;
+  displayNameHint: string;
+  picture: string | null;
+}> {
+  const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) {
+    throw new Error("GOOGLE_USERINFO_FAILED");
+  }
+  const u = (await res.json()) as { email?: string; email_verified?: boolean; name?: string; picture?: string };
+  if (!u.email || u.email_verified !== true) {
+    throw new Error("GOOGLE_EMAIL_UNVERIFIED");
+  }
+  const email = u.email.trim().toLowerCase();
+  return {
+    email,
+    displayNameHint: String(u.name || "").trim() || email.split("@")[0] || email,
+    picture: u.picture ? String(u.picture).trim() : null,
+  };
 }
 
 function signAuthToken(payload: AuthPayload) {
@@ -270,36 +295,92 @@ function authBucketKey(req: Request, email: string) {
   return `${getClientIp(req)}|${email || "unknown"}`;
 }
 
-function isAuthTemporarilyBlocked(key: string) {
+function authRateLimitDocId(key: string) {
+  return sha256Hex(`auth_rate_limit:${key}`);
+}
+
+function fallbackIsBlocked(key: string) {
   const now = Date.now();
   const bucket = authFailureBuckets.get(key);
   if (!bucket) return false;
   if (bucket.blockedUntil > now) return true;
-  if (bucket.windowEndsAt < now) {
-    authFailureBuckets.delete(key);
-  }
+  if (bucket.windowEndsAt < now) authFailureBuckets.delete(key);
   return false;
 }
 
-function registerAuthFailure(key: string) {
+function fallbackRegisterFailure(key: string) {
   const now = Date.now();
   const bucket = authFailureBuckets.get(key);
   if (!bucket || bucket.windowEndsAt < now) {
-    authFailureBuckets.set(key, {
-      failures: 1,
-      windowEndsAt: now + AUTH_RATE_WINDOW_MS,
-      blockedUntil: 0,
-    });
+    authFailureBuckets.set(key, { failures: 1, windowEndsAt: now + AUTH_RATE_WINDOW_MS, blockedUntil: 0 });
     return;
   }
   bucket.failures += 1;
-  if (bucket.failures >= AUTH_RATE_MAX_FAILURES) {
-    bucket.blockedUntil = now + AUTH_RATE_BLOCK_MS;
+  if (bucket.failures >= AUTH_RATE_MAX_FAILURES) bucket.blockedUntil = now + AUTH_RATE_BLOCK_MS;
+}
+
+async function isAuthTemporarilyBlocked(key: string) {
+  try {
+    const now = Date.now();
+    const row = await prisma.dataDocument.findUnique({
+      where: { collectionPath_docId: { collectionPath: "auth_rate_limits", docId: authRateLimitDocId(key) } },
+      select: { data: true },
+    });
+    const data = coerceRecord(row?.data);
+    const blockedUntil = Number(data.blockedUntil || 0);
+    const windowEndsAt = Number(data.windowEndsAt || 0);
+    if (Number.isFinite(blockedUntil) && blockedUntil > now) return true;
+    if (Number.isFinite(windowEndsAt) && windowEndsAt > 0 && windowEndsAt < now) {
+      await prisma.dataDocument.deleteMany({
+        where: { collectionPath: "auth_rate_limits", docId: authRateLimitDocId(key) },
+      });
+    }
+    return false;
+  } catch {
+    return fallbackIsBlocked(key);
   }
 }
 
-function clearAuthFailures(key: string) {
+async function registerAuthFailure(key: string) {
+  try {
+    const now = Date.now();
+    const docId = authRateLimitDocId(key);
+    const row = await prisma.dataDocument.findUnique({
+      where: { collectionPath_docId: { collectionPath: "auth_rate_limits", docId } },
+      select: { data: true },
+    });
+    const current = coerceRecord(row?.data);
+    const currentWindowEnds = Number(current.windowEndsAt || 0);
+    const inWindow = Number.isFinite(currentWindowEnds) && currentWindowEnds >= now;
+    const failures = inWindow ? Number(current.failures || 0) + 1 : 1;
+    const windowEndsAt = inWindow ? currentWindowEnds : now + AUTH_RATE_WINDOW_MS;
+    const blockedUntil = failures >= AUTH_RATE_MAX_FAILURES ? now + AUTH_RATE_BLOCK_MS : 0;
+    await upsertDataDocument(
+      "auth_rate_limits",
+      docId,
+      {
+        keyHash: docId,
+        failures,
+        windowEndsAt,
+        blockedUntil,
+        updatedAt: new Date().toISOString(),
+      },
+      false
+    );
+  } catch {
+    fallbackRegisterFailure(key);
+  }
+}
+
+async function clearAuthFailures(key: string) {
   authFailureBuckets.delete(key);
+  try {
+    await prisma.dataDocument.deleteMany({
+      where: { collectionPath: "auth_rate_limits", docId: authRateLimitDocId(key) },
+    });
+  } catch {
+    // no-op: l'auth reste fonctionnelle même si le nettoyage rate-limit échoue.
+  }
 }
 
 function isPrimitiveQueryValue(value: unknown) {
@@ -751,7 +832,7 @@ export function registerMongoApi(app: Express) {
     try {
       const email = String(req.body?.email || "").trim().toLowerCase();
       const authKey = authBucketKey(req, email);
-      if (isAuthTemporarilyBlocked(authKey)) {
+      if (await isAuthTemporarilyBlocked(authKey)) {
         return res.status(429).json({ success: false, error: "Trop de tentatives. Réessayez plus tard." });
       }
       const password = String(req.body?.password || "");
@@ -762,11 +843,11 @@ export function registerMongoApi(app: Express) {
       const phone = req.body?.phone ? String(req.body.phone) : null;
 
       if (!email || !password || !isValidEmail(email)) {
-        registerAuthFailure(authKey);
+        await registerAuthFailure(authKey);
         return res.status(400).json({ success: false, error: "Email et mot de passe requis." });
       }
       if (!isStrongPassword(password)) {
-        registerAuthFailure(authKey);
+        await registerAuthFailure(authKey);
         return res.status(400).json({
           success: false,
           error: "Mot de passe insuffisant (12+ caractères, majuscule, minuscule, chiffre et symbole).",
@@ -775,7 +856,7 @@ export function registerMongoApi(app: Express) {
 
       const existing = await prisma.userAccount.findUnique({ where: { email } });
       if (existing) {
-        registerAuthFailure(authKey);
+        await registerAuthFailure(authKey);
         return res.status(409).json({ success: false, error: "Cet email existe déjà." });
       }
 
@@ -817,7 +898,7 @@ export function registerMongoApi(app: Express) {
         });
       }
 
-      clearAuthFailures(authKey);
+      await clearAuthFailures(authKey);
 
       return res.status(201).json({
         success: true,
@@ -982,7 +1063,9 @@ export function registerMongoApi(app: Express) {
         const referralCode = normalizePartnerCode(String(data.referralCode || ""));
         const partnerCode = normalizePartnerCode(String(data.partnerCode || ""));
         const uid = String(data.uid || row.docId || "");
-        if (referralCode === ref || partnerCode === ref || uid === refRaw) {
+        const derivedCode5 = normalizePartnerCode(`PART-${uid.substring(0, 5).toUpperCase().replace("USR", "INF")}`);
+        const derivedCode6 = normalizePartnerCode(`PART-${uid.substring(0, 6).toUpperCase().replace("USR", "INF")}`);
+        if (referralCode === ref || partnerCode === ref || derivedCode5 === ref || derivedCode6 === ref || uid === refRaw) {
           return res.status(200).json({
             success: true,
             partner: {
@@ -1014,8 +1097,8 @@ export function registerMongoApi(app: Express) {
 
       const referralCode = normalizePartnerCode(referralCodeRaw);
       const referredByPartnerIdRaw = String(req.body?.referredByPartnerId || "").trim();
-      const referredByPartnerId = referredByPartnerIdRaw || null;
-      const partnerLabel = String(req.body?.referredByPartnerName || "").trim() || "Partenaire Infinite";
+      let referredByPartnerId = referredByPartnerIdRaw || null;
+      let partnerLabel = String(req.body?.referredByPartnerName || "").trim() || "Partenaire Infinite";
       const signupUserId = String(req.body?.signupUserId || auth.uid).trim() || auth.uid;
       const firstName = String(req.body?.firstName || "").trim();
       const lastName = String(req.body?.lastName || "").trim();
@@ -1023,6 +1106,47 @@ export function registerMongoApi(app: Express) {
       const phone = String(req.body?.phone || "").trim();
       const companyName = String(req.body?.companyName || "").trim() || "Prospect parrainé";
       const industry = String(req.body?.industry || "").trim() || "Non spécifié";
+
+      // Si l'ID partenaire n'est pas fourni côté client, on le résout côté serveur via le code de parrainage.
+      if (!referredByPartnerId) {
+        const partnerRows = await prisma.dataDocument.findMany({
+          where: { collectionPath: "users" },
+        });
+        const resolvedPartner = partnerRows.find((row) => {
+          const data = coerceRecord(row.data);
+          const role = String(data.role || "").toLowerCase();
+          if (role !== "partner") return false;
+          const referral = normalizePartnerCode(String(data.referralCode || ""));
+          const partnerCode = normalizePartnerCode(String(data.partnerCode || ""));
+          const uid = String(data.uid || row.docId || "");
+          const derivedCode5 = normalizePartnerCode(`PART-${uid.substring(0, 5).toUpperCase().replace("USR", "INF")}`);
+          const derivedCode6 = normalizePartnerCode(`PART-${uid.substring(0, 6).toUpperCase().replace("USR", "INF")}`);
+          return (
+            referral === referralCode ||
+            partnerCode === referralCode ||
+            derivedCode5 === referralCode ||
+            derivedCode6 === referralCode ||
+            uid === referralCodeRaw
+          );
+        });
+
+        if (resolvedPartner) {
+          const partnerData = coerceRecord(resolvedPartner.data);
+          referredByPartnerId = resolvedPartner.docId;
+          const resolvedName = `${String(partnerData.firstName || "")} ${String(partnerData.lastName || "")}`.trim();
+          partnerLabel = resolvedName || String(partnerData.email || "") || partnerLabel;
+        }
+      }
+
+      // Synchronise le document user pour garantir l'affichage côté admin/partenaire.
+      if (signupUserId) {
+        const userPatch: Record<string, unknown> = {
+          referredBy: referralCode,
+          referredByPartnerName: partnerLabel,
+        };
+        if (referredByPartnerId) userPatch.referredByPartnerId = referredByPartnerId;
+        await upsertDataDocument("users", signupUserId, userPatch, true);
+      }
 
       const message = `Inscription via le lien de ${partnerLabel}: ${firstName} ${lastName} (${companyName}) - ${industry} - ${phone} - ref: ${referralCode}`;
       const metadata = {
@@ -1143,13 +1267,13 @@ export function registerMongoApi(app: Express) {
         },
       });
       // #endregion
-      if (isAuthTemporarilyBlocked(authKey)) {
+      if (await isAuthTemporarilyBlocked(authKey)) {
         return res.status(429).json({ success: false, error: "Trop de tentatives. Réessayez plus tard." });
       }
       const password = String(req.body?.password || "");
 
       if (!email || !password || !isValidEmail(email)) {
-        registerAuthFailure(authKey);
+        await registerAuthFailure(authKey);
         return res.status(400).json({ success: false, error: "Email et mot de passe requis." });
       }
 
@@ -1170,7 +1294,7 @@ export function registerMongoApi(app: Express) {
       });
       // #endregion
       if (!account || !account.passwordHash) {
-        registerAuthFailure(authKey);
+        await registerAuthFailure(authKey);
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
 
@@ -1190,7 +1314,7 @@ export function registerMongoApi(app: Express) {
       });
       // #endregion
       if (!valid) {
-        registerAuthFailure(authKey);
+        await registerAuthFailure(authKey);
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
 
@@ -1227,7 +1351,7 @@ export function registerMongoApi(app: Express) {
         });
       }
 
-      clearAuthFailures(authKey);
+      await clearAuthFailures(authKey);
 
       return res.status(200).json({
         success: true,
@@ -1350,12 +1474,9 @@ export function registerMongoApi(app: Express) {
 
   app.post("/api/auth/google", async (req: Request, res: Response) => {
     try {
-      const email = String(req.body?.email || "").trim().toLowerCase();
-      const authKey = authBucketKey(req, email);
-      if (isAuthTemporarilyBlocked(authKey)) {
-        return res.status(429).json({ success: false, error: "Trop de tentatives. Réessayez plus tard." });
-      }
-      const displayName = String(req.body?.displayName || "").trim();
+      const staffOnly = Boolean(req.body?.staffOnly);
+      const accessToken = String(req.body?.accessToken || "").trim();
+      const displayNameBody = String(req.body?.displayName || "").trim();
       const companyName = String(req.body?.companyName || "").trim();
       const industry = String(req.body?.industry || "").trim();
       const size = String(req.body?.size || "").trim();
@@ -1363,10 +1484,59 @@ export function registerMongoApi(app: Express) {
       const referredByPartnerId = req.body?.referredByPartnerId ? String(req.body.referredByPartnerId) : null;
       const referredByPartnerName = req.body?.referredByPartnerName ? String(req.body.referredByPartnerName) : null;
 
+      let email = "";
+      let googlePicture: string | null = null;
+      let googleDisplayHint = "";
+
+      if (accessToken) {
+        try {
+          const prof = await googleUserProfileFromAccessToken(accessToken);
+          email = prof.email;
+          googlePicture = prof.picture;
+          googleDisplayHint = prof.displayNameHint;
+        } catch {
+          return res.status(401).json({
+            success: false,
+            error: "Impossible de vérifier le compte Google (jeton invalide ou email non vérifié).",
+          });
+        }
+      } else {
+        email = String(req.body?.email || "").trim().toLowerCase();
+      }
+
+      const authKey = authBucketKey(req, email);
+      if (await isAuthTemporarilyBlocked(authKey)) {
+        return res.status(429).json({ success: false, error: "Trop de tentatives. Réessayez plus tard." });
+      }
+
       if (!email || !isValidEmail(email)) {
-        registerAuthFailure(authKey);
+        if (accessToken) {
+          return res.status(401).json({ success: false, error: "Profil Google invalide." });
+        }
+        await registerAuthFailure(authKey);
         return res.status(400).json({ success: false, error: "Email requis." });
       }
+
+      if (staffOnly) {
+        const existingForStaff = await prisma.userAccount.findUnique({ where: { email } });
+        if (!existingForStaff) {
+          await registerAuthFailure(authKey);
+          return res.status(403).json({
+            success: false,
+            error: "Aucun compte équipe associé à cet identifiant Google.",
+          });
+        }
+        if (existingForStaff.role !== "admin" && existingForStaff.role !== "commando") {
+          await registerAuthFailure(authKey);
+          return res.status(403).json({
+            success: false,
+            error: "Ce compte n'a pas accès à l'espace équipe (commando ou admin uniquement).",
+          });
+        }
+      }
+
+      const displayName =
+        (displayNameBody || googleDisplayHint || email.split("@")[0] || email).trim() || email;
 
       let account = await prisma.userAccount.findUnique({ where: { email } });
       const isNew = !account;
@@ -1374,19 +1544,23 @@ export function registerMongoApi(app: Express) {
       if (!account) {
         const [firstName = "", ...last] = displayName.split(" ");
         const uid = `usr_${randomUUID().replace(/-/g, "").slice(0, 20)}`;
-        
-        // Handle company creation if provided
+
         let companyId = null;
         if (companyName) {
           companyId = `comp_${Date.now()}`;
-          await upsertDataDocument("companies", companyId, {
-            id: companyId,
-            name: companyName,
-            industry: industry || "Non spécifié",
-            size: size || "1-5",
-            pack: "starter",
-            createdAt: new Date().toISOString(),
-          }, false);
+          await upsertDataDocument(
+            "companies",
+            companyId,
+            {
+              id: companyId,
+              name: companyName,
+              industry: industry || "Non spécifié",
+              size: size || "1-5",
+              pack: "starter",
+              createdAt: new Date().toISOString(),
+            },
+            false
+          );
         }
 
         account = await prisma.userAccount.create({
@@ -1404,7 +1578,6 @@ export function registerMongoApi(app: Express) {
         });
       }
 
-      // Ensure user document exists/is updated with metadata
       const profileData: Record<string, any> = {
         uid: account.uid,
         email: account.email,
@@ -1413,7 +1586,7 @@ export function registerMongoApi(app: Express) {
         role: account.role,
         createdAt: account.createdAt.toISOString(),
       };
-      
+
       if (isNew) {
         if (account.companyId) profileData.companyId = account.companyId;
         if (referredBy) profileData.referredBy = referredBy;
@@ -1421,7 +1594,30 @@ export function registerMongoApi(app: Express) {
         if (referredByPartnerName) profileData.referredByPartnerName = referredByPartnerName;
       }
 
+      if (googlePicture) {
+        profileData.photoURL = googlePicture;
+      }
+
       await upsertDataDocument("users", account.uid, profileData, true);
+
+      if (accessToken) {
+        await clearAuthFailures(authKey);
+        const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+        setAuthCookie(res, token);
+        const displayNameOut =
+          [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email;
+        return res.status(200).json({
+          success: true,
+          user: {
+            uid: account.uid,
+            email: account.email,
+            role: account.role,
+            displayName: displayNameOut,
+            photoURL: googlePicture || null,
+          },
+          isNew,
+        });
+      }
 
       const challengeId = randomUUID().replace(/-/g, "");
       const verificationCode = generateNumericCode(6);
@@ -1454,7 +1650,7 @@ export function registerMongoApi(app: Express) {
         });
       }
 
-      clearAuthFailures(authKey);
+      await clearAuthFailures(authKey);
 
       return res.status(200).json({
         success: true,
@@ -1509,7 +1705,45 @@ export function registerMongoApi(app: Express) {
       });
 
       await ensureUserDocumentFromAccount(account);
-      return res.status(201).json({ success: true, uid: account.uid, password: generatedPassword });
+      const resetToken = randomBytes(32).toString("hex");
+      const nowIso = new Date().toISOString();
+      const expiresAtIso = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
+      await upsertDataDocument(
+        "auth_password_resets",
+        account.uid,
+        {
+          uid: account.uid,
+          email: account.email,
+          tokenHash: sha256Hex(resetToken),
+          requestedAt: nowIso,
+          expiresAt: expiresAtIso,
+          used: false,
+          requestedByAdminUid: auth.uid,
+        },
+        false
+      );
+
+      const mailResult = await sendResetPasswordEmail({ to: account.email, token: resetToken });
+      if (!mailResult.delivered) {
+        await prisma.userAccount.delete({ where: { uid: account.uid } });
+        await prisma.dataDocument.deleteMany({
+          where: {
+            collectionPath: { in: ["users", "auth_password_resets"] },
+            docId: account.uid,
+          },
+        });
+        return res.status(503).json({
+          success: false,
+          error: "Le compte n'a pas été créé: SMTP est requis pour envoyer l'email d'initialisation.",
+        });
+      }
+
+      return res.status(201).json({
+        success: true,
+        uid: account.uid,
+        invitationSent: true,
+        ...(!appEnv.node.isProduction ? { resetTokenPreview: resetToken } : {}),
+      });
     } catch (error) {
       console.error("[auth/admin-create]", error);
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
@@ -1630,154 +1864,20 @@ export function registerMongoApi(app: Express) {
     }
   });
 
-  app.post("/api/data/query", async (req: Request, res: Response) => {
-    try {
-      const auth = await requireAuth(req, res);
-      if (!auth) return;
-      const collectionPath = normalizeCollectionPath(String(req.body?.collectionPath || ""));
-      const filters = sanitizeFilters(req.body?.filters);
-      const orders = sanitizeOrders(req.body?.orders);
-      const max = Number(req.body?.limit);
-      const take = Number.isFinite(max) && max > 0 ? Math.min(max, 5000) : undefined;
-
-      if (!collectionPath || !isSafeCollectionPath(collectionPath) || filters === null || orders === null) {
-        return res.status(400).json({ success: false, error: "Paramètres de requête invalides." });
-      }
-      const authz = assertDataQueryAuthorized(auth, collectionPath, filters);
-      if (authz.ok === false) {
-        return res.status(403).json({ success: false, error: authz.error });
-      }
-
-      const rows = await prisma.dataDocument.findMany({
-        where: { collectionPath },
-      });
-      const normalized = rows.map((row) => ({
-        docId: row.docId,
-        data: coerceRecord(row.data),
-      }));
-      const filtered = applyFilters(normalized, filters);
-      const ordered = applyOrder(filtered, orders);
-      const limited = take ? ordered.slice(0, take) : ordered;
-
-      return res.status(200).json({
-        success: true,
-        docs: limited.map((row) => ({ id: row.docId, data: row.data })),
-      });
-    } catch (error) {
-      console.error("[data/query]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
-    }
-  });
-
-  app.get("/api/data/doc", async (req: Request, res: Response) => {
-    try {
-      const auth = await requireAuth(req, res);
-      if (!auth) return;
-      const collectionPath = normalizeCollectionPath(String(req.query.collectionPath || ""));
-      const docId = String(req.query.docId || "").trim();
-      if (!collectionPath || !docId || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId)) {
-        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
-      }
-      const authz = assertDataDocAuthorized(auth, "read", collectionPath, docId);
-      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
-
-      const row = await prisma.dataDocument.findUnique({
-        where: { collectionPath_docId: { collectionPath, docId } },
-      });
-      return res.status(200).json({
-        success: true,
-        exists: Boolean(row),
-        doc: row ? { id: row.docId, data: coerceRecord(row.data) } : null,
-      });
-    } catch (error) {
-      console.error("[data/doc:get]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
-    }
-  });
-
-  app.post("/api/data/doc", async (req: Request, res: Response) => {
-    try {
-      const auth = await requireAuth(req, res);
-      if (!auth) return;
-      const collectionPath = normalizeCollectionPath(String(req.body?.collectionPath || ""));
-      const merge = Boolean(req.body?.merge);
-      const incoming = coerceRecord(req.body?.data);
-      const docId = String(req.body?.docId || "").trim() || randomUUID().replace(/-/g, "");
-      if (!collectionPath || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId)) {
-        return res.status(400).json({ success: false, error: "collectionPath ou docId invalides." });
-      }
-      const authz = assertDataDocAuthorized(auth, "write", collectionPath, docId, incoming);
-      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
-
-      await upsertDataDocument(collectionPath, docId, incoming, merge);
-      return res.status(200).json({ success: true, docId });
-    } catch (error) {
-      console.error("[data/doc:post]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
-    }
-  });
-
-  app.patch("/api/data/doc", async (req: Request, res: Response) => {
-    try {
-      const auth = await requireAuth(req, res);
-      if (!auth) return;
-      const collectionPath = normalizeCollectionPath(String(req.body?.collectionPath || ""));
-      const docId = String(req.body?.docId || "").trim();
-      const updates = coerceRecord(req.body?.data);
-      const deleteKeys = Array.isArray(req.body?.deleteKeys) ? (req.body.deleteKeys as string[]) : [];
-      if (
-        !collectionPath ||
-        !docId ||
-        !isSafeCollectionPath(collectionPath) ||
-        !isSafeDocId(docId) ||
-        !deleteKeys.every((key) => SAFE_FIELD_NAME.test(String(key)))
-      ) {
-        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
-      }
-      const authz = assertDataDocAuthorized(auth, "write", collectionPath, docId, updates);
-      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
-
-      const existing = await prisma.dataDocument.findUnique({
-        where: { collectionPath_docId: { collectionPath, docId } },
-      });
-      if (!existing) return res.status(404).json({ success: false, error: "Document introuvable." });
-
-      const next = { ...coerceRecord(existing.data), ...updates };
-      for (const key of deleteKeys) {
-        delete next[key];
-      }
-
-      await prisma.dataDocument.update({
-        where: { collectionPath_docId: { collectionPath, docId } },
-        data: { data: next as any },
-      });
-
-      return res.status(200).json({ success: true });
-    } catch (error) {
-      console.error("[data/doc:patch]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
-    }
-  });
-
-  app.delete("/api/data/doc", async (req: Request, res: Response) => {
-    try {
-      const auth = await requireAuth(req, res);
-      if (!auth) return;
-      const collectionPath = normalizeCollectionPath(String(req.query.collectionPath || ""));
-      const docId = String(req.query.docId || "").trim();
-      if (!collectionPath || !docId || !isSafeCollectionPath(collectionPath) || !isSafeDocId(docId)) {
-        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
-      }
-      const authz = assertDataDocAuthorized(auth, "write", collectionPath, docId);
-      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
-
-      await prisma.dataDocument.deleteMany({
-        where: { collectionPath, docId },
-      });
-      return res.status(200).json({ success: true });
-    } catch (error) {
-      console.error("[data/doc:delete]", error);
-      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
-    }
+  registerDataRoutes(app, {
+    prisma,
+    requireAuth,
+    normalizeCollectionPath,
+    isSafeCollectionPath,
+    isSafeDocId,
+    isSafeFieldName: (fieldName) => SAFE_FIELD_NAME.test(fieldName),
+    sanitizeFilters,
+    sanitizeOrders,
+    assertDataQueryAuthorized,
+    assertDataDocAuthorized,
+    coerceRecord,
+    applyFilters,
+    applyOrder,
+    upsertDataDocument,
   });
 }
