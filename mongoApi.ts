@@ -608,6 +608,8 @@ export function registerMongoApi(app: Express) {
             createdAt: account.createdAt.toISOString(),
           }),
           ...profile,
+          /** Toujours aligné sur le compte Prisma (évite qu’un doc `users` partiel écrase le rôle). */
+          role: account.role,
         },
       });
     } catch (error) {
