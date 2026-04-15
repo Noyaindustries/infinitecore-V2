@@ -6,6 +6,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import type { Handler } from "serverless-http";
 import type { Express } from "express";
 import serverless from "serverless-http";
+import { agentSessionLog } from "../../src/debug/agentSessionLog";
 import { createExpressApplication } from "../../server";
 
 let cachedHandler: Handler | null = null;
@@ -28,6 +29,40 @@ export const config = {
 };
 
 export default async function apiGateway(req: NextApiRequest, res: NextApiResponse) {
-  const handler = await getHandler();
+  const coldStartT0 = Date.now();
+  // #region agent log
+  agentSessionLog({
+    runId: "initial",
+    hypothesisId: "H4",
+    location: "pages/api/[[...path]].ts:apiGateway:before_getHandler",
+    message: "vercel_api_gateway_entry",
+    data: { url: String(req.url || "").slice(0, 200) },
+  });
+  // #endregion
+  let handler: Awaited<ReturnType<typeof getHandler>>;
+  try {
+    handler = await getHandler();
+  } catch (e) {
+    agentSessionLog({
+      runId: "initial",
+      hypothesisId: "H4",
+      location: "pages/api/[[...path]].ts:getHandler",
+      message: "vercel_getHandler_failed",
+      data: {
+        elapsedMs: Date.now() - coldStartT0,
+        err: e instanceof Error ? e.message : String(e),
+      },
+    });
+    throw e;
+  }
+  // #region agent log
+  agentSessionLog({
+    runId: "initial",
+    hypothesisId: "H4",
+    location: "pages/api/[[...path]].ts:apiGateway:after_getHandler",
+    message: "vercel_getHandler_ready",
+    data: { getHandlerMs: Date.now() - coldStartT0 },
+  });
+  // #endregion
   return handler(req, res);
 }

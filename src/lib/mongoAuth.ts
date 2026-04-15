@@ -50,6 +50,17 @@ const authState: Auth = {
 const listeners = new Set<AuthListener>();
 let bootstrapPromise: Promise<void> | null = null;
 
+function agentDebugLog(payload: Record<string, unknown>) {
+  if (typeof window === "undefined") return;
+  // #region agent log
+  fetch("http://127.0.0.1:27772/ingest/9581a084-44fc-4752-b649-5a3388314469", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "73b87a" },
+    body: JSON.stringify({ sessionId: "73b87a", timestamp: Date.now(), ...payload }),
+  }).catch(() => {});
+  // #endregion
+}
+
 function toUser(raw: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null }): User {
   return {
     uid: raw.uid,
@@ -75,9 +86,27 @@ function emitAuthState() {
 async function bootstrapAuthState() {
   if (bootstrapPromise) return bootstrapPromise;
   bootstrapPromise = (async () => {
+    // #region agent log
+    agentDebugLog({
+      runId: "initial",
+      hypothesisId: "H8",
+      location: "mongoAuth.ts:bootstrapAuthState:start",
+      message: "auth_bootstrap_start",
+      data: {},
+    });
+    // #endregion
     const token = getAuthToken();
     if (!token) {
       authState.currentUser = null;
+      // #region agent log
+      agentDebugLog({
+        runId: "initial",
+        hypothesisId: "H8",
+        location: "mongoAuth.ts:bootstrapAuthState:no_token",
+        message: "auth_bootstrap_no_token",
+        data: {},
+      });
+      // #endregion
       emitAuthState();
       return;
     }
@@ -87,9 +116,27 @@ async function bootstrapAuthState() {
         user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
       }>("/api/auth/me");
       authState.currentUser = toUser(data.user);
+      // #region agent log
+      agentDebugLog({
+        runId: "initial",
+        hypothesisId: "H8",
+        location: "mongoAuth.ts:bootstrapAuthState:me_ok",
+        message: "auth_bootstrap_me_ok",
+        data: { uid: data.user?.uid || "unknown" },
+      });
+      // #endregion
     } catch {
       setAuthToken(null);
       authState.currentUser = null;
+      // #region agent log
+      agentDebugLog({
+        runId: "initial",
+        hypothesisId: "H9",
+        location: "mongoAuth.ts:bootstrapAuthState:me_fail",
+        message: "auth_bootstrap_me_fail",
+        data: {},
+      });
+      // #endregion
     }
     emitAuthState();
   })();
@@ -103,6 +150,15 @@ export function getAuth(_app?: unknown): Auth {
 
 export function onAuthStateChanged(_auth: Auth, callback: AuthListener) {
   listeners.add(callback);
+  // #region agent log
+  agentDebugLog({
+    runId: "initial",
+    hypothesisId: "H10",
+    location: "mongoAuth.ts:onAuthStateChanged:subscribed",
+    message: "auth_listener_subscribed",
+    data: { listenersCount: listeners.size },
+  });
+  // #endregion
   void bootstrapAuthState().then(() => callback(authState.currentUser));
   return () => {
     listeners.delete(callback);

@@ -3,6 +3,17 @@ import { User, onAuthStateChanged } from '@/lib/mongoAuth';
 import { auth } from '@/lib/clientSdk';
 import { apiRequest } from '../lib/apiClient';
 
+function agentDebugLog(payload: Record<string, unknown>) {
+  if (typeof window === "undefined") return;
+  // #region agent log
+  fetch("http://127.0.0.1:27772/ingest/9581a084-44fc-4752-b649-5a3388314469", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "73b87a" },
+    body: JSON.stringify({ sessionId: "73b87a", timestamp: Date.now(), ...payload }),
+  }).catch(() => {});
+  // #endregion
+}
+
 /** Profil `users/*` — champs courants typés, le reste en index signature. */
 export type AuthUserData = {
   role?: string;
@@ -41,6 +52,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      // #region agent log
+      agentDebugLog({
+        runId: "initial",
+        hypothesisId: "H10",
+        location: "AuthProvider.tsx:onAuthStateChanged:callback",
+        message: "auth_provider_listener_called",
+        data: { hasCurrentUser: !!currentUser },
+      });
+      // #endregion
       setUser(currentUser);
 
       if (currentUser) {
@@ -54,10 +74,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           })
           .finally(() => {
             setIsAuthReady(true);
+            // #region agent log
+            agentDebugLog({
+              runId: "initial",
+              hypothesisId: "H10",
+              location: "AuthProvider.tsx:onAuthStateChanged:finally_user",
+              message: "auth_provider_ready_after_me",
+              data: {},
+            });
+            // #endregion
           });
       } else {
         setUserData(null);
         setIsAuthReady(true);
+        // #region agent log
+        agentDebugLog({
+          runId: "initial",
+          hypothesisId: "H10",
+          location: "AuthProvider.tsx:onAuthStateChanged:no_user",
+          message: "auth_provider_ready_no_user",
+          data: {},
+        });
+        // #endregion
       }
     });
 

@@ -5,6 +5,7 @@ import nodemailer, { type Transporter } from "nodemailer";
 import { createHash, randomBytes, randomUUID } from "crypto";
 import { prisma } from "./prismaClient";
 import { appEnv, getJwtSecret, resetAppBaseUrl } from "@/config/env";
+import { agentSessionLog } from "./src/debug/agentSessionLog";
 
 export type AuthPayload = {
   uid: string;
@@ -728,6 +729,7 @@ export function registerMongoApi(app: Express) {
   });
 
   app.post("/api/auth/login", async (req: Request, res: Response) => {
+    const loginT0 = Date.now();
     try {
       if (!appEnv.database.url) {
         return res.status(503).json({
@@ -737,6 +739,18 @@ export function registerMongoApi(app: Express) {
       }
       const email = String(req.body?.email || "").trim().toLowerCase();
       const authKey = authBucketKey(req, email);
+      // #region agent log
+      agentSessionLog({
+        runId: "initial",
+        hypothesisId: "H5",
+        location: "mongoApi.ts:/api/auth/login:entry",
+        message: "auth_login_entry",
+        data: {
+          hasDatabaseUrl: !!appEnv.database.url,
+          emailDomain: email.includes("@") ? email.split("@")[1] : "invalid",
+        },
+      });
+      // #endregion
       if (isAuthTemporarilyBlocked(authKey)) {
         return res.status(429).json({ success: false, error: "Trop de tentatives. Réessayez plus tard." });
       }
@@ -747,13 +761,42 @@ export function registerMongoApi(app: Express) {
         return res.status(400).json({ success: false, error: "Email et mot de passe requis." });
       }
 
+      const dbLookupT0 = Date.now();
       const account = await prisma.userAccount.findUnique({ where: { email } });
+      // #region agent log
+      agentSessionLog({
+        runId: "initial",
+        hypothesisId: "H5",
+        location: "mongoApi.ts:/api/auth/login:after_findUnique",
+        message: "auth_login_db_lookup_done",
+        data: {
+          dbLookupMs: Date.now() - dbLookupT0,
+          totalElapsedMs: Date.now() - loginT0,
+          foundAccount: !!account,
+          hasPasswordHash: !!account?.passwordHash,
+        },
+      });
+      // #endregion
       if (!account || !account.passwordHash) {
         registerAuthFailure(authKey);
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
 
+      const bcryptT0 = Date.now();
       const valid = await bcrypt.compare(password, account.passwordHash);
+      // #region agent log
+      agentSessionLog({
+        runId: "initial",
+        hypothesisId: "H6",
+        location: "mongoApi.ts:/api/auth/login:after_bcrypt_compare",
+        message: "auth_login_bcrypt_done",
+        data: {
+          bcryptMs: Date.now() - bcryptT0,
+          totalElapsedMs: Date.now() - loginT0,
+          passwordValid: valid,
+        },
+      });
+      // #endregion
       if (!valid) {
         registerAuthFailure(authKey);
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
@@ -773,6 +816,18 @@ export function registerMongoApi(app: Express) {
         },
       });
     } catch (error) {
+      // #region agent log
+      agentSessionLog({
+        runId: "initial",
+        hypothesisId: "H5",
+        location: "mongoApi.ts:/api/auth/login:catch",
+        message: "auth_login_exception",
+        data: {
+          totalElapsedMs: Date.now() - loginT0,
+          errMessage: error instanceof Error ? error.message : String(error),
+        },
+      });
+      // #endregion
       return sendAuthPrismaError(res, "[auth/login]", error);
     }
   });

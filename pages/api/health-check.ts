@@ -1,5 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import { prisma } from "../../prismaClient";
+import { agentSessionLog } from "../../src/debug/agentSessionLog";
 import { appEnv } from "../../src/config/env";
 
 export default async function healthCheck(req: NextApiRequest, res: NextApiResponse) {
@@ -34,6 +35,17 @@ export default async function healthCheck(req: NextApiRequest, res: NextApiRespo
   } catch (error: any) {
     const duration = Date.now() - start;
     console.error("[health-check] Erreur:", error);
+    agentSessionLog({
+      runId: "initial",
+      hypothesisId: "H7",
+      location: "pages/api/health-check.ts",
+      message: "health_check_db_failed",
+      data: {
+        durationMs: duration,
+        errMessage: error?.message || String(error),
+        databaseUrlPresent: !!appEnv.database.url,
+      },
+    });
 
     return res.status(503).json({
       status: "DATABASE_ERROR",

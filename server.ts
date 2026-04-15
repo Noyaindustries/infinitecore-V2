@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import cors from "cors";
 import path from "path";
 import { createReadStream, promises as fs } from "fs";
+import { agentSessionLog } from "@/debug/agentSessionLog";
 import multer from "multer";
 import { randomUUID, timingSafeEqual } from "crypto";
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
@@ -82,6 +83,12 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         if (!origin || corsOrigins.includes(origin)) {
           return callback(null, true);
         }
+        agentSessionLog({
+          hypothesisId: "H6",
+          location: "server.ts:cors",
+          message: "cors_origin_rejected",
+          data: { origin, allowedOriginsCount: corsOrigins.length },
+        });
         /** `false` sans Error : évite des 500 / preflight bizarres côté navigateur. */
         return callback(null, false);
       },
@@ -96,6 +103,27 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     next();
   });
   app.use(express.json({ limit: "1mb", strict: true }));
+
+  app.use((req, res, next) => {
+    const start = Date.now();
+    const routePath = (req.path || req.url?.split("?")[0] || "").slice(0, 160);
+    res.on("finish", () => {
+      // #region agent log
+      agentSessionLog({
+        hypothesisId: "H5",
+        location: "server.ts:request_timing",
+        message: "express_request_finish",
+        data: {
+          method: req.method,
+          path: routePath,
+          status: res.statusCode,
+          durationMs: Date.now() - start,
+        },
+      });
+      // #endregion
+    });
+    next();
+  });
 
   app.get("/health", (_req, res) => {
     res.status(200).json({ ok: true });

@@ -2,6 +2,26 @@ import { apiUrl } from "./apiBase";
 
 const AUTH_TOKEN_KEY = "ic_auth_token";
 
+function agentDebugLog(payload: Record<string, unknown>) {
+  if (typeof window === "undefined") return;
+  // #region agent log
+  fetch("http://127.0.0.1:27772/ingest/9581a084-44fc-4752-b649-5a3388314469", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "73b87a" },
+    body: JSON.stringify({ sessionId: "73b87a", timestamp: Date.now(), ...payload }),
+  }).catch(() => {});
+  // #endregion
+}
+
+function safeResolvedUrlForLog(resolvedUrl: string, method: string | undefined) {
+  try {
+    const u = new URL(resolvedUrl, window.location.origin);
+    return { host: u.host, pathname: u.pathname, method: method || "GET" };
+  } catch {
+    return { host: "invalid-url", pathname: String(resolvedUrl).slice(0, 96), method: method || "GET" };
+  }
+}
+
 /**
  * Plafond pour toute la requête (fetch + lecture du corps).
  * `AbortController` seul ne garantit pas l’arrêt si le TCP reste bloqué ou si `response.text()` pend.
@@ -84,9 +104,20 @@ export async function apiRequest<T>(url: string, init: RequestInit = {}): Promis
   const deadlineMs = DEFAULT_REQUEST_TIMEOUT_MS;
   const outer = new AbortController();
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const startedAt = Date.now();
 
   const upstream = init.signal;
   const fetchSignal = upstream ? mergeAbortSignals(outer.signal, upstream) : outer.signal;
+
+  // #region agent log
+  agentDebugLog({
+    location: "apiClient.ts:apiRequest:start",
+    message: "apiRequest_start",
+    runId: "initial",
+    hypothesisId: "H2",
+    data: { ...safeResolvedUrlForLog(resolvedUrl, init.method), deadlineMs, hasUpstreamSignal: !!upstream },
+  });
+  // #endregion
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
@@ -96,9 +127,37 @@ export async function apiRequest<T>(url: string, init: RequestInit = {}): Promis
   });
 
   try {
-    return await Promise.race([fetchAndParse<T>(resolvedUrl, init, fetchSignal), timeoutPromise]);
+    const out = await Promise.race([fetchAndParse<T>(resolvedUrl, init, fetchSignal), timeoutPromise]);
+    // #region agent log
+    agentDebugLog({
+      location: "apiClient.ts:apiRequest:success",
+      message: "apiRequest_success",
+      runId: "initial",
+      hypothesisId: "H1",
+      data: { ...safeResolvedUrlForLog(resolvedUrl, init.method), elapsedMs: Date.now() - startedAt },
+    });
+    // #endregion
+    return out;
   } catch (e) {
     const name = e instanceof Error ? e.name : "";
+    const msg = e instanceof Error ? e.message : String(e);
+    const elapsedMs = Date.now() - startedAt;
+    // #region agent log
+    agentDebugLog({
+      location: "apiClient.ts:apiRequest:catch",
+      message: "apiRequest_error",
+      runId: "initial",
+      hypothesisId: name === "AbortError" || msg === TIMEOUT_MESSAGE ? "H1" : "H3",
+      data: {
+        ...safeResolvedUrlForLog(resolvedUrl, init.method),
+        elapsedMs,
+        deadlineMs,
+        errorName: name,
+        isTimeoutMessage: msg === TIMEOUT_MESSAGE,
+        messageSnippet: msg.slice(0, 120),
+      },
+    });
+    // #endregion
     if (name === "AbortError") {
       throw new Error(TIMEOUT_MESSAGE);
     }
