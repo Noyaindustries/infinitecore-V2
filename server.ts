@@ -126,6 +126,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   const app = express();
   const port = appEnv.http.port;
   const corsOrigins = parseCorsOrigins(appEnv.http.corsOriginRaw);
+  const paddeAllowedOrigins = new Set(["https://padde-ci.com", "https://www.padde-ci.com"]);
   const paddeWebhookSecret = appEnv.webhooks.paddeWebhookSecret;
   const stripeSecretKey = appEnv.stripe.secretKey;
   const stripeWebhookSecret = appEnv.stripe.webhookSecret;
@@ -239,6 +240,12 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
         }
       },
+    })
+  );
+  app.use(
+    express.urlencoded({
+      extended: true,
+      limit: "1mb",
     })
   );
 
@@ -826,7 +833,67 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     }
   });
 
-  // Webhook PADDE-CI — persistance MongoDB via Prisma (collection `padde_ci_audits`)
+  const persistPaddeAuditToStores = async (data: unknown) => {
+    const payload = (data && typeof data === "object" ? (data as Record<string, unknown>) : {}) as Record<
+      string,
+      unknown
+    >;
+    const auditId = `PADDE-${Math.floor(1000 + Math.random() * 9000)}`;
+    const auditType = String(payload.type_audit || payload.type || payload.auditType || "Audit PADDE-CI").trim();
+    const clientName = String(
+      payload.clientName || payload.nom || payload.name || payload.entreprise || payload.company || "Client PADDE-CI"
+    ).trim();
+    const normalizedWhatsapp = String(payload.whatsapp || payload.telephone || payload.phone || "").trim();
+    const createdAt = new Date().toISOString();
+
+    await prisma.paddeCiAudit.create({
+      data: {
+        id: auditId,
+        payload: (payload ?? {}) as never,
+        processed: false,
+      },
+    });
+
+    await prisma.dataDocument.upsert({
+      where: {
+        collectionPath_docId: { collectionPath: ORDERS_COLLECTION_PATH, docId: auditId },
+      },
+      create: {
+        collectionPath: ORDERS_COLLECTION_PATH,
+        docId: auditId,
+        data: {
+          id: auditId,
+          source: "padde-ci",
+          status: "En attente",
+          createdAt,
+          clientName,
+          serviceName: `Audit PADDE-CI: ${auditType}`,
+          details: {
+            ...payload,
+            whatsapp: payload.whatsapp || payload.telephone || payload.phone || normalizedWhatsapp || null,
+          },
+        } as never,
+      },
+      update: {
+        data: {
+          id: auditId,
+          source: "padde-ci",
+          status: "En attente",
+          createdAt,
+          clientName,
+          serviceName: `Audit PADDE-CI: ${auditType}`,
+          details: {
+            ...payload,
+            whatsapp: payload.whatsapp || payload.telephone || payload.phone || normalizedWhatsapp || null,
+          },
+        } as never,
+      },
+    });
+
+    return { auditId };
+  };
+
+  // Webhook PADDE-CI standard — appel serveur-à-serveur (header secret recommandé).
   app.post("/api/webhooks/padde-ci", async (req, res) => {
     try {
       if (paddeWebhookSecret) {
@@ -835,7 +902,42 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           return res.status(401).json({ success: false, error: "Webhook non autorisé." });
         }
       }
+      if (!appEnv.database.url) {
+        return res.status(503).json({
+          success: false,
+          error: "Base de données non configurée : définissez DATABASE_URL (MongoDB) pour Prisma.",
+        });
+      }
+      await persistPaddeAuditToStores(req.body);
+      res.status(200).json({ success: true, message: "Demande d'audit reçue et traitée avec succès." });
+    } catch (error) {
+      console.error("Erreur Webhook PADDE-CI:", error);
+      res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
 
+  // Endpoint de secours : accepte les formulaires PADDE-CI (JSON ou x-www-form-urlencoded).
+  app.post("/api/webhooks/padde-ci/direct", async (req, res) => {
+    try {
+      const origin = String(req.headers.origin || "").trim();
+      if (origin && !paddeAllowedOrigins.has(origin)) {
+        return res.status(403).json({ success: false, error: "Origin non autorisée." });
+      }
+
+      const bodyPayload =
+        req.body && typeof req.body === "object" ? ({ ...(req.body as Record<string, unknown>) } as Record<string, unknown>) : {};
+      const bodySecret = String(bodyPayload.webhookSecret || bodyPayload.secret || "");
+      const querySecret = String(req.query.secret || "");
+      const headerSecret = String(req.headers["x-webhook-secret"] || "");
+      const providedSecret = headerSecret || bodySecret || querySecret;
+      delete bodyPayload.webhookSecret;
+      delete bodyPayload.secret;
+
+      if (paddeWebhookSecret) {
+        if (!providedSecret || !secureSecretEquals(paddeWebhookSecret, providedSecret)) {
+          return res.status(401).json({ success: false, error: "Webhook non autorisé." });
+        }
+      }
       if (!appEnv.database.url) {
         return res.status(503).json({
           success: false,
@@ -843,67 +945,11 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         });
       }
 
-      const data = req.body;
-      const payload = (data && typeof data === "object" ? (data as Record<string, unknown>) : {}) as Record<
-        string,
-        unknown
-      >;
-      const auditId = `PADDE-${Math.floor(1000 + Math.random() * 9000)}`;
-      const auditType = String(payload.type_audit || payload.type || payload.auditType || "Audit PADDE-CI").trim();
-      const clientName = String(
-        payload.clientName || payload.nom || payload.name || payload.entreprise || payload.company || "Client PADDE-CI"
-      ).trim();
-      const normalizedWhatsapp = String(payload.whatsapp || payload.telephone || payload.phone || "").trim();
-
-      await prisma.paddeCiAudit.create({
-        data: {
-          id: auditId,
-          payload: data ?? {},
-          processed: false,
-        },
-      });
-
-      // Synchronise aussi dans la collection logique "orders" consommée par l'UI `/admin/audits-padde`.
-      await prisma.dataDocument.upsert({
-        where: {
-          collectionPath_docId: { collectionPath: ORDERS_COLLECTION_PATH, docId: auditId },
-        },
-        create: {
-          collectionPath: ORDERS_COLLECTION_PATH,
-          docId: auditId,
-          data: {
-            id: auditId,
-            source: "padde-ci",
-            status: "En attente",
-            createdAt: new Date().toISOString(),
-            clientName,
-            serviceName: `Audit PADDE-CI: ${auditType}`,
-            details: {
-              ...payload,
-              whatsapp: payload.whatsapp || payload.telephone || payload.phone || normalizedWhatsapp || null,
-            },
-          } as never,
-        },
-        update: {
-          data: {
-            id: auditId,
-            source: "padde-ci",
-            status: "En attente",
-            createdAt: new Date().toISOString(),
-            clientName,
-            serviceName: `Audit PADDE-CI: ${auditType}`,
-            details: {
-              ...payload,
-              whatsapp: payload.whatsapp || payload.telephone || payload.phone || normalizedWhatsapp || null,
-            },
-          } as never,
-        },
-      });
-
-      res.status(200).json({ success: true, message: "Demande d'audit reçue et traitée avec succès." });
+      const { auditId } = await persistPaddeAuditToStores(bodyPayload);
+      return res.status(200).json({ success: true, message: "Audit PADDE-CI enregistré.", auditId });
     } catch (error) {
-      console.error("Erreur Webhook PADDE-CI:", error);
-      res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+      console.error("Erreur Webhook PADDE-CI direct:", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
 
