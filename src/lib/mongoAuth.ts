@@ -16,6 +16,7 @@ export interface User {
     email: string | null;
     photoURL: string | null;
   }>;
+  role: string;
   delete: () => Promise<void>;
 }
 
@@ -49,12 +50,13 @@ const authState: Auth = {
 const listeners = new Set<AuthListener>();
 let bootstrapPromise: Promise<void> | null = null;
 
-function toUser(raw: { uid: string; email: string; displayName?: string | null; photoURL?: string | null }): User {
+function toUser(raw: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null }): User {
   return {
     uid: raw.uid,
     email: raw.email || null,
     displayName: raw.displayName || raw.email || null,
     photoURL: raw.photoURL || null,
+    role: raw.role || "client",
     phoneNumber: null,
     emailVerified: true,
     isAnonymous: false,
@@ -82,7 +84,7 @@ async function bootstrapAuthState() {
     try {
       const data = await apiRequest<{
         success: boolean;
-        user: { uid: string; email: string; displayName?: string | null; photoURL?: string | null };
+        user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
       }>("/api/auth/me");
       authState.currentUser = toUser(data.user);
     } catch {
@@ -111,7 +113,7 @@ export async function createUserWithEmailAndPassword(_auth: Auth, email: string,
   const data = await apiRequest<{
     success: boolean;
     token: string;
-    user: { uid: string; email: string; displayName?: string | null; photoURL?: string | null };
+    user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
   }>("/api/auth/register", {
     method: "POST",
     body: JSON.stringify({ email, password }),
@@ -122,14 +124,14 @@ export async function createUserWithEmailAndPassword(_auth: Auth, email: string,
   return { user: authState.currentUser };
 }
 
-export async function signInWithEmailAndPassword(_auth: Auth, email: string, password: string) {
+export async function signInWithEmailAndPassword(_auth: Auth, email: string, pass: string) {
   const data = await apiRequest<{
     success: boolean;
     token: string;
-    user: { uid: string; email: string; displayName?: string | null; photoURL?: string | null };
+    user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
   }>("/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ email, password: pass }),
   });
   setAuthToken(data.token);
   authState.currentUser = toUser(data.user);
