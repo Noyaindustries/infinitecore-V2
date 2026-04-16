@@ -2858,6 +2858,68 @@ async function createExpressApplication() {
     ).trim();
     const normalizedWhatsapp = String(payload.whatsapp || payload.telephone || payload.phone || "").trim();
     const createdAt = (/* @__PURE__ */ new Date()).toISOString();
+    const normalizeEmail = (value) => {
+      const raw = String(value || "").trim().toLowerCase();
+      if (!raw) return null;
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) return null;
+      return raw;
+    };
+    const normalizeText = (value) => String(value || "").trim();
+    const sanitizeIdSegment = (value) => value.replace(/[^a-z0-9._-]/gi, "_").slice(0, 80);
+    const email = normalizeEmail(payload.email) || normalizeEmail(payload.email_client) || normalizeEmail(payload.clientEmail) || normalizeEmail(payload.mail) || normalizeEmail(payload["e-mail"]);
+    const firstName = normalizeText(payload.firstName || payload.prenom || payload.prenoms || payload.firstname);
+    const lastName = normalizeText(payload.lastName || payload.nom || payload.lastname);
+    const companyName = normalizeText(payload.companyName || payload.entreprise || payload.company);
+    let linkedClientId = null;
+    if (email) {
+      const account = await prisma.userAccount.findUnique({
+        where: { email },
+        select: { uid: true, email: true }
+      });
+      linkedClientId = account?.uid || `padde_${sanitizeIdSegment(email)}`;
+      const existingUserDoc = await prisma.dataDocument.findUnique({
+        where: {
+          collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH, docId: linkedClientId }
+        },
+        select: { data: true }
+      });
+      const existingUserData = readDataRowAsRecord(existingUserDoc?.data);
+      await prisma.dataDocument.upsert({
+        where: {
+          collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH, docId: linkedClientId }
+        },
+        create: {
+          collectionPath: USERS_COLLECTION_PATH,
+          docId: linkedClientId,
+          data: {
+            uid: linkedClientId,
+            email,
+            role: "client",
+            firstName: firstName || existingUserData.firstName || "",
+            lastName: lastName || existingUserData.lastName || "",
+            phone: normalizedWhatsapp || existingUserData.phone || "",
+            companyName: companyName || existingUserData.companyName || "",
+            source: "padde-ci",
+            createdAt,
+            updatedAt: createdAt
+          }
+        },
+        update: {
+          data: {
+            ...existingUserData,
+            uid: linkedClientId,
+            email,
+            role: "client",
+            firstName: firstName || String(existingUserData.firstName || ""),
+            lastName: lastName || String(existingUserData.lastName || ""),
+            phone: normalizedWhatsapp || String(existingUserData.phone || ""),
+            companyName: companyName || String(existingUserData.companyName || ""),
+            source: "padde-ci",
+            updatedAt: createdAt
+          }
+        }
+      });
+    }
     await prisma.paddeCiAudit.create({
       data: {
         id: auditId,
@@ -2877,10 +2939,13 @@ async function createExpressApplication() {
           source: "padde-ci",
           status: "En attente",
           createdAt,
+          ...linkedClientId ? { clientId: linkedClientId, userId: linkedClientId } : {},
+          ...email ? { clientEmail: email } : {},
           clientName,
           serviceName: `Audit PADDE-CI: ${auditType}`,
           details: {
             ...payload,
+            email: email || null,
             whatsapp: payload.whatsapp || payload.telephone || payload.phone || normalizedWhatsapp || null
           }
         }
@@ -2891,10 +2956,13 @@ async function createExpressApplication() {
           source: "padde-ci",
           status: "En attente",
           createdAt,
+          ...linkedClientId ? { clientId: linkedClientId, userId: linkedClientId } : {},
+          ...email ? { clientEmail: email } : {},
           clientName,
           serviceName: `Audit PADDE-CI: ${auditType}`,
           details: {
             ...payload,
+            email: email || null,
             whatsapp: payload.whatsapp || payload.telephone || payload.phone || normalizedWhatsapp || null
           }
         }

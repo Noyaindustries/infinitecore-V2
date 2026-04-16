@@ -286,15 +286,20 @@ export default function ClientSuivi() {
     setValidating(step.id);
     try {
       await dossierService.validateStep(step.id, user.uid);
-      // Notify commando
-      await notificationService.createNotification(
-        'admin_general',
-        'Document validé par le client',
-        `Le client a validé : "${STEP_META[step.stepType].label}" — ${step.fileName}`,
-        'mission',
-        { clientId: user?.uid, stepType: step.stepType }
-      );
       toast.success(`${STEP_META[step.stepType].label} validé !`);
+
+      // La notification ne doit pas annuler la validation déjà confirmée.
+      try {
+        await notificationService.createNotification(
+          'admin_general',
+          'Document validé par le client',
+          `Le client a validé : "${STEP_META[step.stepType].label}" — ${step.fileName}`,
+          'mission',
+          { clientId: user.uid, stepType: step.stepType }
+        );
+      } catch (notifyErr) {
+        console.warn('[ClientSuivi] notification validate:', notifyErr);
+      }
     } catch (err) {
       console.error('[ClientSuivi] validate:', err);
       toast.error('Erreur lors de la validation.');

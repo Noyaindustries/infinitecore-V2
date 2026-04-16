@@ -146,6 +146,22 @@ async function seedBusinessData() {
     createdAt: nowIso(),
   });
 
+  await upsertDataDocument("dossier_steps", "dossier_step_test_audit", {
+    id: "dossier_step_test_audit",
+    clientId: "usr_client_test",
+    stepType: "audit",
+    title: "Audit",
+    fileUrl: "https://example.com/audit-test.pdf",
+    fileName: "audit-test.pdf",
+    fileSize: 102400,
+    storagePath: "tests/dossier/audit-test.pdf",
+    uploadedAt: nowIso(),
+    uploadedBy: "usr_commando_test",
+    uploadedByName: "Cyril Commando",
+    status: "soumis",
+    note: "Document de test pour validation client",
+  });
+
   await upsertDataDocument("leads", "lead_test_001", {
     id: "lead_test_001",
     partnerId: "usr_partner_test",
