@@ -12,6 +12,7 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
+  Globe,
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { useCommandoClients, clientDisplayName, type CommandoClientRow } from '../../hooks/useCommandoClients';
@@ -57,7 +58,7 @@ export default function AdminClients() {
   const location = useLocation();
   const { clients, loading } = useCommandoClients();
   const [search, setSearch] = useState('');
-  const [referralFilter, setReferralFilter] = useState<'all' | 'referred'>('all');
+  const [referralFilter, setReferralFilter] = useState<'all' | 'referred' | 'padde'>('all');
   const [partnerFilterId, setPartnerFilterId] = useState('');
   const [allSteps, setAllSteps] = useState<DossierStep[]>([]);
 
@@ -96,9 +97,12 @@ export default function AdminClients() {
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const scoped = referralFilter === 'referred'
-      ? clients.filter((c) => Boolean(c.referredByPartnerName))
-      : clients;
+    const scoped =
+      referralFilter === 'referred'
+        ? clients.filter((c) => Boolean(c.referredByPartnerName))
+        : referralFilter === 'padde'
+          ? clients.filter((c) => String(c.source || '').toLowerCase() === 'padde-ci')
+          : clients;
     const scopedByPartner = partnerFilterId
       ? scoped.filter((c) => String(c.referredByPartnerId || '') === partnerFilterId)
       : scoped;
@@ -178,6 +182,18 @@ export default function AdminClients() {
               )}
             >
               Parrainés
+            </button>
+            <button
+              type="button"
+              onClick={() => setReferralFilter('padde')}
+              className={cn(
+                'rounded-lg border px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] transition-colors',
+                referralFilter === 'padde'
+                  ? 'border-noya-orange/45 bg-noya-orange/15 text-noya-orange'
+                  : 'border-white/10 text-text-muted hover:border-white/20 hover:text-text-primary'
+              )}
+            >
+              PADDE-CI
             </button>
             {partnerFilterId ? (
               <button
@@ -260,6 +276,12 @@ function ClientRow({ client, steps }: { client: CommandoClientRow; steps: Dossie
               <p className="mt-1 inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-noya-blue/30 bg-noya-blue/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-noya-blue">
                 <UserRoundCheck className="h-3 w-3 shrink-0" aria-hidden />
                 Parrainé par {client.referredByPartnerName}
+              </p>
+            ) : null}
+            {String(client.source || '').toLowerCase() === 'padde-ci' ? (
+              <p className="mt-1 inline-flex max-w-full items-center gap-1.5 truncate rounded-full border border-noya-orange/30 bg-noya-orange/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-noya-orange">
+                <Globe className="h-3 w-3 shrink-0" aria-hidden />
+                Source PADDE-CI
               </p>
             ) : null}
           </div>

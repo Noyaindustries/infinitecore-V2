@@ -216,6 +216,16 @@ var appEnv = {
   integrations: {
     infiniteCoreApiUrl: str("INFINITE_CORE_API_URL")
   },
+  data: {
+    /**
+     * Max documents `data_documents` chargés par `POST /api/data/query` (une collection)
+     * avant filtrage / tri en mémoire. Plage 100–20_000.
+     */
+    get queryFetchCap() {
+      const n = int("DATA_QUERY_FETCH_CAP", 5e3);
+      return Math.min(2e4, Math.max(100, n));
+    }
+  },
   seed: {
     testPassword: str("SEED_TEST_PASSWORD", "Test1234!")
   }
@@ -332,35 +342,6 @@ function parseDataQueryInput(body) {
     offset
   };
 }
-function buildDbFiltersFromQueryFilters(filters) {
-  const dbFilters = [];
-  for (const filter of filters) {
-    const path4 = [filter.field];
-    switch (filter.operator) {
-      case "==":
-        dbFilters.push({ data: { path: path4, equals: filter.value } });
-        break;
-      case "!=":
-        dbFilters.push({ NOT: { data: { path: path4, equals: filter.value } } });
-        break;
-      case ">":
-        dbFilters.push({ data: { path: path4, gt: filter.value } });
-        break;
-      case ">=":
-        dbFilters.push({ data: { path: path4, gte: filter.value } });
-        break;
-      case "<":
-        dbFilters.push({ data: { path: path4, lt: filter.value } });
-        break;
-      case "<=":
-        dbFilters.push({ data: { path: path4, lte: filter.value } });
-        break;
-      default:
-        return null;
-    }
-  }
-  return dbFilters;
-}
 function registerDataRoutes(app, deps) {
   app.post("/api/data/query", async (req, res) => {
     try {
@@ -375,42 +356,31 @@ function registerDataRoutes(app, deps) {
       }
       const authz = deps.assertDataQueryAuthorized(auth, collectionPath, filters);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
-      const dbFilters = buildDbFiltersFromQueryFilters(filters);
-      let rows;
-      if (dbFilters) {
-        try {
-          const dbWhere = { AND: [{ collectionPath }, ...dbFilters] };
-          rows = await deps.prisma.dataDocument.findMany({
-            where: dbWhere,
-            take: 5e3
-          });
-        } catch (error) {
-          console.warn("[data/query] fallback to in-memory filters", {
-            collectionPath,
-            filtersCount: filters.length,
-            error: error instanceof Error ? error.message : String(error)
-          });
-          rows = await deps.prisma.dataDocument.findMany({
-            where: { collectionPath },
-            take: 5e3
-          });
-        }
-      } else {
-        rows = await deps.prisma.dataDocument.findMany({
-          where: { collectionPath },
-          take: 5e3
-        });
-      }
+      const fetchCap = Math.max(1, Math.floor(deps.queryFetchCap));
+      const rows = await deps.prisma.dataDocument.findMany({
+        where: { collectionPath },
+        take: fetchCap
+      });
       const normalized = rows.map((row) => ({
         docId: row.docId,
         data: deps.coerceRecord(row.data)
       }));
-      const filtered = dbFilters ? normalized : deps.applyFilters(normalized, filters);
+      const filtered = deps.applyFilters(normalized, filters);
       const ordered = deps.applyOrder(filtered, orders);
       const paged = ordered.slice(parsed.offset, parsed.offset + parsed.limit);
       return res.status(200).json({
         success: true,
-        docs: paged.map((row) => ({ id: row.docId, data: row.data }))
+        docs: paged.map((row) => ({ id: row.docId, data: row.data })),
+        queryMeta: {
+          scannedDocuments: rows.length,
+          fetchCap,
+          matchedAfterFilter: filtered.length,
+          returned: paged.length,
+          offset: parsed.offset,
+          limit: parsed.limit,
+          /** `true` si on a atteint le plafond : d'autres documents peuvent exister en base non chargés. */
+          mayHaveMoreInDatabase: rows.length >= fetchCap
+        }
       });
     } catch (error) {
       console.error("[data/query]", error);
@@ -512,15 +482,52 @@ function registerDataRoutes(app, deps) {
   });
 }
 
+// src/api/mongo/sanitizeDataQuery.ts
+var SAFE_FIELD_NAME = /^[A-Za-z0-9_.-]{1,120}$/;
+var MAX_FILTERS = 12;
+var MAX_ORDERS = 6;
+var VALID_OPERATORS = /* @__PURE__ */ new Set(["==", "!=", ">", ">=", "<", "<="]);
+function isPrimitiveQueryValue(value) {
+  return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
+}
+function sanitizeFilters(raw) {
+  if (!Array.isArray(raw)) return [];
+  if (raw.length > MAX_FILTERS) return null;
+  const filters = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") return null;
+    const field = String(item.field || "").trim();
+    const operator = item.operator;
+    const value = item.value;
+    if (!SAFE_FIELD_NAME.test(field) || !VALID_OPERATORS.has(operator) || !isPrimitiveQueryValue(value)) {
+      return null;
+    }
+    filters.push({ field, operator, value });
+  }
+  return filters;
+}
+function sanitizeOrders(raw) {
+  if (!Array.isArray(raw)) return [];
+  if (raw.length > MAX_ORDERS) return null;
+  const orders = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") return null;
+    const field = String(item.field || "").trim();
+    const directionRaw = String(item.direction || "asc").toLowerCase();
+    if (!SAFE_FIELD_NAME.test(field)) return null;
+    if (directionRaw !== "asc" && directionRaw !== "desc") return null;
+    orders.push({ field, direction: directionRaw });
+  }
+  return orders;
+}
+
 // mongoApi.ts
 var AUTH_HEADER_PREFIX = "Bearer ";
 var AUTH_COOKIE_NAME = "ic_auth_token";
 var AUTH_COOKIE_TTL_MS = 7 * 24 * 60 * 60 * 1e3;
 var SAFE_COLLECTION_SEGMENT = /^[A-Za-z0-9_-]{1,120}$/;
 var SAFE_DOC_ID = /^[A-Za-z0-9._:-]{1,180}$/;
-var SAFE_FIELD_NAME = /^[A-Za-z0-9_.-]{1,120}$/;
-var MAX_FILTERS = 12;
-var MAX_ORDERS = 6;
+var SAFE_FIELD_NAME2 = /^[A-Za-z0-9_.-]{1,120}$/;
 var AUTH_RATE_WINDOW_MS = 15 * 60 * 1e3;
 var AUTH_RATE_MAX_FAILURES = 8;
 var AUTH_RATE_BLOCK_MS = 20 * 60 * 1e3;
@@ -695,7 +702,6 @@ function parseAuthFromRequest(req) {
   return parseAuth(req);
 }
 var VALID_ROLES = /* @__PURE__ */ new Set(["admin", "commando", "developer", "partner", "client"]);
-var VALID_OPERATORS = /* @__PURE__ */ new Set(["==", "!=", ">", ">=", "<", "<="]);
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
 }
@@ -834,9 +840,6 @@ async function clearAuthFailures(key) {
   } catch {
   }
 }
-function isPrimitiveQueryValue(value) {
-  return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
-}
 function isSafeCollectionPath(path4) {
   const parts = path4.split("/");
   return parts.length > 0 && parts.every((segment) => SAFE_COLLECTION_SEGMENT.test(segment));
@@ -846,36 +849,6 @@ function isSafeDocId(docId) {
 }
 function normalizePartnerCode(raw) {
   return String(raw || "").trim().toUpperCase().replace("PART-USR", "PART-INF");
-}
-function sanitizeFilters(raw) {
-  if (!Array.isArray(raw)) return [];
-  if (raw.length > MAX_FILTERS) return null;
-  const filters = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") return null;
-    const field = String(item.field || "").trim();
-    const operator = item.operator;
-    const value = item.value;
-    if (!SAFE_FIELD_NAME.test(field) || !VALID_OPERATORS.has(operator) || !isPrimitiveQueryValue(value)) {
-      return null;
-    }
-    filters.push({ field, operator, value });
-  }
-  return filters;
-}
-function sanitizeOrders(raw) {
-  if (!Array.isArray(raw)) return [];
-  if (raw.length > MAX_ORDERS) return null;
-  const orders = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") return null;
-    const field = String(item.field || "").trim();
-    const directionRaw = String(item.direction || "asc").toLowerCase();
-    if (!SAFE_FIELD_NAME.test(field)) return null;
-    if (directionRaw !== "asc" && directionRaw !== "desc") return null;
-    orders.push({ field, direction: directionRaw });
-  }
-  return orders;
 }
 async function resolveAuthPayload(raw) {
   const account = await prisma.userAccount.findUnique({
@@ -1441,6 +1414,9 @@ function registerMongoApi(app) {
       const phone = String(req.body?.phone || "").trim();
       const companyName = String(req.body?.companyName || "").trim() || "Prospect parrain\xE9";
       const industry = String(req.body?.industry || "").trim() || "Non sp\xE9cifi\xE9";
+      const employeesRangeRaw = String(req.body?.employees || "").trim();
+      const employeesRange = employeesRangeRaw || "Non sp\xE9cifi\xE9";
+      const companyDescription = String(req.body?.companyDescription || "").trim();
       if (!referredByPartnerId) {
         const partnerRows = await prisma.dataDocument.findMany({
           where: { collectionPath: "users" }
@@ -1469,6 +1445,8 @@ function registerMongoApi(app) {
           referredByPartnerName: partnerLabel
         };
         if (referredByPartnerId) userPatch.referredByPartnerId = referredByPartnerId;
+        if (employeesRangeRaw) userPatch.employees = employeesRangeRaw;
+        if (companyDescription) userPatch.companyDescription = companyDescription;
         await upsertDataDocument("users", signupUserId, userPatch, true);
       }
       const message = `Inscription via le lien de ${partnerLabel}: ${firstName} ${lastName} (${companyName}) - ${industry} - ${phone} - ref: ${referralCode}`;
@@ -1521,6 +1499,10 @@ function registerMongoApi(app) {
         });
         if (!alreadyExists) {
           const leadId = (0, import_crypto2.randomUUID)().replace(/-/g, "");
+          const leadNoteParts = [
+            `Inscription via lien de parrainage (${referralCode}).`,
+            companyDescription ? `Description: ${companyDescription}` : ""
+          ].filter(Boolean);
           await upsertDataDocument(
             "leads",
             leadId,
@@ -1532,13 +1514,14 @@ function registerMongoApi(app) {
               lastName,
               email,
               companyName,
+              companyDescription: companyDescription || null,
               sector: industry,
               city: "Non sp\xE9cifi\xE9e",
-              employeesRange: "1-5",
+              employeesRange,
               urgency: "moyenne",
               whatsapp: phone || "Non renseign\xE9",
               phone: phone || "Non renseign\xE9",
-              note: `Inscription via lien de parrainage (${referralCode}).`,
+              note: leadNoteParts.join(" "),
               status: "soumis",
               createdAt: (/* @__PURE__ */ new Date()).toISOString()
             },
@@ -2104,7 +2087,7 @@ function registerMongoApi(app) {
     normalizeCollectionPath,
     isSafeCollectionPath,
     isSafeDocId,
-    isSafeFieldName: (fieldName) => SAFE_FIELD_NAME.test(fieldName),
+    isSafeFieldName: (fieldName) => SAFE_FIELD_NAME2.test(fieldName),
     sanitizeFilters,
     sanitizeOrders,
     assertDataQueryAuthorized,
@@ -2112,7 +2095,8 @@ function registerMongoApi(app) {
     coerceRecord,
     applyFilters,
     applyOrder,
-    upsertDataDocument
+    upsertDataDocument,
+    queryFetchCap: appEnv.data.queryFetchCap
   });
 }
 
@@ -2968,6 +2952,44 @@ async function createExpressApplication() {
         }
       }
     });
+    try {
+      const recipients = await prisma.userAccount.findMany({
+        where: { role: { in: ["commando", "admin"] } },
+        select: { uid: true }
+      });
+      const recipientIds = recipients.map((r) => r.uid).filter(Boolean);
+      const finalRecipients = recipientIds.length > 0 ? recipientIds : ["admin_general"];
+      const notifMessage = `${clientName} a soumis un audit ${auditType}${normalizedWhatsapp ? ` \u2014 ${normalizedWhatsapp}` : ""}${email ? ` \u2014 ${email}` : ""}`;
+      await Promise.all(
+        finalRecipients.map(
+          (recipientId) => prisma.dataDocument.create({
+            data: {
+              collectionPath: "notifications",
+              docId: (0, import_crypto3.randomUUID)().replace(/-/g, ""),
+              data: {
+                userId: recipientId,
+                title: "Nouveau flux PADDE-CI",
+                message: notifMessage,
+                type: "order",
+                read: false,
+                createdAt,
+                metadata: {
+                  source: "padde-ci",
+                  auditId,
+                  auditType,
+                  clientId: linkedClientId,
+                  clientEmail: email,
+                  whatsapp: normalizedWhatsapp,
+                  link: "/admin/audits-padde"
+                }
+              }
+            }
+          })
+        )
+      );
+    } catch (notifyErr) {
+      console.warn("[padde-ci] notification commando:", notifyErr);
+    }
     return { auditId };
   };
   app.post("/api/webhooks/padde-ci", async (req, res) => {

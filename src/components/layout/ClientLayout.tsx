@@ -101,9 +101,9 @@ export default function ClientLayout() {
   return (
     <div className="client-portal flex min-h-screen flex-col font-sans text-text-primary antialiased md:flex-row">
       {/* Mobile Header */}
-      <div className="relative z-50 flex min-h-[60px] items-center justify-between border-b border-white/[0.06] bg-black px-4 py-3 text-text-primary md:hidden">
+      <div className="relative z-50 flex min-h-[92px] items-center justify-between border-b border-white/[0.06] bg-black px-4 py-3 text-text-primary sm:min-h-[108px] md:hidden">
         <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-luxe-champagne/35 to-transparent" aria-hidden />
-        <Logo lightText={theme === 'dark'} className="h-12 md:h-[5rem]" />
+        <Logo lightText={theme === 'dark'} className="h-20 sm:h-24 md:h-[6rem]" />
         <button
           type="button"
           onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
@@ -118,14 +118,14 @@ export default function ClientLayout() {
       <aside
         className={cn(
           'sidebar-responsive fixed z-50 flex w-64 shrink-0 flex-col border-r border-white/[0.06] bg-black text-text-primary transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)]',
-          'top-[60px] h-[calc(100dvh-60px)] md:relative md:top-auto md:h-full md:translate-x-0',
+          'top-[92px] h-[calc(100dvh-92px)] sm:top-[108px] sm:h-[calc(100dvh-108px)] md:relative md:top-auto md:h-full md:translate-x-0',
           isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0',
         )}
       >
         <div className="pointer-events-none absolute inset-y-0 right-0 w-px bg-linear-to-b from-luxe-champagne/25 via-luxe-champagne/10 to-transparent" aria-hidden />
         <div className="hidden p-6 md:block">
           <div className="mb-3">
-            <Logo lightText className="h-12 md:h-[5rem]" />
+            <Logo lightText className="h-20 md:h-[6rem]" />
           </div>
           <div className="h-px w-full bg-linear-to-r from-transparent via-luxe-champagne/30 to-transparent" aria-hidden />
           <div className="mt-4 flex items-center gap-2.5 font-mono text-[10px] font-medium uppercase tracking-[0.24em] text-luxe-champagne/90">

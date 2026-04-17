@@ -7,6 +7,8 @@ import { prisma } from "./prismaClient";
 import { appEnv, getJwtSecret, resetAppBaseUrl } from "@/config/env";
 import { agentSessionLog } from "./src/debug/agentSessionLog";
 import { registerDataRoutes } from "./src/api/dataRoutes";
+import type { QueryFilter, QueryOrder } from "./src/api/mongo/dataQueryTypes";
+import { sanitizeFilters, sanitizeOrders } from "./src/api/mongo/sanitizeDataQuery";
 
 export type AuthPayload = {
   uid: string;
@@ -14,16 +16,7 @@ export type AuthPayload = {
   role: string;
 };
 
-export type QueryFilter = {
-  field: string;
-  operator: "==" | "!=" | ">" | ">=" | "<" | "<=";
-  value: unknown;
-};
-
-type QueryOrder = {
-  field: string;
-  direction?: "asc" | "desc";
-};
+export type { QueryFilter } from "./src/api/mongo/dataQueryTypes";
 
 type DataOperation = "read" | "write";
 
@@ -33,8 +26,6 @@ const AUTH_COOKIE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const SAFE_COLLECTION_SEGMENT = /^[A-Za-z0-9_-]{1,120}$/;
 const SAFE_DOC_ID = /^[A-Za-z0-9._:-]{1,180}$/;
 const SAFE_FIELD_NAME = /^[A-Za-z0-9_.-]{1,120}$/;
-const MAX_FILTERS = 12;
-const MAX_ORDERS = 6;
 const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000;
 const AUTH_RATE_MAX_FAILURES = 8;
 const AUTH_RATE_BLOCK_MS = 20 * 60 * 1000;
@@ -224,7 +215,6 @@ export function parseAuthFromRequest(req: Request): AuthPayload | null {
 }
 
 const VALID_ROLES = new Set(["admin", "commando", "developer", "partner", "client"]);
-const VALID_OPERATORS = new Set<QueryFilter["operator"]>(["==", "!=", ">", ">=", "<", "<="]);
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
@@ -383,10 +373,6 @@ async function clearAuthFailures(key: string) {
   }
 }
 
-function isPrimitiveQueryValue(value: unknown) {
-  return value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean";
-}
-
 function isSafeCollectionPath(path: string) {
   const parts = path.split("/");
   return parts.length > 0 && parts.every((segment) => SAFE_COLLECTION_SEGMENT.test(segment));
@@ -398,38 +384,6 @@ function isSafeDocId(docId: string) {
 
 function normalizePartnerCode(raw: string) {
   return String(raw || "").trim().toUpperCase().replace("PART-USR", "PART-INF");
-}
-
-function sanitizeFilters(raw: unknown): QueryFilter[] | null {
-  if (!Array.isArray(raw)) return [];
-  if (raw.length > MAX_FILTERS) return null;
-  const filters: QueryFilter[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") return null;
-    const field = String((item as QueryFilter).field || "").trim();
-    const operator = (item as QueryFilter).operator;
-    const value = (item as QueryFilter).value;
-    if (!SAFE_FIELD_NAME.test(field) || !VALID_OPERATORS.has(operator) || !isPrimitiveQueryValue(value)) {
-      return null;
-    }
-    filters.push({ field, operator, value });
-  }
-  return filters;
-}
-
-function sanitizeOrders(raw: unknown): QueryOrder[] | null {
-  if (!Array.isArray(raw)) return [];
-  if (raw.length > MAX_ORDERS) return null;
-  const orders: QueryOrder[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") return null;
-    const field = String((item as QueryOrder).field || "").trim();
-    const directionRaw = String((item as QueryOrder).direction || "asc").toLowerCase();
-    if (!SAFE_FIELD_NAME.test(field)) return null;
-    if (directionRaw !== "asc" && directionRaw !== "desc") return null;
-    orders.push({ field, direction: directionRaw });
-  }
-  return orders;
 }
 
 export async function resolveAuthPayload(raw: AuthPayload): Promise<AuthPayload | null> {
@@ -1115,6 +1069,9 @@ export function registerMongoApi(app: Express) {
       const phone = String(req.body?.phone || "").trim();
       const companyName = String(req.body?.companyName || "").trim() || "Prospect parrainé";
       const industry = String(req.body?.industry || "").trim() || "Non spécifié";
+      const employeesRangeRaw = String(req.body?.employees || "").trim();
+      const employeesRange = employeesRangeRaw || "Non spécifié";
+      const companyDescription = String(req.body?.companyDescription || "").trim();
 
       // Si l'ID partenaire n'est pas fourni côté client, on le résout côté serveur via le code de parrainage.
       if (!referredByPartnerId) {
@@ -1154,6 +1111,8 @@ export function registerMongoApi(app: Express) {
           referredByPartnerName: partnerLabel,
         };
         if (referredByPartnerId) userPatch.referredByPartnerId = referredByPartnerId;
+        if (employeesRangeRaw) userPatch.employees = employeesRangeRaw;
+        if (companyDescription) userPatch.companyDescription = companyDescription;
         await upsertDataDocument("users", signupUserId, userPatch, true);
       }
 
@@ -1215,6 +1174,10 @@ export function registerMongoApi(app: Express) {
 
         if (!alreadyExists) {
           const leadId = randomUUID().replace(/-/g, "");
+          const leadNoteParts = [
+            `Inscription via lien de parrainage (${referralCode}).`,
+            companyDescription ? `Description: ${companyDescription}` : "",
+          ].filter(Boolean);
           await upsertDataDocument(
             "leads",
             leadId,
@@ -1226,13 +1189,14 @@ export function registerMongoApi(app: Express) {
               lastName,
               email,
               companyName,
+              companyDescription: companyDescription || null,
               sector: industry,
               city: "Non spécifiée",
-              employeesRange: "1-5",
+              employeesRange,
               urgency: "moyenne",
               whatsapp: phone || "Non renseigné",
               phone: phone || "Non renseigné",
-              note: `Inscription via lien de parrainage (${referralCode}).`,
+              note: leadNoteParts.join(" "),
               status: "soumis",
               createdAt: new Date().toISOString(),
             },
@@ -1888,5 +1852,6 @@ export function registerMongoApi(app: Express) {
     applyFilters,
     applyOrder,
     upsertDataDocument,
+    queryFetchCap: appEnv.data.queryFetchCap,
   });
 }

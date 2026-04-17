@@ -27,6 +27,8 @@ type UserRow = {
   firstName?: string;
   lastName?: string;
   email?: string;
+  referredBy?: string | null;
+  referredByPartnerId?: string | null;
 };
 
 function formatDate(value?: string) {
@@ -67,14 +69,39 @@ export default function AdminLeads() {
     return map;
   }, [users]);
 
+  // Emails des filleuls déjà convertis en client portail : ils sortent de la liste des leads
+  // (ils restent visibles dans le CRM côté commando).
+  const convertedFilleulEmails = useMemo(() => {
+    const set = new Set<string>();
+    for (const user of users) {
+      if (String(user.role || '').toLowerCase() !== 'client') continue;
+      const email = String(user.email || '').trim().toLowerCase();
+      if (!email) continue;
+      const hasReferral =
+        Boolean(user.referredByPartnerId) || Boolean(user.referredBy);
+      if (hasReferral) set.add(email);
+    }
+    return set;
+  }, [users]);
+
+  const activeLeads = useMemo(
+    () =>
+      leads.filter((lead) => {
+        const email = String(lead.email || '').trim().toLowerCase();
+        if (!email) return true;
+        return !convertedFilleulEmails.has(email);
+      }),
+    [leads, convertedFilleulEmails]
+  );
+
   const statuses = useMemo(
-    () => Array.from(new Set(leads.map((lead) => String(lead.status || 'soumis').toLowerCase()))).sort(),
-    [leads]
+    () => Array.from(new Set(activeLeads.map((lead) => String(lead.status || 'soumis').toLowerCase()))).sort(),
+    [activeLeads]
   );
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return leads.filter((lead) => {
+    return activeLeads.filter((lead) => {
       const status = String(lead.status || 'soumis').toLowerCase();
       const matchStatus = statusFilter === 'all' || status === statusFilter;
       const partnerLabel =
@@ -83,7 +110,7 @@ export default function AdminLeads() {
       const matchSearch = !q || blob.includes(q);
       return matchStatus && matchSearch;
     });
-  }, [leads, search, statusFilter, partnerNameById]);
+  }, [activeLeads, search, statusFilter, partnerNameById]);
 
   return (
     <div className="mx-auto max-w-7xl px-5 py-8 md:px-8 md:py-10">
@@ -104,7 +131,8 @@ export default function AdminLeads() {
       <div className="mb-6 grid gap-4 sm:grid-cols-3">
         <div className="commando-luxe-stat-slab px-5 py-5">
           <p className="text-[9px] font-semibold uppercase tracking-[0.25em] text-text-dim">Leads total</p>
-          <p className="mt-2 font-display text-3xl text-luxe-champagne-bright">{leads.length}</p>
+          <p className="mt-2 font-display text-3xl text-luxe-champagne-bright">{activeLeads.length}</p>
+          <p className="mt-1 text-[10px] text-text-muted">(filleuls convertis exclus — voir CRM)</p>
         </div>
         <div className="commando-luxe-stat-slab px-5 py-5">
           <p className="text-[9px] font-semibold uppercase tracking-[0.25em] text-text-dim">Leads affichés</p>
@@ -113,7 +141,7 @@ export default function AdminLeads() {
         <div className="commando-luxe-stat-slab px-5 py-5">
           <p className="text-[9px] font-semibold uppercase tracking-[0.25em] text-text-dim">Partenaires actifs</p>
           <p className="mt-2 font-display text-3xl text-noya-green">
-            {new Set(leads.map((lead) => String(lead.partnerId || '')).filter(Boolean)).size}
+            {new Set(activeLeads.map((lead) => String(lead.partnerId || '')).filter(Boolean)).size}
           </p>
         </div>
       </div>

@@ -23,7 +23,8 @@ export default defineConfig({
   webServer: {
     command: "cross-env NEXT_PUBLIC_USE_LEGACY_BEARER=1 npm run dev",
     url: baseURL,
-    reuseExistingServer: false,
+    /** En local : réutilise `npm run dev` si le port 3000 est déjà pris. En CI : démarre toujours un serveur propre. */
+    reuseExistingServer: !process.env.CI,
     timeout: 180 * 1000,
   },
 });

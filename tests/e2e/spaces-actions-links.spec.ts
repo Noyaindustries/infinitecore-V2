@@ -23,7 +23,7 @@ test("validation dossier client conserve le succès même si notification échou
   await expect(page).toHaveURL(/\/dashboard\/suivi$/);
   await expectBodyContains(page, "Mon dossier");
 
-  const validateButton = page.getByRole("button", { name: /^Valider$/ }).first();
+  const validateButton = page.getByRole("button", { name: /Valider le dossier/i }).first();
   await expect(validateButton).toBeVisible();
   await validateButton.click();
 
@@ -104,7 +104,7 @@ const scenarios: Scenario[] = [
       await expectBodyContains(page, "Mes Contacts soumis");
       await page.getByRole("button", { name: /Nouveau contact/i }).click();
       await expectBodyContains(page, "Nouveau contact PME");
-      await page.getByRole("button", { name: "Fermer le formulaire" }).click();
+      await page.getByRole("button", { name: "Annuler" }).click();
 
       await page.goto("/partenaire/commissions", { waitUntil: "domcontentloaded" });
       await page.getByRole("main").getByRole("link", { name: "Mes contacts" }).click();
@@ -121,7 +121,7 @@ const scenarios: Scenario[] = [
     path: "/dashboard/suivi",
     run: async (page) => {
       await expectBodyContains(page, "Mon dossier");
-      await page.getByRole("button", { name: "Archive" }).click();
+      await page.getByRole("main").getByRole("button", { name: /^Archive/ }).click();
       await expectBodyToMatchOneOf(page, [/Documents validés/i, /Aucun document validé/i]);
 
       await page.getByRole("main").getByRole("link", { name: "Messagerie" }).click();

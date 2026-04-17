@@ -80,7 +80,7 @@ export default function Logo({
   matchMarketingNav = false,
 }: LogoProps) {
   const [marketingImgFailed, setMarketingImgFailed] = useState(false);
-  const sizeClass = className.trim() || 'h-12 md:h-[5rem]';
+  const sizeClass = className.trim() || 'h-14 sm:h-[4.5rem] md:h-[5rem]';
   const blend = Boolean(blendSurface) && !matchMarketingNav;
   const imgBase =
     'block h-full max-h-full w-auto max-w-full object-contain object-left';

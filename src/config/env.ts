@@ -134,6 +134,16 @@ export const appEnv = {
   integrations: {
     infiniteCoreApiUrl: str("INFINITE_CORE_API_URL"),
   },
+  data: {
+    /**
+     * Max documents `data_documents` chargés par `POST /api/data/query` (une collection)
+     * avant filtrage / tri en mémoire. Plage 100–20_000.
+     */
+    get queryFetchCap() {
+      const n = int("DATA_QUERY_FETCH_CAP", 5000);
+      return Math.min(20_000, Math.max(100, n));
+    },
+  },
   seed: {
     testPassword: str("SEED_TEST_PASSWORD", "Test1234!"),
   },

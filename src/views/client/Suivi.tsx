@@ -886,7 +886,7 @@ export default function ClientSuivi() {
                 {/* Step header */}
                 <div
                   className={cn(
-                    'flex items-center gap-4 border-l-[3px] px-5 py-4',
+                    'flex items-start gap-3 border-l-[3px] px-4 py-3 sm:items-center sm:gap-4 sm:px-5 sm:py-4',
                     isValidated
                       ? 'border-l-noya-green bg-noya-green/10'
                       : isSoumis
@@ -895,7 +895,7 @@ export default function ClientSuivi() {
                   )}
                 >
                   <div
-                    className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full ${
+                    className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
                       isValidated
                         ? 'bg-noya-green/20 text-noya-green'
                         : isSoumis
@@ -907,26 +907,26 @@ export default function ClientSuivi() {
                      isEmpty ? <Lock size={18} /> :
                      <FileText size={20} />}
                   </div>
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="font-bold text-text-primary">{`Étape ${idx + 1} — ${meta.label}`}</p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <p className="text-sm font-bold text-text-primary sm:text-base">{`Étape ${idx + 1} — ${meta.label}`}</p>
                       {isValidated && (
-                        <span className="rounded-full bg-noya-green/15 px-2 py-0.5 text-xs font-medium text-noya-green">
+                        <span className="rounded-full bg-noya-green/15 px-2 py-0.5 text-[10px] font-medium text-noya-green sm:text-xs">
                           Validé
                         </span>
                       )}
                       {isSoumis && (
-                        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${theme.badge}`}>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium sm:text-xs ${theme.badge}`}>
                           En attente de votre validation
                         </span>
                       )}
                       {isEmpty && (
-                        <span className="text-xs bg-noya-black/50 text-text-muted px-2 py-0.5 rounded-full font-medium border border-border">
+                        <span className="rounded-full border border-border bg-noya-black/50 px-2 py-0.5 text-[10px] font-medium text-text-muted sm:text-xs">
                           {isLocked ? 'Verrouillé' : 'En préparation'}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-text-secondary mt-0.5">{meta.description}</p>
+                    <p className="mt-0.5 text-[11px] leading-snug text-text-secondary sm:text-xs">{meta.description}</p>
                     {archivedVersions > 1 && (
                       <button
                         type="button"
@@ -942,7 +942,7 @@ export default function ClientSuivi() {
                     )}
                   </div>
                   {isValidated && step?.validatedAt && (
-                    <p className="flex-shrink-0 text-xs font-medium text-noya-green">
+                    <p className="shrink-0 text-[11px] font-medium text-noya-green sm:text-xs">
                       {format(new Date(step.validatedAt), 'dd MMM yyyy', { locale: fr })}
                     </p>
                   )}
@@ -950,70 +950,73 @@ export default function ClientSuivi() {
 
                 {/* Step body — doc available */}
                 {step && (
-                  <div className="px-5 py-4">
-                    <div className="flex items-center justify-between gap-4 flex-wrap">
-                      <div className="flex items-center gap-3">
-                        <div className={`rounded-xl p-2.5 ${theme.iconBox}`}>
+                  <div className="px-4 py-3 sm:px-5 sm:py-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:gap-4">
+                      <div className="flex min-w-0 items-start gap-3 sm:items-center">
+                        <div className={`shrink-0 rounded-xl p-2 sm:p-2.5 ${theme.iconBox}`}>
                           <FileText size={18} />
                         </div>
-                        <div>
-                          <p className="font-semibold text-text-primary text-sm">{step.fileName}</p>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <p className="text-xs text-text-muted">{formatFileSize(step.fileSize)}</p>
-                            <span className="text-border">·</span>
-                            <p className="text-xs text-text-muted">
+                        <div className="min-w-0 flex-1">
+                          <p className="break-all text-sm font-semibold text-text-primary sm:break-normal">{step.fileName}</p>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <p className="text-[11px] text-text-muted sm:text-xs">{formatFileSize(step.fileSize)}</p>
+                            <span className="hidden text-border sm:inline">·</span>
+                            <p className="text-[11px] text-text-muted sm:text-xs">
                               Envoyé le {format(new Date(step.uploadedAt), 'dd MMM yyyy', { locale: fr })}
                               {step.uploadedByName && ` par ${step.uploadedByName}`}
                             </p>
                           </div>
                           {step.note && (
-                            <p className="text-xs text-noya-blue italic mt-1">"{step.note}"</p>
+                            <p className="mt-1 text-[11px] italic text-noya-blue sm:text-xs">"{step.note}"</p>
                           )}
                         </div>
                       </div>
 
-                      <div className="flex flex-shrink-0 flex-wrap items-center gap-2">
+                      <div className="grid grid-cols-3 items-center gap-2 sm:flex sm:shrink-0 sm:flex-wrap">
                         <button
                           type="button"
                           onClick={() => setPreviewStep(step)}
-                          className="flex items-center gap-1.5 rounded-xl border border-noya-blue/40 bg-noya-blue/15 px-3 py-2 text-sm font-semibold text-noya-blue transition-colors hover:bg-noya-blue/25"
+                          aria-label={stepType === 'audit' ? 'Consulter (étape 1)' : 'Consulter'}
+                          className="flex items-center justify-center gap-1.5 rounded-xl border border-noya-blue/40 bg-noya-blue/15 px-3 py-2 text-xs font-semibold text-noya-blue transition-colors hover:bg-noya-blue/25 sm:text-sm"
                         >
                           <Eye size={15} aria-hidden />
-                          {stepType === 'audit' ? 'Consulter (étape 1)' : 'Consulter'}
+                          <span className="sm:inline">{stepType === 'audit' ? 'Consulter' : 'Consulter'}</span>
                         </button>
                         <a
                           href={absoluteUrlOnClient(step.fileUrl)}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-noya-black"
+                          aria-label="Ouvrir dans un nouvel onglet"
+                          className="flex items-center justify-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-noya-black sm:text-sm"
                         >
                           <ExternalLink size={15} aria-hidden />
-                          Onglet
+                          <span>Onglet</span>
                         </a>
                         <a
                           href={absoluteUrlOnClient(step.fileUrl)}
                           download={dossierDownloadFileName(step)}
-                          className="flex items-center gap-1.5 rounded-xl border border-border px-3 py-2 text-sm font-medium text-text-secondary transition-colors hover:bg-noya-black"
+                          aria-label="Télécharger le document"
+                          className="flex items-center justify-center gap-1.5 rounded-xl border border-border px-3 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-noya-black sm:text-sm"
                         >
                           <Download size={15} aria-hidden />
-                          Télécharger
+                          <span>Télécharger</span>
                         </a>
                         {isSoumis && (
                           <button
                             onClick={() => handleValidate(step)}
                             disabled={validating === step.id}
-                            className="flex items-center gap-2 rounded-xl bg-noya-blue px-4 py-2 text-sm font-semibold text-noya-black transition-colors hover:brightness-110 disabled:opacity-50"
+                            className="col-span-3 flex items-center justify-center gap-2 rounded-xl bg-noya-blue px-4 py-3 text-sm font-bold text-noya-black shadow-[0_0_20px_-6px_rgba(110,167,234,0.6)] transition-colors hover:brightness-110 disabled:opacity-50 sm:col-span-1 sm:py-2 sm:text-sm"
                           >
                             {validating === step.id ? (
-                              <Loader2 size={15} className="animate-spin" />
+                              <Loader2 size={16} className="animate-spin" />
                             ) : (
-                              <CheckCircle size={15} />
+                              <CheckCircle size={16} />
                             )}
-                            Valider
+                            Valider le dossier
                           </button>
                         )}
                         {isValidated && (
-                          <div className="flex items-center gap-1.5 rounded-xl border border-noya-green/30 bg-noya-green/10 px-4 py-2 text-sm font-semibold text-noya-green">
+                          <div className="col-span-3 flex items-center justify-center gap-1.5 rounded-xl border border-noya-green/30 bg-noya-green/10 px-4 py-2 text-sm font-semibold text-noya-green sm:col-span-1">
                             <CheckCircle size={15} /> Validé
                           </div>
                         )}

@@ -1,6 +1,7 @@
 import { useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useScroll, useSpring, useInView, animate } from 'framer-motion';
+import HomeSideNavBars from '../components/HomeSideNavBars';
 import { 
   Users, 
   FileSignature,
@@ -103,8 +104,10 @@ export default function Home() {
         ref={containerRef}
         className="relative overflow-x-hidden bg-transparent font-[Urbanist,ui-sans-serif,system-ui,sans-serif] text-[#F5F7FF] selection:bg-[#6EA7EA]/30"
       >
+      <HomeSideNavBars />
+
       {/* HERO SECTION */}
-      <main className="relative z-10 flex w-full flex-col items-center justify-center px-4 pb-12 pt-6 sm:px-6 sm:pb-16 sm:pt-8 md:pb-20 md:pt-10">
+      <main id="accueil" className="relative z-10 flex w-full flex-col items-center justify-center px-4 pb-12 pt-6 sm:px-6 sm:pb-16 sm:pt-8 md:pb-20 md:pt-10">
         <div className="container mx-auto text-center max-w-[1100px]">
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
@@ -261,7 +264,7 @@ export default function Home() {
       </main>
 
       {/* SECTION LE PROBLÈME */}
-      <section className="py-16 md:py-24 relative z-10 bg-[#0A1020] border-t border-white/5">
+      <section id="probleme" className="py-16 md:py-24 relative z-10 bg-[#0A1020] border-t border-white/5">
         <div className="container mx-auto px-6 max-w-6xl">
           <div className="mb-10">
             <span className="text-[#FFB332] text-[10px] font-bold tracking-[0.15em] uppercase mb-4 block flex items-center before:content-[''] before:w-6 before:h-[1px] before:bg-[#FFB332] before:mr-3">
@@ -829,7 +832,7 @@ export default function Home() {
       </section>
 
       {/* TESTIMONIALS SECTION (NEW) — même fond que le hero (grille + particules globales) */}
-      <section className="py-16 relative z-10 border-t border-white/5 overflow-hidden">
+      <section id="temoignages" className="py-16 relative z-10 border-t border-white/5 overflow-hidden">
         <div className="relative z-10 container mx-auto px-6 max-w-[1200px]">
           <div className="text-center mb-10">
             <span className="text-[#FFB332] text-[10px] font-bold tracking-[0.15em] uppercase mb-4 inline-flex items-center before:content-[''] before:w-6 before:h-[1px] before:bg-[#FFB332] before:mr-3 after:content-[''] after:w-6 after:h-[1px] after:bg-[#FFB332] after:ml-3">
@@ -1037,7 +1040,7 @@ export default function Home() {
       </section>
 
       {/* SECTION CTA "PRÊT À COMMENCER ?" (MATCHING IMAGE) */}
-      <section className="py-16 md:py-24 relative z-10 bg-[#06080D] border-t border-white/5">
+      <section id="contact" className="py-16 md:py-24 relative z-10 bg-[#06080D] border-t border-white/5">
         <div className="container mx-auto px-6 max-w-[1000px]">
           <div className="text-center">
             <motion.h2 

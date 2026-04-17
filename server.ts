@@ -966,6 +966,48 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       },
     });
 
+    // Notifie les équipes commando/admin du nouvel audit — non bloquant.
+    try {
+      const recipients = await prisma.userAccount.findMany({
+        where: { role: { in: ["commando", "admin"] } },
+        select: { uid: true },
+      });
+      const recipientIds = recipients.map((r) => r.uid).filter(Boolean);
+      const finalRecipients = recipientIds.length > 0 ? recipientIds : ["admin_general"];
+      const notifMessage = `${clientName} a soumis un audit ${auditType}${
+        normalizedWhatsapp ? ` — ${normalizedWhatsapp}` : ""
+      }${email ? ` — ${email}` : ""}`;
+      await Promise.all(
+        finalRecipients.map((recipientId) =>
+          prisma.dataDocument.create({
+            data: {
+              collectionPath: "notifications",
+              docId: randomUUID().replace(/-/g, ""),
+              data: {
+                userId: recipientId,
+                title: "Nouveau flux PADDE-CI",
+                message: notifMessage,
+                type: "order",
+                read: false,
+                createdAt,
+                metadata: {
+                  source: "padde-ci",
+                  auditId,
+                  auditType,
+                  clientId: linkedClientId,
+                  clientEmail: email,
+                  whatsapp: normalizedWhatsapp,
+                  link: "/admin/audits-padde",
+                },
+              } as never,
+            },
+          })
+        )
+      );
+    } catch (notifyErr) {
+      console.warn("[padde-ci] notification commando:", notifyErr);
+    }
+
     return { auditId };
   };
 

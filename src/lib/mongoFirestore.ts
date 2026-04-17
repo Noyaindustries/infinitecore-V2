@@ -183,7 +183,11 @@ async function fetchQuery(q: Query | CollectionReference): Promise<QuerySnapshot
   const filters = constraints.filter((c): c is QueryFilterConstraint => c.kind === "where");
   const orders = constraints.filter((c): c is QueryOrderConstraint => c.kind === "orderBy");
   const capped = constraints.find((c): c is QueryLimitConstraint => c.kind === "limit");
-  const payload = await apiRequest<{ success: boolean; docs: InternalDoc[] }>("/api/data/query", {
+  const payload = await apiRequest<{
+    success: boolean;
+    docs: InternalDoc[];
+    queryMeta?: Record<string, unknown>;
+  }>("/api/data/query", {
     method: "POST",
     body: JSON.stringify({
       collectionPath: path,

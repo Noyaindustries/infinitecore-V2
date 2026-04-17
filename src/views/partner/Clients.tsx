@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, User, X, Phone, Building2, Send, Search, Trash2, Clock, Briefcase, Sparkles, ShieldCheck } from 'lucide-react';
+import { Plus, User, Phone, Building2, Send, Search, Trash2, Clock, Briefcase, Sparkles, ShieldCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../components/AuthProvider';
 import { leadService, Lead, LeadStatus } from '../../services/leadService';
@@ -563,7 +563,7 @@ export default function PartnerClients() {
               <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-linear-to-r from-noya-blue/25 via-noya-purple/15 to-noya-green/20" />
               <div className="pointer-events-none absolute -left-20 top-10 h-40 w-40 rounded-full bg-noya-blue/15 blur-3xl" />
               <div className="pointer-events-none absolute -right-20 top-12 h-44 w-44 rounded-full bg-noya-green/10 blur-3xl" />
-              <div className="relative border-b border-white/10 bg-black/20 px-4 py-3 pr-12">
+              <div className="relative border-b border-white/10 bg-black/20 px-4 py-3">
                 <div>
                   <span className="inline-flex items-center gap-2 rounded-full border border-noya-blue/40 bg-noya-blue/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-noya-blue">
                     <Sparkles size={12} />
@@ -572,14 +572,6 @@ export default function PartnerClients() {
                   <h2 className="mt-1.5 text-lg font-black tracking-tight text-text-primary">Nouveau contact PME</h2>
                   <p className="mt-0.5 text-[10px] text-text-secondary">Formulaire qualifie pour prise en charge prioritaire Commando.</p>
                 </div>
-                <button
-                  title="Fermer le formulaire"
-                  aria-label="Fermer le formulaire"
-                  onClick={attemptCloseForm}
-                  className="absolute right-3 top-3 rounded-full p-1.5 text-text-secondary transition-colors hover:bg-white/5 hover:text-text-primary"
-                >
-                  <X size={20} />
-                </button>
               </div>
 
               <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="relative space-y-2.5 p-3">

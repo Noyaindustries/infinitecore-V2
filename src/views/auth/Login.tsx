@@ -47,18 +47,6 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
   const [referrerId, setReferrerId] = useState<string | null>(null);
   const [resettingPassword, setResettingPassword] = useState(false);
 
-  const handleCloseForm = () => {
-    const shouldConfirm =
-      email.trim().length > 0 || password.trim().length > 0 || verificationCode.trim().length > 0 || loginStep > 1;
-    if (shouldConfirm) {
-      const confirmed = window.confirm(
-        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
-      );
-      if (!confirmed) return;
-    }
-    navigate('/');
-  };
-
   const getPartnerLabel = (data: { firstName?: string; lastName?: string; email?: string }, fallbackId: string) => {
     const fullName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
     return fullName || data.email || `Partenaire ${fallbackId}`;
@@ -294,7 +282,7 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
   };
 
   return (
-    <div className="relative min-h-0 overflow-hidden px-2.5 py-2 sm:min-h-[calc(100dvh-76px)] sm:px-5 sm:py-4 md:min-h-[calc(100dvh-84px)] lg:px-8">
+    <div className="relative min-h-0 overflow-hidden px-2.5 py-2 sm:min-h-[calc(100dvh-128px)] sm:px-5 sm:py-4 md:min-h-[calc(100dvh-84px)] lg:px-8">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_95%_65%_at_50%_-20%,rgba(43,84,126,0.24),transparent_58%),radial-gradient(ellipse_65%_55%_at_100%_0%,rgba(217,138,44,0.16),transparent_55%),radial-gradient(ellipse_60%_45%_at_0%_100%,rgba(139,107,93,0.14),transparent_60%)]" />
       <div className="relative mx-auto flex w-full max-w-md flex-col gap-2">
         <motion.section
@@ -534,14 +522,6 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
             ) : null}
 
             <div className="space-y-2">
-              <button
-                type="button"
-                onClick={handleCloseForm}
-                disabled={loading}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-white/15 bg-surface-secondary px-4 py-1.5 text-[13px] font-semibold text-text-secondary transition-colors hover:bg-surface-tertiary hover:text-text-primary disabled:opacity-60 sm:py-2 sm:text-sm"
-              >
-                Fermer le formulaire
-              </button>
               <button
                 type="submit"
                 disabled={loading}

@@ -23,21 +23,6 @@ export default function ResetPassword() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const handleCloseForm = () => {
-    const shouldConfirm =
-      email.trim().length > 0 ||
-      token.trim().length > 0 ||
-      newPassword.trim().length > 0 ||
-      confirmPassword.trim().length > 0;
-    if (shouldConfirm) {
-      const confirmed = window.confirm(
-        "Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues."
-      );
-      if (!confirmed) return;
-    }
-    navigate("/");
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim() || !token.trim()) {
@@ -66,7 +51,7 @@ export default function ResetPassword() {
   };
 
   return (
-    <div className="flex min-h-[calc(100dvh-70px)] flex-col justify-center px-3 py-6 sm:min-h-[calc(100dvh-76px)] sm:px-6 sm:py-8 md:min-h-[calc(100dvh-84px)] lg:px-8">
+    <div className="flex min-h-[calc(100dvh-112px)] flex-col justify-center px-3 py-6 sm:min-h-[calc(100dvh-128px)] sm:px-6 sm:py-8 md:min-h-[calc(100dvh-84px)] lg:px-8">
       <div className="mx-auto w-full min-w-0 max-w-md px-1 sm:px-0">
         <h2 className="text-center text-2xl font-extrabold text-white sm:text-3xl">Réinitialiser le mot de passe</h2>
         <p className="mt-2 text-center text-sm text-gray-400">
@@ -147,14 +132,6 @@ export default function ResetPassword() {
           </div>
 
           <div className="space-y-2">
-            <button
-              type="button"
-              onClick={handleCloseForm}
-              disabled={loading}
-              className="w-full flex justify-center items-center gap-2 py-3 px-4 rounded-xl text-sm font-semibold text-gray-200 border border-white/10 bg-white/5 hover:bg-white/10 disabled:opacity-60 transition-colors"
-            >
-              Fermer le formulaire
-            </button>
             <button
               type="submit"
               disabled={loading}

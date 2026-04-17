@@ -12,6 +12,7 @@ export interface CommandoClientRow {
   role?: string;
   phone?: string;
   companyName?: string;
+  source?: string | null;
   referredBy?: string | null;
   referredByPartnerId?: string | null;
   referredByPartnerName?: string | null;

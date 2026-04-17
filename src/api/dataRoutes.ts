@@ -1,17 +1,9 @@
 import type { Express, Request, Response } from "express";
 import type { PrismaClient } from "@prisma/client";
 import { randomUUID } from "crypto";
+import type { QueryFilter, QueryOrder } from "./mongo/dataQueryTypes";
 
-export type QueryFilter = {
-  field: string;
-  operator: "==" | "!=" | ">" | ">=" | "<" | "<=";
-  value: unknown;
-};
-
-type QueryOrder = {
-  field: string;
-  direction?: "asc" | "desc";
-};
+export type { QueryFilter, QueryOrder } from "./mongo/dataQueryTypes";
 
 type AuthPayload = {
   uid: string;
@@ -55,6 +47,8 @@ type RegisterDataRoutesDeps = {
     data: Record<string, unknown>,
     merge: boolean
   ) => Promise<void>;
+  /** Limite Prisma `take` sur `data_documents` pour une requête (voir `DATA_QUERY_FETCH_CAP`). */
+  queryFetchCap: number;
 };
 
 export function parseDataQueryInput(body: unknown) {
@@ -72,6 +66,11 @@ export function parseDataQueryInput(body: unknown) {
   };
 }
 
+/**
+ * Construit des clauses de filtre JSON style Prisma (`path` + `equals`, etc.).
+ * Utile pour tests / référence — **non supporté** par le connecteur Prisma MongoDB
+ * sur les champs `Json` (cf. doc Prisma : filtrage avancé JSON = PostgreSQL / MySQL uniquement).
+ */
 export function buildDbFiltersFromQueryFilters(filters: QueryFilter[]) {
   const dbFilters: unknown[] = [];
   for (const filter of filters) {
@@ -120,48 +119,35 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       const authz = deps.assertDataQueryAuthorized(auth, collectionPath, filters);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
 
-      const dbFilters = buildDbFiltersFromQueryFilters(filters);
-      let rows: Awaited<ReturnType<typeof deps.prisma.dataDocument.findMany>>;
-
-      if (dbFilters) {
-        try {
-          const dbWhere = { AND: [{ collectionPath }, ...dbFilters] } as unknown;
-          rows = await deps.prisma.dataDocument.findMany({
-            where: dbWhere as never,
-            take: 5000,
-          });
-        } catch (error) {
-          // Certains connecteurs Prisma ne supportent pas les filtres JSON avancés
-          // de la même manière en runtime. On retombe en filtrage applicatif pour
-          // éviter un 500 côté client.
-          console.warn("[data/query] fallback to in-memory filters", {
-            collectionPath,
-            filtersCount: filters.length,
-            error: error instanceof Error ? error.message : String(error),
-          });
-          rows = await deps.prisma.dataDocument.findMany({
-            where: { collectionPath } as never,
-            take: 5000,
-          });
-        }
-      } else {
-        rows = await deps.prisma.dataDocument.findMany({
-          where: { collectionPath } as never,
-          take: 5000,
-        });
-      }
+      // MongoDB + Prisma : pas de filtre `Json.path` fiable — on charge par `collectionPath`
+      // puis on applique les filtres en mémoire (déjà implémentés et testés côté `mongoApi`).
+      const fetchCap = Math.max(1, Math.floor(deps.queryFetchCap));
+      const rows = await deps.prisma.dataDocument.findMany({
+        where: { collectionPath } as never,
+        take: fetchCap,
+      });
 
       const normalized = rows.map((row) => ({
         docId: row.docId,
         data: deps.coerceRecord(row.data),
       }));
-      const filtered = dbFilters ? normalized : deps.applyFilters(normalized, filters);
+      const filtered = deps.applyFilters(normalized, filters);
       const ordered = deps.applyOrder(filtered, orders);
       const paged = ordered.slice(parsed.offset, parsed.offset + parsed.limit);
 
       return res.status(200).json({
         success: true,
         docs: paged.map((row) => ({ id: row.docId, data: row.data })),
+        queryMeta: {
+          scannedDocuments: rows.length,
+          fetchCap,
+          matchedAfterFilter: filtered.length,
+          returned: paged.length,
+          offset: parsed.offset,
+          limit: parsed.limit,
+          /** `true` si on a atteint le plafond : d'autres documents peuvent exister en base non chargés. */
+          mayHaveMoreInDatabase: rows.length >= fetchCap,
+        },
       });
     } catch (error) {
       console.error("[data/query]", error);

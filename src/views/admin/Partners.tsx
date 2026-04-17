@@ -79,6 +79,32 @@ export default function AdminPartners() {
     };
   }, []);
 
+  // Emails des filleuls déjà convertis en client portail : leurs entrées `leads` ne sont
+  // plus comptées/affichées comme « leads partenaire » (ils basculent dans la liste
+  // « Inscriptions parrainées » et dans le CRM côté commando).
+  const convertedFilleulEmails = useMemo(() => {
+    const set = new Set<string>();
+    for (const user of users) {
+      if (String(user.role || '').toLowerCase() !== 'client') continue;
+      const email = String(user.email || '').trim().toLowerCase();
+      if (!email) continue;
+      const hasReferral =
+        Boolean(user.referredByPartnerId) || Boolean(user.referredBy);
+      if (hasReferral) set.add(email);
+    }
+    return set;
+  }, [users]);
+
+  const activeLeads = useMemo(
+    () =>
+      leads.filter((lead) => {
+        const email = String(lead.email || '').trim().toLowerCase();
+        if (!email) return true;
+        return !convertedFilleulEmails.has(email);
+      }),
+    [leads, convertedFilleulEmails]
+  );
+
   const partnerRows = useMemo<PartnerSummary[]>(() => {
     const partners = users.filter((u) => String(u.role || '').toLowerCase() === 'partner');
     const clients = users.filter((u) => String(u.role || '').toLowerCase() === 'client');
@@ -92,7 +118,7 @@ export default function AdminPartners() {
           String(uid || '').toUpperCase(),
         ].filter(Boolean)
       );
-      const leadsForPartner = leads.filter((l) => String(l.partnerId || '') === uid);
+      const leadsForPartner = activeLeads.filter((l) => String(l.partnerId || '') === uid);
       const signupsForPartner = clients.filter((c) => {
         const byPartnerId = String(c.referredByPartnerId || '') === uid;
         const referredByRaw = String(c.referredBy || '');
@@ -116,7 +142,7 @@ export default function AdminPartners() {
         lastLeadAt,
       };
     });
-  }, [users, leads]);
+  }, [users, activeLeads]);
 
   const filteredPartners = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -132,14 +158,14 @@ export default function AdminPartners() {
   );
   const selectedPartnerLeads = useMemo(() => {
     if (!selectedPartnerUid) return [];
-    return leads
+    return activeLeads
       .filter((lead) => String(lead.partnerId || '') === selectedPartnerUid)
       .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
-  }, [leads, selectedPartnerUid]);
+  }, [activeLeads, selectedPartnerUid]);
 
   const exportPartnerLeads = (partnerUid: string) => {
     const partner = partnerRows.find((p) => p.uid === partnerUid);
-    const partnerLeads = leads
+    const partnerLeads = activeLeads
       .filter((lead) => String(lead.partnerId || '') === partnerUid)
       .sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     if (partnerLeads.length === 0) return;

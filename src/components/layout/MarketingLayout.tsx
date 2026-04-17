@@ -1,6 +1,6 @@
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { Menu, X, ChevronDown } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { Menu, X, ChevronDown, Linkedin, Twitter, Instagram, Facebook, Youtube } from 'lucide-react';
+import { useState, useEffect, type CSSProperties } from 'react';
 import { auth } from '@/lib/clientSdk';
 import Logo from '../Logo';
 import { useAuth } from '../AuthProvider';
@@ -18,6 +18,53 @@ const MARKETING_SOLUTION_MODULE_LINKS: { to: string; label: string }[] = [
   { to: '/academy', label: 'Infinite Academy' },
   { to: '/comms', label: 'Infinite Comms' },
   { to: '/store', label: 'Infinite Store' },
+];
+
+/** Réseaux sociaux affichés dans le pied de page. Remplacer `href` par les URLs officielles. */
+const FOOTER_SOCIAL_LINKS: {
+  label: string;
+  href: string;
+  Icon: typeof Linkedin;
+  /** Couleur de marque utilisée au survol/focus (teinte officielle du réseau). */
+  brandColor: string;
+  /** Variante fond à opacité faible (`rgba()`) pour la pastille au survol. */
+  brandBg: string;
+}[] = [
+  {
+    label: 'LinkedIn',
+    href: 'https://www.linkedin.com/company/infinite-core',
+    Icon: Linkedin,
+    brandColor: '#0A66C2',
+    brandBg: 'rgba(10,102,194,0.14)',
+  },
+  {
+    label: 'X (Twitter)',
+    href: 'https://x.com/infinitecore',
+    Icon: Twitter,
+    brandColor: '#F5F7FF',
+    brandBg: 'rgba(245,247,255,0.1)',
+  },
+  {
+    label: 'Instagram',
+    href: 'https://www.instagram.com/infinitecore',
+    Icon: Instagram,
+    brandColor: '#E4405F',
+    brandBg: 'rgba(228,64,95,0.14)',
+  },
+  {
+    label: 'Facebook',
+    href: 'https://www.facebook.com/infinitecore',
+    Icon: Facebook,
+    brandColor: '#1877F2',
+    brandBg: 'rgba(24,119,242,0.14)',
+  },
+  {
+    label: 'YouTube',
+    href: 'https://www.youtube.com/@infinitecore',
+    Icon: Youtube,
+    brandColor: '#FF0000',
+    brandBg: 'rgba(255,0,0,0.14)',
+  },
 ];
 
 const navLinkClass =
@@ -64,7 +111,7 @@ export default function MarketingLayout() {
           navSolid && 'shadow-[0_10px_28px_-12px_rgba(0,0,0,0.75)]',
         )}
       >
-        <div className="container mx-auto flex h-[66px] min-w-0 items-center justify-between gap-2 px-3 sm:h-[76px] sm:px-6 md:h-[84px] lg:px-[52px]">
+        <div className="container mx-auto flex h-[112px] min-w-0 items-center justify-between gap-2 px-3 sm:h-[128px] sm:px-6 md:h-[84px] lg:px-[52px]">
           <div className="flex min-w-0 flex-1 items-center justify-start">
             <Link
               to="/"
@@ -72,7 +119,7 @@ export default function MarketingLayout() {
             >
               <Logo
                 matchMarketingNav
-                className="h-12 w-auto shrink-0 md:h-[5rem]"
+                className="h-24 w-auto shrink-0 sm:h-28 md:h-[4.25rem]"
               />
             </Link>
           </div>
@@ -306,12 +353,33 @@ export default function MarketingLayout() {
             {/* Marque */}
             <div className="col-span-3 sm:col-span-2 lg:col-span-5 xl:col-span-4">
               <Link to="/" className="group/logo inline-block transition-opacity hover:opacity-90">
-                <Logo blendSurface="primary" className="h-12 md:h-[5rem]" />
+                <Logo matchMarketingNav className="h-10 sm:h-11 md:h-12" />
               </Link>
               <p className="mt-2 max-w-[280px] text-[11px] font-normal leading-snug text-[#6B7A90] sm:text-[12px] sm:leading-relaxed">
                 The Operating System for African Business. Suite SaaS modulaire pour PME et grandes entreprises
                 d&apos;Afrique — conçue par Noya Industries, Abidjan.
               </p>
+              <ul className="mt-3 flex items-center gap-2 sm:mt-4 sm:gap-2.5" aria-label="Réseaux sociaux">
+                {FOOTER_SOCIAL_LINKS.map(({ label, href, Icon, brandColor, brandBg }) => (
+                  <li key={label}>
+                    <a
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={label}
+                      style={
+                        {
+                          '--brand-color': brandColor,
+                          '--brand-bg': brandBg,
+                        } as CSSProperties
+                      }
+                      className="group inline-flex h-8 w-8 items-center justify-center rounded-full border border-[color:var(--brand-color)]/35 bg-[color:var(--brand-bg)] text-[color:var(--brand-color)] transition-all duration-150 hover:scale-105 hover:border-[color:var(--brand-color)]/70 hover:bg-[color:var(--brand-bg)] hover:shadow-[0_0_14px_-2px_var(--brand-color)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--brand-color)]/45 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-9 sm:w-9"
+                    >
+                      <Icon size={14} strokeWidth={1.9} aria-hidden />
+                    </a>
+                  </li>
+                ))}
+              </ul>
             </div>
 
             <nav className="col-span-1 text-center lg:col-span-2 lg:text-left" aria-label="Solutions">

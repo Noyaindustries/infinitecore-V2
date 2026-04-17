@@ -82,23 +82,11 @@ export default function Signup() {
     company: '',
     companyDescription: '',
     industry: '',
+    industryOther: '',
     employees: '',
     password: '',
     confirmPassword: '',
   });
-
-  const handleCloseForm = () => {
-    const hasDraft = Object.values(formData).some((value) => value.trim().length > 0);
-    const shouldConfirm =
-      hasDraft || currentStep > 1 || awaitingEmailVerification || googleVerificationPending;
-    if (shouldConfirm) {
-      const confirmed = window.confirm(
-        'Voulez-vous vraiment fermer ce formulaire ? Les informations saisies seront perdues.'
-      );
-      if (!confirmed) return;
-    }
-    navigate('/');
-  };
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -133,6 +121,8 @@ export default function Signup() {
     phone: string;
     companyName: string;
     industry: string;
+    employees?: string;
+    companyDescription?: string;
   }) => {
     if (!referralCode) return;
     try {
@@ -149,6 +139,8 @@ export default function Signup() {
           phone: payload.phone,
           companyName: payload.companyName,
           industry: payload.industry,
+          employees: payload.employees || '',
+          companyDescription: payload.companyDescription || '',
         }),
       });
     } catch (error) {
@@ -170,7 +162,13 @@ export default function Signup() {
       setGoogleVerificationEmail('');
       setGoogleIsNewUser(false);
     }
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev) => {
+      const next = { ...prev, [field]: value };
+      if (field === 'industry' && value !== 'Autre') {
+        next.industryOther = '';
+      }
+      return next;
+    });
   };
 
   const getPasswordStrength = (password: string) => {
@@ -215,6 +213,10 @@ export default function Signup() {
       }
       if (!formData.industry.trim()) {
         toast.error("Le secteur d'activité est requis.");
+        return false;
+      }
+      if (formData.industry === 'Autre' && !formData.industryOther.trim()) {
+        toast.error("Précisez votre secteur d'activité.");
         return false;
       }
       if (!formData.employees.trim()) {
@@ -304,6 +306,10 @@ export default function Signup() {
       const firstName = nameParts[0];
       const lastName = nameParts.slice(1).join(' ');
       const isAdminEmail = formData.email === 'superadmin@infinitecore.com';
+      const effectiveIndustry =
+        formData.industry === 'Autre' && formData.industryOther.trim()
+          ? formData.industryOther.trim()
+          : formData.industry;
 
       // Create user profile in Firestore
       try {
@@ -315,7 +321,7 @@ export default function Signup() {
           phone: formData.phone,
           company: formData.company,
           companyDescription: formData.companyDescription.trim() || '',
-          industry: formData.industry,
+          industry: effectiveIndustry,
           employees: formData.employees,
           role: isAdminEmail ? 'admin' : 'client',
           companyId: null,
@@ -335,7 +341,9 @@ export default function Signup() {
         email: formData.email,
         phone: formData.phone,
         companyName: formData.company,
-        industry: formData.industry,
+        industry: effectiveIndustry,
+        employees: formData.employees,
+        companyDescription: formData.companyDescription,
       });
 
       // Keep local store update for UI consistency if needed
@@ -438,6 +446,8 @@ export default function Signup() {
               phone: '',
               companyName: `${u.displayName || 'Mon'}'s Company`,
               industry: 'Non spécifié',
+              employees: formData.employees || '',
+              companyDescription: formData.companyDescription || '',
             });
           } catch (e) {
             console.error("Lead sync failed", e);
@@ -522,6 +532,8 @@ export default function Signup() {
             phone: '',
             companyName: `${u.displayName || 'Mon'}'s Company`,
             industry: 'Non spécifié',
+            employees: formData.employees || '',
+            companyDescription: formData.companyDescription || '',
           });
         } catch (e) { console.error("Lead sync failed", e); }
         addClient({
@@ -723,7 +735,7 @@ export default function Signup() {
               {currentStep === 2 && (
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                    <label htmlFor="signup-company" className="block text-sm font-medium text-[#9CA3AF] mb-1">
                       Nom de l'entreprise <span className="text-red-500">*</span>
                     </label>
                     <div className="relative">
@@ -731,7 +743,10 @@ export default function Signup() {
                         <Building2 className="h-5 w-5 text-[#4B5563]" />
                       </div>
                       <input
+                        id="signup-company"
+                        name="company"
                         type="text"
+                        autoComplete="organization"
                         required
                         value={formData.company}
                         onChange={(e) => updateFormData('company', e.target.value)}
@@ -743,7 +758,7 @@ export default function Signup() {
 
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                     <div>
-                      <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                      <label htmlFor="signup-industry" className="block text-sm font-medium text-[#9CA3AF] mb-1">
                         Secteur d'activité <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
@@ -751,6 +766,8 @@ export default function Signup() {
                           <Briefcase className="h-5 w-5 text-[#4B5563]" />
                         </div>
                         <select
+                          id="signup-industry"
+                          name="industry"
                           required
                           title="Secteur d'activité"
                           aria-label="Secteur d'activité"
@@ -770,7 +787,7 @@ export default function Signup() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                      <label htmlFor="signup-employees" className="block text-sm font-medium text-[#9CA3AF] mb-1">
                         Nombre d'employés <span className="text-red-500">*</span>
                       </label>
                       <div className="relative">
@@ -778,6 +795,8 @@ export default function Signup() {
                           <Users className="h-5 w-5 text-[#4B5563]" />
                         </div>
                         <select
+                          id="signup-employees"
+                          name="employees"
                           required
                           title="Nombre d'employés"
                           aria-label="Nombre d'employés"
@@ -795,17 +814,43 @@ export default function Signup() {
                     </div>
                   </div>
 
+                  {formData.industry === 'Autre' && (
+                    <div>
+                      <label htmlFor="signup-industry-other" className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                        Précisez votre secteur <span className="text-red-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <Briefcase className="h-5 w-5 text-[#4B5563]" />
+                        </div>
+                        <input
+                          id="signup-industry-other"
+                          name="industryOther"
+                          type="text"
+                          required
+                          value={formData.industryOther}
+                          onChange={(e) => updateFormData('industryOther', e.target.value)}
+                          className="block w-full rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] py-2.5 pl-10 pr-3 text-sm text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
+                          placeholder="Ex. Agroalimentaire, EdTech, Logistique…"
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <div>
-                    <label className="block text-sm font-medium text-[#9CA3AF] mb-1">
+                    <label htmlFor="signup-company-description" className="block text-sm font-medium text-[#9CA3AF] mb-1">
                       Description de l'entreprise
                     </label>
                     <textarea
-                      rows={2}
+                      id="signup-company-description"
+                      name="companyDescription"
+                      rows={4}
                       value={formData.companyDescription}
                       onChange={(e) => updateFormData('companyDescription', e.target.value)}
-                      className="block w-full resize-none rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] px-3 py-2.5 text-sm text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
+                      className="block w-full resize-y rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] px-3 py-2.5 text-sm text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
                       placeholder="Décrivez brièvement l'activité, les services ou le positionnement de votre entreprise."
                     />
+                    <p className="mt-1 text-[11px] text-[#6B7280]">Facultatif — visible par l'équipe Infinite pour personnaliser l'onboarding.</p>
                   </div>
                 </div>
               )}
@@ -913,13 +958,6 @@ export default function Signup() {
               )}
 
               <div className="flex flex-col gap-2 pt-2 sm:flex-row sm:flex-wrap sm:items-stretch">
-                <button
-                  type="button"
-                  onClick={handleCloseForm}
-                  className="w-full shrink-0 rounded-xl border border-[#2d2d3d] px-4 py-3 text-sm font-semibold text-[#9CA3AF] transition-colors hover:bg-white/5 hover:text-white sm:min-w-0 sm:flex-1"
-                >
-                  Fermer le formulaire
-                </button>
                 {currentStep > 1 && (
                   <button
                     type="button"
