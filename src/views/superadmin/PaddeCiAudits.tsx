@@ -44,6 +44,7 @@ export default function PaddeCiAudits() {
   const [isValidating, setIsValidating] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [isBackfilling, setIsBackfilling] = useState(false);
+  const [backfillProgress, setBackfillProgress] = useState<{ done: number; total: number } | null>(null);
 
   const handleBackfill = async () => {
     if (isBackfilling) return;
@@ -51,26 +52,60 @@ export default function PaddeCiAudits() {
       return;
     }
     setIsBackfilling(true);
+    setBackfillProgress(null);
     const loadingToast = toast.loading('Synchronisation des clients PADDE-CI…');
+
+    // L'endpoint est paginé (timeout MongoDB Atlas) — on boucle jusqu'à `hasMore: false`.
+    // Limite 15 par lot : compromis entre nombre d'allers-retours et risque de timeout.
+    const BATCH_SIZE = 15;
+    const MAX_BATCHES = 200; // garde-fou contre une boucle infinie inattendue
+    let offset = 0;
+    let processed = 0;
+    let skipped = 0;
+    let failed = 0;
+    let total = 0;
+
     try {
-      const result = await apiRequest<{
-        success: boolean;
-        totalAudits: number;
-        processed: number;
-        skipped: number;
-        failed: number;
-      }>('/api/webhooks/padde-ci/backfill', { method: 'POST' });
+      for (let batch = 0; batch < MAX_BATCHES; batch += 1) {
+        const result = await apiRequest<{
+          success: boolean;
+          totalAudits: number;
+          batchSize: number;
+          processed: number;
+          skipped: number;
+          failed: number;
+          nextOffset: number;
+          hasMore: boolean;
+        }>('/api/webhooks/padde-ci/backfill', {
+          method: 'POST',
+          body: JSON.stringify({ offset, limit: BATCH_SIZE }),
+        });
+
+        total = result.totalAudits;
+        processed += result.processed;
+        skipped += result.skipped;
+        failed += result.failed;
+        offset = result.nextOffset;
+
+        setBackfillProgress({ done: offset, total });
+        toast.loading(`Synchronisation… ${offset}/${total}`, { id: loadingToast });
+
+        if (!result.hasMore) break;
+      }
+
       toast.dismiss(loadingToast);
       toast.success(
-        `Synchronisation OK — ${result.processed}/${result.totalAudits} audits traités` +
-          (result.failed > 0 ? ` (${result.failed} en erreur)` : '')
+        `Synchronisation OK — ${processed}/${total} audits traités` +
+          (skipped > 0 ? `, ${skipped} ignorés` : '') +
+          (failed > 0 ? ` (${failed} en erreur)` : '')
       );
     } catch (error) {
       toast.dismiss(loadingToast);
       const message = error instanceof Error ? error.message : 'Erreur inconnue';
-      toast.error(`Synchronisation impossible : ${message}`);
+      toast.error(`Synchronisation interrompue à ${offset}/${total || '?'} : ${message}`);
     } finally {
       setIsBackfilling(false);
+      setBackfillProgress(null);
     }
   };
 
@@ -162,11 +197,15 @@ export default function PaddeCiAudits() {
             type="button"
             onClick={handleBackfill}
             disabled={isBackfilling}
-            title="Rejoue la création des clients pour tous les audits PADDE-CI existants (idempotent)."
+            title="Rejoue la création des clients pour tous les audits PADDE-CI existants (idempotent, paginé)."
             className="inline-flex items-center gap-2 rounded-xl border border-noya-blue/30 bg-noya-blue/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-noya-blue transition-all hover:border-noya-blue/60 hover:bg-noya-blue/20 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <RefreshCcw size={14} className={isBackfilling ? 'animate-spin' : ''} />
-            {isBackfilling ? 'Synchronisation…' : 'Synchroniser les clients'}
+            {isBackfilling
+              ? backfillProgress
+                ? `Sync… ${backfillProgress.done}/${backfillProgress.total}`
+                : 'Synchronisation…'
+              : 'Synchroniser les clients'}
           </button>
           <div className="bg-noya-sidebar px-4 py-2 rounded-xl border border-white/5 shadow-sm flex items-center gap-3">
             <div className="w-2 h-2 bg-noya-green rounded-full shadow-[0_0_8px_rgba(43,198,115,0.8)]"></div>

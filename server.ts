@@ -833,12 +833,22 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     }
   });
 
-  const persistPaddeAuditToStores = async (data: unknown) => {
+  type PersistPaddeOptions = {
+    /** Réutilise un auditId existant au lieu d'en générer un nouveau (mode backfill). */
+    existingAuditId?: string;
+    /** Saute la création du row `paddeCiAudit` (déjà présent en mode backfill). */
+    skipAuditRowCreation?: boolean;
+    /** Saute l'envoi de notifications (évite le spam pendant un backfill). */
+    skipNotifications?: boolean;
+  };
+
+  const persistPaddeAuditToStores = async (data: unknown, options: PersistPaddeOptions = {}) => {
     const payload = (data && typeof data === "object" ? (data as Record<string, unknown>) : {}) as Record<
       string,
       unknown
     >;
-    const auditId = `PADDE-${Math.floor(1000 + Math.random() * 9000)}`;
+    const auditId =
+      options.existingAuditId?.trim() || `PADDE-${Math.floor(1000 + Math.random() * 9000)}`;
     const auditType = String(payload.type_audit || payload.type || payload.auditType || "Audit PADDE-CI").trim();
 
     // Recherche insensible à la casse et aux variantes (`Email`, `EMAIL_CLIENT`, `Contact Email`, etc.).
@@ -967,13 +977,15 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       },
     });
 
-    await prisma.paddeCiAudit.create({
-      data: {
-        id: auditId,
-        payload: (payload ?? {}) as never,
-        processed: false,
-      },
-    });
+    if (!options.skipAuditRowCreation) {
+      await prisma.paddeCiAudit.create({
+        data: {
+          id: auditId,
+          payload: (payload ?? {}) as never,
+          processed: false,
+        },
+      });
+    }
 
     await prisma.dataDocument.upsert({
       where: {
@@ -1020,6 +1032,10 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     });
 
     // Notifie les équipes commando/admin du nouvel audit — non bloquant.
+    // Désactivé explicitement pendant un backfill pour éviter de spammer les anciens audits.
+    if (options.skipNotifications) {
+      return { auditId };
+    }
     try {
       const recipients = await prisma.userAccount.findMany({
         where: { role: { in: ["commando", "admin"] } },
@@ -1161,9 +1177,16 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   });
 
   /**
-   * Backfill admin — rejoue `persistPaddeAuditToStores` pour tous les audits PADDE-CI
-   * déjà en base afin de créer rétroactivement les documents `users` correspondants.
-   * Idempotent : les upserts par email/docId stable ne dupliquent rien.
+   * Backfill admin — rejoue `persistPaddeAuditToStores` pour les audits PADDE-CI déjà
+   * en base afin de créer rétroactivement les documents `users` correspondants.
+   *
+   * Paginé via `offset` + `limit` pour éviter les timeouts HTTP (MongoDB Atlas +
+   * fonctions serverless = latence sérielle importante). Le client doit appeler en
+   * boucle jusqu'à recevoir `hasMore: false`.
+   *
+   * Idempotent : mode `skipAuditRowCreation` + `skipNotifications` activé, donc :
+   *  - pas de duplication dans `padde_ci_audits`,
+   *  - pas de re-notification bruyante des admins/commando.
    */
   app.post("/api/webhooks/padde-ci/backfill", async (req, res) => {
     try {
@@ -1177,7 +1200,19 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         return res.status(503).json({ success: false, error: "Base de données non configurée (DATABASE_URL)." });
       }
 
-      const audits = await prisma.paddeCiAudit.findMany({ orderBy: { createdAt: "asc" } });
+      const body = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
+      const offsetRaw = Number(body.offset);
+      const limitRaw = Number(body.limit);
+      const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? Math.floor(offsetRaw) : 0;
+      const limit =
+        Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.floor(limitRaw), 50) : 15;
+
+      const total = await prisma.paddeCiAudit.count();
+      const audits = await prisma.paddeCiAudit.findMany({
+        orderBy: { createdAt: "asc" },
+        skip: offset,
+        take: limit,
+      });
 
       let processed = 0;
       let skipped = 0;
@@ -1190,7 +1225,11 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           continue;
         }
         try {
-          await persistPaddeAuditToStores(raw);
+          await persistPaddeAuditToStores(raw, {
+            existingAuditId: audit.id,
+            skipAuditRowCreation: true,
+            skipNotifications: true,
+          });
           processed += 1;
         } catch (err) {
           errors.push({
@@ -1200,12 +1239,18 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         }
       }
 
+      const nextOffset = offset + audits.length;
       return res.status(200).json({
         success: true,
-        totalAudits: audits.length,
+        totalAudits: total,
+        offset,
+        limit,
+        batchSize: audits.length,
         processed,
         skipped,
         failed: errors.length,
+        nextOffset,
+        hasMore: nextOffset < total,
         ...(errors.length > 0 ? { errors: errors.slice(0, 20) } : {}),
       });
     } catch (error) {
