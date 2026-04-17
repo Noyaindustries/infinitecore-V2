@@ -338,7 +338,7 @@ export default function MarketingLayout() {
       </header>
 
       {/* MAIN — le contenu passe sous la nav fixe (padding géré par les pages, ex. Home) */}
-      <main className="relative z-10 pt-[66px] sm:pt-[76px] md:flex-1 md:pt-[84px]">
+      <main className="relative z-10 pt-[112px] sm:pt-[128px] md:flex-1 md:pt-[84px]">
         <Outlet />
       </main>
 
