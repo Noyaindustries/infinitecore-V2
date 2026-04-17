@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { CheckCircle, Clock, Mail, Package, Shield, Users, Key, Edit2, Check, X } from 'lucide-react';
+import { CheckCircle, Clock, Mail, Package, Shield, Users, Key, Edit2, Check, X, UserPlus, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { db } from '@/lib/clientSdk';
-import { collection, onSnapshot, query, orderBy, doc, updateDoc, where } from '@/lib/mongoFirestore';
+import { collection, onSnapshot, query, orderBy } from '@/lib/mongoFirestore';
+import { apiRequest } from '@/lib/apiClient';
 
 interface UserData {
   uid: string;
@@ -23,6 +24,11 @@ export default function SuperAdminUsers() {
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [selectedRole, setSelectedRole] = useState<string>('');
+  const [savingRole, setSavingRole] = useState(false);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [createEmail, setCreateEmail] = useState('');
+  const [createRole, setCreateRole] = useState('client');
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
     // Try to fetch all users first to ensure we see something even if role filter fails due to index issues
@@ -74,16 +80,71 @@ export default function SuperAdminUsers() {
   }, []);
 
   const handleRoleChange = async (userId: string) => {
-    if (!selectedRole) return;
+    if (!selectedRole || savingRole) return;
+    setSavingRole(true);
     try {
-      await updateDoc(doc(db, 'users', userId), {
-        role: selectedRole
+      // Endpoint autoritaire : met à jour `UserAccount.role` ET `users.role` (doc miroir).
+      const result = await apiRequest<{
+        success: boolean;
+        unchanged?: boolean;
+        uid: string;
+        role: string;
+      }>('/api/auth/admin-role', {
+        method: 'POST',
+        body: JSON.stringify({ uid: userId, role: selectedRole }),
       });
-      toast.success('Rôle mis à jour avec succès');
+      toast.success(
+        result.unchanged
+          ? 'Rôle inchangé.'
+          : `Rôle mis à jour : ${getRoleLabel(result.role)}`
+      );
       setEditingUser(null);
+      setSelectedRole('');
     } catch (error) {
-      console.error("Error updating role:", error);
-      toast.error('Erreur lors de la mise à jour du rôle');
+      const message = error instanceof Error ? error.message : 'Erreur inconnue';
+      toast.error(`Mise à jour impossible : ${message}`);
+    } finally {
+      setSavingRole(false);
+    }
+  };
+
+  const handleCreateUser = async () => {
+    const email = createEmail.trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error('Email invalide.');
+      return;
+    }
+    if (!createRole) {
+      toast.error('Sélectionnez un rôle.');
+      return;
+    }
+    setCreating(true);
+    try {
+      const result = await apiRequest<{
+        success: boolean;
+        uid: string;
+        invitationSent: boolean;
+        resetTokenPreview?: string;
+      }>('/api/auth/admin-create', {
+        method: 'POST',
+        body: JSON.stringify({ email, role: createRole }),
+      });
+      toast.success(
+        result.invitationSent
+          ? `Compte créé — invitation envoyée à ${email}.`
+          : `Compte créé (UID: ${result.uid.slice(0, 10)}…).`
+      );
+      if (result.resetTokenPreview) {
+        console.info('[admin-create][dev] resetTokenPreview:', result.resetTokenPreview);
+      }
+      setIsCreateOpen(false);
+      setCreateEmail('');
+      setCreateRole('client');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur inconnue';
+      toast.error(`Création impossible : ${message}`);
+    } finally {
+      setCreating(false);
     }
   };
 
@@ -130,9 +191,19 @@ export default function SuperAdminUsers() {
           <p className="text-text-secondary mt-1 font-medium italic opacity-70 leading-relaxed">Supervision des accès et gestion des privilèges systèmes</p>
         </div>
         </div>
-        <div className="bg-noya-blue/10 border border-noya-blue/20 rounded-xl px-4 py-2 flex items-center gap-2 shadow-inner">
-          <Users size={16} className="text-noya-blue" />
-          <span className="text-sm font-black text-noya-blue">{usersList.length} Inscrits</span>
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setIsCreateOpen(true)}
+            className="inline-flex items-center gap-2 rounded-xl border border-noya-orange/30 bg-noya-orange/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-noya-orange transition-all hover:border-noya-orange/60 hover:bg-noya-orange/20"
+          >
+            <UserPlus size={14} />
+            Créer un utilisateur
+          </button>
+          <div className="bg-noya-blue/10 border border-noya-blue/20 rounded-xl px-4 py-2 flex items-center gap-2 shadow-inner">
+            <Users size={16} className="text-noya-blue" />
+            <span className="text-sm font-black text-noya-blue">{usersList.length} Inscrits</span>
+          </div>
         </div>
       </div>
 
@@ -225,14 +296,23 @@ export default function SuperAdminUsers() {
                             </select>
                             <button
                               onClick={() => handleRoleChange(user.uid)}
-                              className="p-1.5 bg-noya-green text-white rounded-lg hover:scale-110 transition-all bg-noya-green/20 text-noya-green"
+                              disabled={savingRole}
+                              className="p-1.5 rounded-lg bg-noya-green/20 text-noya-green transition-all hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
                               title="Valider"
                             >
-                              <Check size={14} />
+                              {savingRole ? (
+                                <Loader2 size={14} className="animate-spin" />
+                              ) : (
+                                <Check size={14} />
+                              )}
                             </button>
                             <button
-                              onClick={() => setEditingUser(null)}
-                              className="p-1.5 bg-noya-red text-white rounded-lg hover:scale-110 transition-all bg-noya-red/20 text-noya-red"
+                              onClick={() => {
+                                setEditingUser(null);
+                                setSelectedRole('');
+                              }}
+                              disabled={savingRole}
+                              className="p-1.5 rounded-lg bg-noya-red/20 text-noya-red transition-all hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
                               title="Annuler"
                             >
                               <X size={14} />
@@ -270,6 +350,116 @@ export default function SuperAdminUsers() {
           </table>
         </div>
       </div>
+
+      {isCreateOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-noya-black/80 p-4 backdrop-blur-md"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="create-user-title"
+        >
+          <div className="w-full max-w-md overflow-hidden rounded-3xl border border-white/10 bg-surface-secondary shadow-2xl">
+            <div className="flex items-center justify-between border-b border-border-subtle bg-surface-primary/50 p-6">
+              <div className="flex items-center gap-3">
+                <div className="h-1.5 w-6 rounded-full bg-noya-orange" />
+                <h2 id="create-user-title" className="text-lg font-black uppercase tracking-tight text-text-primary">
+                  Nouvel utilisateur
+                </h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateOpen(false)}
+                disabled={creating}
+                className="rounded-full p-2 text-text-secondary transition-all hover:bg-white/10 disabled:opacity-50"
+                aria-label="Fermer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleCreateUser();
+              }}
+              className="space-y-5 p-6"
+            >
+              <div className="space-y-2">
+                <label htmlFor="create-email" className="block text-[10px] font-black uppercase tracking-widest text-text-secondary">
+                  Email
+                </label>
+                <input
+                  id="create-email"
+                  type="email"
+                  autoFocus
+                  required
+                  value={createEmail}
+                  onChange={(e) => setCreateEmail(e.target.value)}
+                  disabled={creating}
+                  placeholder="utilisateur@domaine.com"
+                  className="w-full rounded-xl border border-border-subtle bg-surface-primary px-4 py-3 text-sm font-medium text-text-primary outline-none transition-all focus:border-noya-orange/60 focus:ring-2 focus:ring-noya-orange/30 disabled:opacity-50"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="create-role" className="block text-[10px] font-black uppercase tracking-widest text-text-secondary">
+                  Rôle
+                </label>
+                <select
+                  id="create-role"
+                  value={createRole}
+                  onChange={(e) => setCreateRole(e.target.value)}
+                  disabled={creating}
+                  className="w-full rounded-xl border border-border-subtle bg-surface-primary px-4 py-3 text-sm font-medium text-text-primary outline-none transition-all focus:border-noya-orange/60 focus:ring-2 focus:ring-noya-orange/30 disabled:opacity-50"
+                >
+                  {roles.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[11px] leading-relaxed text-text-secondary/70 italic">
+                  {roles.find((r) => r.value === createRole)?.description || ''}
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-noya-blue/20 bg-noya-blue/5 p-3">
+                <p className="text-[11px] leading-relaxed text-text-secondary">
+                  <span className="font-black text-noya-blue">Email d'invitation envoyé automatiquement</span> avec un lien sécurisé pour définir le mot de passe.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsCreateOpen(false)}
+                  disabled={creating}
+                  className="rounded-xl border border-border-subtle px-4 py-2.5 text-[10px] font-black uppercase tracking-widest text-text-secondary transition-all hover:bg-white/5 disabled:opacity-50"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating || !createEmail.trim()}
+                  className="inline-flex items-center gap-2 rounded-xl bg-noya-orange px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-noya-black transition-all hover:scale-[1.02] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {creating ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      Création…
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus size={14} />
+                      Créer et inviter
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

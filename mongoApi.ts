@@ -1638,6 +1638,94 @@ export function registerMongoApi(app: Express) {
     }
   });
 
+  app.post("/api/auth/admin-role", async (req: Request, res: Response) => {
+    try {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      if (auth.role !== "admin") {
+        return res.status(403).json({ success: false, error: "Accès refusé." });
+      }
+
+      const uid = String(req.body?.uid || "").trim();
+      const requestedRoleRaw = String(req.body?.role || "").trim().toLowerCase();
+      if (!uid) return res.status(400).json({ success: false, error: "UID requis." });
+      if (!isSafeDocId(uid)) {
+        return res.status(400).json({ success: false, error: "UID invalide." });
+      }
+      if (!VALID_ROLES.has(requestedRoleRaw)) {
+        return res.status(400).json({
+          success: false,
+          error: `Rôle invalide. Rôles autorisés : ${[...VALID_ROLES].join(", ")}.`,
+        });
+      }
+
+      const target = await prisma.userAccount.findUnique({
+        where: { uid },
+        select: { uid: true, email: true, role: true },
+      });
+      if (!target) {
+        return res.status(404).json({ success: false, error: "Utilisateur introuvable." });
+      }
+
+      // Garde-fou : un admin ne peut pas se rétrograder lui-même
+      // (évite le scénario « dernier admin qui se clique client »).
+      if (target.uid === auth.uid && requestedRoleRaw !== "admin") {
+        return res.status(400).json({
+          success: false,
+          error: "Vous ne pouvez pas modifier votre propre rôle d'admin.",
+        });
+      }
+
+      // Garde-fou : empêche la rétrogradation du dernier admin.
+      if (target.role === "admin" && requestedRoleRaw !== "admin") {
+        const adminsCount = await prisma.userAccount.count({ where: { role: "admin" } });
+        if (adminsCount <= 1) {
+          return res.status(400).json({
+            success: false,
+            error: "Impossible de rétrograder le dernier administrateur.",
+          });
+        }
+      }
+
+      if (target.role === requestedRoleRaw) {
+        return res.status(200).json({
+          success: true,
+          unchanged: true,
+          uid: target.uid,
+          role: requestedRoleRaw,
+        });
+      }
+
+      const updatedAccount = await prisma.userAccount.update({
+        where: { uid },
+        data: { role: requestedRoleRaw },
+      });
+
+      // Synchronise aussi le document miroir `users` (utilisé par l'UI temps réel).
+      await upsertDataDocument(
+        "users",
+        uid,
+        {
+          uid,
+          email: updatedAccount.email,
+          role: requestedRoleRaw,
+          updatedAt: new Date().toISOString(),
+          updatedByAdminUid: auth.uid,
+        },
+        true
+      );
+
+      return res.status(200).json({
+        success: true,
+        uid: updatedAccount.uid,
+        email: updatedAccount.email,
+        role: updatedAccount.role,
+      });
+    } catch (error) {
+      return sendAuthPrismaError(res, "[auth/admin-role]", error);
+    }
+  });
+
   app.post("/api/auth/admin-create", async (req: Request, res: Response) => {
     try {
       const auth = await requireAuth(req, res);

@@ -8,7 +8,10 @@ export const size = { width: 96, height: 96 };
 export const contentType = "image/png";
 
 export default function Icon() {
-  const filePath = join(process.cwd(), "public", "infinite-core-logo.png");
+  // Version carrée pré-cropée (générée par `scripts/make-icon-crop.ps1`) :
+  // contient uniquement le symbole d'infini, pas le texte "Infinite CORE"
+  // qui serait de toute façon illisible à 16/32 px.
+  const filePath = join(process.cwd(), "public", "infinite-core-icon.png");
   const src = `data:image/png;base64,${readFileSync(filePath).toString("base64")}`;
 
   return new ImageResponse(
@@ -20,19 +23,16 @@ export default function Icon() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#050816",
-          borderRadius: "50%",
-          border: "5px solid #D98A2C",
-          boxSizing: "border-box",
+          background: "#2B547E",
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- ImageResponse / Satori */}
         <img
           src={src}
           alt=""
-          width={72}
-          height={72}
-          style={{ objectFit: "contain" }}
+          width={96}
+          height={96}
+          style={{ objectFit: "cover" }}
         />
       </div>
     ),

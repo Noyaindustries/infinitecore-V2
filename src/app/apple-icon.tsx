@@ -8,7 +8,8 @@ export const size = { width: 180, height: 180 };
 export const contentType = "image/png";
 
 export default function AppleIcon() {
-  const filePath = join(process.cwd(), "public", "infinite-core-logo.png");
+  // Version carrée pré-cropée : symbole uniquement (voir `scripts/make-icon-crop.ps1`).
+  const filePath = join(process.cwd(), "public", "infinite-core-icon.png");
   const src = `data:image/png;base64,${readFileSync(filePath).toString("base64")}`;
 
   return new ImageResponse(
@@ -20,19 +21,16 @@ export default function AppleIcon() {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#050816",
-          borderRadius: "50%",
-          border: "8px solid #D98A2C",
-          boxSizing: "border-box",
+          background: "#2B547E",
         }}
       >
         {/* eslint-disable-next-line @next/next/no-img-element -- ImageResponse / Satori */}
         <img
           src={src}
           alt=""
-          width={132}
-          height={132}
-          style={{ objectFit: "contain" }}
+          width={180}
+          height={180}
+          style={{ objectFit: "cover" }}
         />
       </div>
     ),
