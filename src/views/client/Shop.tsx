@@ -83,78 +83,127 @@ export default function ClientShop() {
     setOrderSent(false);
   };
 
+  const submitOrderViaMessagerie = async (options?: { stripeUnavailable?: boolean }) => {
+    if (!auth.currentUser || !selectedService) return;
+    const clientName = `${userData?.firstName || ''} ${userData?.lastName || ''}`.trim() || auth.currentUser.email || 'Client';
+    const orderId = `CMD-${crypto.randomUUID().split('-')[0].toUpperCase()}`;
+    const isSub = selectedService.isSubscription === true;
+
+    await setDoc(doc(db, 'orders', orderId), {
+      id: orderId,
+      userId: auth.currentUser.uid,
+      clientName,
+      clientEmail: auth.currentUser.email,
+      serviceName: selectedService.title,
+      serviceId: selectedService.id,
+      isSubscription: isSub,
+      billingCycle: selectedService.billingCycle || null,
+      orderType: isSub ? 'abonnement' : 'service',
+      amount: selectedService.price,
+      note: note.trim() || null,
+      status: 'En attente',
+      paymentMode: isSub ? 'manuel-messagerie' : 'messagerie',
+      stripeUnavailable: options?.stripeUnavailable === true,
+      createdAt: new Date().toISOString(),
+    });
+
+    const subLine = isSub
+      ? `\n\nType : Abonnement ${selectedService.billingCycle || 'mensuel'} — paiement à organiser manuellement (Stripe non disponible).`
+      : '';
+
+    const msgRef = doc(collection(db, 'chats', auth.currentUser.uid, 'messages'));
+    await setDoc(msgRef, {
+      id: msgRef.id,
+      senderId: auth.currentUser.uid,
+      senderName: clientName,
+      senderRole: 'client',
+      text: `Demande de service : ${selectedService.title}${note ? `\n\nNote : ${note}` : ''}${subLine}`,
+      type: 'order',
+      orderDetails: {
+        serviceName: selectedService.title,
+        orderId,
+        isSubscription: isSub,
+        billingCycle: selectedService.billingCycle || null,
+      },
+      createdAt: new Date().toISOString(),
+      readByCommando: false,
+    });
+
+    await setDoc(doc(db, 'chats', auth.currentUser.uid), {
+      clientId: auth.currentUser.uid,
+      clientName,
+      clientEmail: auth.currentUser.email,
+      lastMessage: `Commande : ${selectedService.title}`,
+      lastMessageAt: new Date().toISOString(),
+      unreadCommando: true,
+    }, { merge: true });
+
+    try {
+      await apiRequest<{ success: boolean; notified?: number; error?: string }>(
+        '/api/orders/notify-team',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            orderId,
+            serviceName: selectedService.title,
+            note: note.trim() || null,
+            isSubscription: isSub,
+            billingCycle: selectedService.billingCycle || null,
+            stripeUnavailable: options?.stripeUnavailable === true,
+          }),
+        }
+      );
+    } catch (notifyError) {
+      // La commande est créée et le message envoyé : on ne bloque pas l'utilisateur si la notif échoue.
+      console.warn('[ClientShop] notify-team failed:', notifyError);
+    }
+
+    setOrderSent(true);
+  };
+
   const handleConfirmOrder = async () => {
     if (!auth.currentUser || !selectedService) return;
     setIsSubmitting(true);
 
     try {
       if (selectedService.isSubscription === true) {
-        const payload = await apiRequest<{
-          success: boolean;
-          checkoutUrl?: string;
-          error?: string;
-        }>('/api/stripe/checkout/subscription', {
-          method: 'POST',
-          body: JSON.stringify({
-            serviceId: selectedService.id,
-            serviceName: selectedService.title,
-            amount: selectedService.price,
-            billingCycle: selectedService.billingCycle || 'mensuel',
-            note: note.trim() || null,
-          }),
-        });
-        if (!payload?.checkoutUrl) {
-          throw new Error(payload?.error || "Impossible d'ouvrir la page de paiement.");
+        try {
+          const payload = await apiRequest<{
+            success: boolean;
+            checkoutUrl?: string;
+            error?: string;
+          }>('/api/stripe/checkout/subscription', {
+            method: 'POST',
+            body: JSON.stringify({
+              serviceId: selectedService.id,
+              serviceName: selectedService.title,
+              amount: selectedService.price,
+              billingCycle: selectedService.billingCycle || 'mensuel',
+              note: note.trim() || null,
+            }),
+          });
+          if (!payload?.checkoutUrl) {
+            throw new Error(payload?.error || "Impossible d'ouvrir la page de paiement.");
+          }
+          window.location.assign(payload.checkoutUrl);
+          return;
+        } catch (stripeError) {
+          const msg = stripeError instanceof Error ? stripeError.message : String(stripeError);
+          const stripeUnavailable = /Stripe non configur/i.test(msg) || /STRIPE_SECRET_KEY/i.test(msg);
+          if (!stripeUnavailable) {
+            throw stripeError;
+          }
+          await submitOrderViaMessagerie({ stripeUnavailable: true });
+          toast.success('Paiement en ligne indisponible — votre demande a été envoyée à l\'équipe via la messagerie.');
+          return;
         }
-        window.location.assign(payload.checkoutUrl);
-        return;
       }
 
-      const clientName = `${userData?.firstName || ''} ${userData?.lastName || ''}`.trim() || auth.currentUser.email || 'Client';
-      const orderId = `CMD-${crypto.randomUUID().split('-')[0].toUpperCase()}`;
-
-      await setDoc(doc(db, 'orders', orderId), {
-        id: orderId,
-        userId: auth.currentUser.uid,
-        clientName,
-        clientEmail: auth.currentUser.email,
-        serviceName: selectedService.title,
-        serviceId: selectedService.id,
-        isSubscription: selectedService.isSubscription === true,
-        billingCycle: selectedService.billingCycle || null,
-        orderType: selectedService.isSubscription === true ? 'abonnement' : 'service',
-        amount: selectedService.price,
-        note: note.trim() || null,
-        status: 'En attente',
-        createdAt: new Date().toISOString(),
-      });
-
-      const msgRef = doc(collection(db, 'chats', auth.currentUser.uid, 'messages'));
-      await setDoc(msgRef, {
-        id: msgRef.id,
-        senderId: auth.currentUser.uid,
-        senderName: clientName,
-        senderRole: 'client',
-        text: `Demande de service : ${selectedService.title}${note ? `\n\nNote : ${note}` : ''}`,
-        type: 'order',
-        orderDetails: { serviceName: selectedService.title, orderId },
-        createdAt: new Date().toISOString(),
-        readByCommando: false,
-      });
-
-      await setDoc(doc(db, 'chats', auth.currentUser.uid), {
-        clientId: auth.currentUser.uid,
-        clientName,
-        clientEmail: auth.currentUser.email,
-        lastMessage: `Commande : ${selectedService.title}`,
-        lastMessageAt: new Date().toISOString(),
-        unreadCommando: true,
-      }, { merge: true });
-
-      setOrderSent(true);
+      await submitOrderViaMessagerie();
     } catch (error) {
       console.error('Erreur commande:', error);
-      toast.error('Erreur lors de l\'envoi de la commande.');
+      const msg = error instanceof Error ? error.message : 'Erreur lors de l\'envoi de la commande.';
+      toast.error(msg);
     } finally {
       setIsSubmitting(false);
     }

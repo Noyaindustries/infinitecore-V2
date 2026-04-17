@@ -474,7 +474,7 @@ function getAllowedPrefixes(role: string, op: DataOperation): string[] {
   }
   if (role === "client") {
     if (op === "read") return ["users", "notifications", "missions", "dossier_steps", "payments", "orders", "chats"];
-    return ["users", "notifications", "chats", "dossier_steps"];
+    return ["users", "notifications", "chats", "dossier_steps", "orders"];
   }
   return [];
 }
@@ -530,6 +530,13 @@ function hasClientWritablePayload(auth: AuthPayload, collectionPath: string, dat
   if (isPath(collectionPath, "chats")) {
     const clientId = typeof data.clientId === "string" ? data.clientId : auth.uid;
     return clientId === auth.uid;
+  }
+  if (isPath(collectionPath, "orders")) {
+    const userId = typeof data.userId === "string" ? data.userId : "";
+    if (userId !== auth.uid) return false;
+    const status = typeof data.status === "string" ? data.status : "";
+    if (status && status !== "En attente" && status !== "Paiement en cours") return false;
+    return true;
   }
   if (isPath(collectionPath, "dossier_steps")) {
     const allowedKeys = new Set(["status", "validatedAt", "clientId"]);

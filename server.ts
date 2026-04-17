@@ -46,6 +46,7 @@ const DB_FILE_PUBLIC_ID_PREFIX = "dbf/";
 const MAX_DB_FALLBACK_BYTES = 8 * 1024 * 1024; // 8 MB (reste sous la limite Mongo ~16 MB après base64)
 const ORDERS_COLLECTION_PATH = "orders";
 const USERS_COLLECTION_PATH = "users";
+const NOTIFICATIONS_COLLECTION_PATH = "notifications";
 
 type SubscriptionOrderStatus = "En attente" | "Paiement en cours" | "Actif" | "Impayé" | "Annulé";
 
@@ -401,6 +402,102 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       });
     } catch (error) {
       console.error("[stripe/checkout/subscription]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
+  app.post("/api/orders/notify-team", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const orderId = String(body.orderId || "").trim();
+      const serviceName = String(body.serviceName || "").trim();
+      const note = String(body.note || "").trim();
+      const isSubscription = body.isSubscription === true;
+      const billingCycle = body.billingCycle ? String(body.billingCycle) : null;
+      const stripeUnavailable = body.stripeUnavailable === true;
+
+      if (!orderId || !serviceName) {
+        return res.status(400).json({ success: false, error: "Paramètres manquants." });
+      }
+
+      // Vérifie que la commande appartient bien à l'utilisateur authentifié (ou qu'il est admin/commando).
+      const orderRow = await prisma.dataDocument.findUnique({
+        where: {
+          collectionPath_docId: { collectionPath: ORDERS_COLLECTION_PATH, docId: orderId },
+        },
+      });
+      if (!orderRow) {
+        return res.status(404).json({ success: false, error: "Commande introuvable." });
+      }
+      const orderData = readDataRowAsRecord(orderRow.data);
+      const orderOwnerId = String(orderData.userId || "");
+      if (orderOwnerId !== auth.uid && auth.role !== "admin" && auth.role !== "commando") {
+        return res.status(403).json({ success: false, error: "Accès refusé." });
+      }
+
+      const clientName =
+        String(orderData.clientName || "").trim() ||
+        String(orderData.clientEmail || "").trim() ||
+        auth.email ||
+        "Client";
+
+      const teamRows = await prisma.dataDocument.findMany({
+        where: { collectionPath: USERS_COLLECTION_PATH },
+      });
+      const teamIds = teamRows
+        .map((row) => {
+          const data = readDataRowAsRecord(row.data);
+          const role = String(data.role || "").toLowerCase();
+          if (role !== "commando" && role !== "admin") return null;
+          const uid = String(data.uid || row.docId || "").trim();
+          return uid || null;
+        })
+        .filter((v): v is string => Boolean(v));
+
+      const subLine = isSubscription
+        ? ` — Abonnement ${billingCycle || "mensuel"}${stripeUnavailable ? " (paiement manuel, Stripe indisponible)" : ""}`
+        : "";
+      const title = "Nouvelle commande boutique";
+      const message = `${clientName} : ${serviceName}${subLine}${note ? ` — Note : ${note.slice(0, 140)}` : ""}`;
+
+      const now = new Date().toISOString();
+      let created = 0;
+      await Promise.all(
+        teamIds.map(async (uid) => {
+          const notifId = randomUUID();
+          await prisma.dataDocument.create({
+            data: {
+              collectionPath: NOTIFICATIONS_COLLECTION_PATH,
+              docId: notifId,
+              data: {
+                id: notifId,
+                userId: uid,
+                title,
+                message,
+                type: "order",
+                read: false,
+                createdAt: now,
+                metadata: {
+                  orderId,
+                  clientId: orderOwnerId,
+                  serviceName,
+                  isSubscription,
+                  billingCycle,
+                  stripeUnavailable,
+                },
+              } as never,
+            },
+          });
+          created += 1;
+        })
+      );
+
+      return res.status(200).json({ success: true, notified: created });
+    } catch (error) {
+      console.error("[orders/notify-team]", error);
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
