@@ -2833,9 +2833,9 @@ async function createExpressApplication() {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  const persistPaddeAuditToStores = async (data) => {
+  const persistPaddeAuditToStores = async (data, options = {}) => {
     const payload = data && typeof data === "object" ? data : {};
-    const auditId = `PADDE-${Math.floor(1e3 + Math.random() * 9e3)}`;
+    const auditId = options.existingAuditId?.trim() || `PADDE-${Math.floor(1e3 + Math.random() * 9e3)}`;
     const auditType = String(payload.type_audit || payload.type || payload.auditType || "Audit PADDE-CI").trim();
     const lowerKeyPayload = {};
     for (const [key, value] of Object.entries(payload)) {
@@ -2948,13 +2948,15 @@ async function createExpressApplication() {
         }
       }
     });
-    await prisma.paddeCiAudit.create({
-      data: {
-        id: auditId,
-        payload: payload ?? {},
-        processed: false
-      }
-    });
+    if (!options.skipAuditRowCreation) {
+      await prisma.paddeCiAudit.create({
+        data: {
+          id: auditId,
+          payload: payload ?? {},
+          processed: false
+        }
+      });
+    }
     await prisma.dataDocument.upsert({
       where: {
         collectionPath_docId: { collectionPath: ORDERS_COLLECTION_PATH, docId: auditId }
@@ -2998,6 +3000,9 @@ async function createExpressApplication() {
         }
       }
     });
+    if (options.skipNotifications) {
+      return { auditId };
+    }
     try {
       const recipients = await prisma.userAccount.findMany({
         where: { role: { in: ["commando", "admin"] } },
@@ -3125,7 +3130,17 @@ async function createExpressApplication() {
       if (!appEnv.database.url) {
         return res.status(503).json({ success: false, error: "Base de donn\xE9es non configur\xE9e (DATABASE_URL)." });
       }
-      const audits = await prisma.paddeCiAudit.findMany({ orderBy: { createdAt: "asc" } });
+      const body = req.body && typeof req.body === "object" ? req.body : {};
+      const offsetRaw = Number(body.offset);
+      const limitRaw = Number(body.limit);
+      const offset = Number.isFinite(offsetRaw) && offsetRaw >= 0 ? Math.floor(offsetRaw) : 0;
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.floor(limitRaw), 50) : 15;
+      const total = await prisma.paddeCiAudit.count();
+      const audits = await prisma.paddeCiAudit.findMany({
+        orderBy: { createdAt: "asc" },
+        skip: offset,
+        take: limit
+      });
       let processed = 0;
       let skipped = 0;
       const errors = [];
@@ -3136,7 +3151,11 @@ async function createExpressApplication() {
           continue;
         }
         try {
-          await persistPaddeAuditToStores(raw);
+          await persistPaddeAuditToStores(raw, {
+            existingAuditId: audit.id,
+            skipAuditRowCreation: true,
+            skipNotifications: true
+          });
           processed += 1;
         } catch (err) {
           errors.push({
@@ -3145,12 +3164,18 @@ async function createExpressApplication() {
           });
         }
       }
+      const nextOffset = offset + audits.length;
       return res.status(200).json({
         success: true,
-        totalAudits: audits.length,
+        totalAudits: total,
+        offset,
+        limit,
+        batchSize: audits.length,
         processed,
         skipped,
         failed: errors.length,
+        nextOffset,
+        hasMore: nextOffset < total,
         ...errors.length > 0 ? { errors: errors.slice(0, 20) } : {}
       });
     } catch (error) {
