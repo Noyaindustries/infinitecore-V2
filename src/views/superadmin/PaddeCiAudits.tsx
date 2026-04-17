@@ -14,12 +14,14 @@ import {
   ArrowRight,
   ClipboardCheck,
   Globe,
-  MessageSquare
+  MessageSquare,
+  RefreshCcw
 } from 'lucide-react';
 import { db } from '@/lib/clientSdk';
 import { useAuth } from '../../components/AuthProvider';
 import { collection, onSnapshot, query, orderBy, where, doc, updateDoc, setDoc } from '@/lib/mongoFirestore';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
+import { apiRequest } from '@/lib/apiClient';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -41,6 +43,36 @@ export default function PaddeCiAudits() {
   const [selected, setSelected] = useState<PaddeAudit | null>(null);
   const [isValidating, setIsValidating] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [isBackfilling, setIsBackfilling] = useState(false);
+
+  const handleBackfill = async () => {
+    if (isBackfilling) return;
+    if (!window.confirm('Synchroniser tous les audits PADDE-CI existants avec la liste Clients ? Cette opération est sûre (idempotente).')) {
+      return;
+    }
+    setIsBackfilling(true);
+    const loadingToast = toast.loading('Synchronisation des clients PADDE-CI…');
+    try {
+      const result = await apiRequest<{
+        success: boolean;
+        totalAudits: number;
+        processed: number;
+        skipped: number;
+        failed: number;
+      }>('/api/webhooks/padde-ci/backfill', { method: 'POST' });
+      toast.dismiss(loadingToast);
+      toast.success(
+        `Synchronisation OK — ${result.processed}/${result.totalAudits} audits traités` +
+          (result.failed > 0 ? ` (${result.failed} en erreur)` : '')
+      );
+    } catch (error) {
+      toast.dismiss(loadingToast);
+      const message = error instanceof Error ? error.message : 'Erreur inconnue';
+      toast.error(`Synchronisation impossible : ${message}`);
+    } finally {
+      setIsBackfilling(false);
+    }
+  };
 
   useEffect(() => {
     const q = query(
@@ -125,7 +157,17 @@ export default function PaddeCiAudits() {
               : 'Extraction des flux de données provenant de padde-ci.com'}
           </p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap items-center gap-4">
+          <button
+            type="button"
+            onClick={handleBackfill}
+            disabled={isBackfilling}
+            title="Rejoue la création des clients pour tous les audits PADDE-CI existants (idempotent)."
+            className="inline-flex items-center gap-2 rounded-xl border border-noya-blue/30 bg-noya-blue/10 px-4 py-2 text-[10px] font-black uppercase tracking-widest text-noya-blue transition-all hover:border-noya-blue/60 hover:bg-noya-blue/20 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <RefreshCcw size={14} className={isBackfilling ? 'animate-spin' : ''} />
+            {isBackfilling ? 'Synchronisation…' : 'Synchroniser les clients'}
+          </button>
           <div className="bg-noya-sidebar px-4 py-2 rounded-xl border border-white/5 shadow-sm flex items-center gap-3">
             <div className="w-2 h-2 bg-noya-green rounded-full shadow-[0_0_8px_rgba(43,198,115,0.8)]"></div>
             <span className="text-[10px] font-black uppercase tracking-widest text-text-secondary">

@@ -840,10 +840,28 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     >;
     const auditId = `PADDE-${Math.floor(1000 + Math.random() * 9000)}`;
     const auditType = String(payload.type_audit || payload.type || payload.auditType || "Audit PADDE-CI").trim();
+
+    // Recherche insensible à la casse et aux variantes (`Email`, `EMAIL_CLIENT`, `Contact Email`, etc.).
+    // Les formulaires externes PADDE-CI utilisent des noms de champs variables — on normalise une seule fois.
+    const lowerKeyPayload: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(payload)) {
+      lowerKeyPayload[key.trim().toLowerCase().replace(/[\s-]+/g, "_")] = value;
+    }
+    const firstFilled = (...keys: string[]): unknown => {
+      for (const k of keys) {
+        const v = lowerKeyPayload[k];
+        if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+      }
+      return undefined;
+    };
+
     const clientName = String(
-      payload.clientName || payload.nom || payload.name || payload.entreprise || payload.company || "Client PADDE-CI"
+      firstFilled("clientname", "client_name", "nom", "name", "entreprise", "company", "company_name") ??
+        "Client PADDE-CI"
     ).trim();
-    const normalizedWhatsapp = String(payload.whatsapp || payload.telephone || payload.phone || "").trim();
+    const normalizedWhatsapp = String(
+      firstFilled("whatsapp", "whats_app", "telephone", "tel", "phone", "phone_number", "mobile", "contact") ?? ""
+    ).trim();
     const createdAt = new Date().toISOString();
     const normalizeEmail = (value: unknown): string | null => {
       const raw = String(value || "").trim().toLowerCase();
@@ -853,68 +871,101 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     };
     const normalizeText = (value: unknown) => String(value || "").trim();
     const sanitizeIdSegment = (value: string) => value.replace(/[^a-z0-9._-]/gi, "_").slice(0, 80);
-    const email =
-      normalizeEmail(payload.email) ||
-      normalizeEmail(payload.email_client) ||
-      normalizeEmail(payload.clientEmail) ||
-      normalizeEmail(payload.mail) ||
-      normalizeEmail(payload["e-mail"]);
-    const firstName = normalizeText(payload.firstName || payload.prenom || payload.prenoms || payload.firstname);
-    const lastName = normalizeText(payload.lastName || payload.nom || payload.lastname);
-    const companyName = normalizeText(payload.companyName || payload.entreprise || payload.company);
+    const email = normalizeEmail(
+      firstFilled(
+        "email",
+        "email_client",
+        "clientemail",
+        "client_email",
+        "contactemail",
+        "contact_email",
+        "user_email",
+        "mail",
+        "e_mail",
+        "adresse_email",
+        "adresseemail"
+      )
+    );
+    const firstName = normalizeText(
+      firstFilled("firstname", "first_name", "prenom", "prenoms", "given_name")
+    );
+    const lastName = normalizeText(firstFilled("lastname", "last_name", "nom_famille", "family_name"));
+    const companyName = normalizeText(
+      firstFilled("companyname", "company_name", "entreprise", "company", "societe", "organization")
+    );
 
-    let linkedClientId: string | null = null;
+    // Journal dev/debug : utile pour identifier les champs réellement envoyés par les formulaires PADDE-CI.
+    if (!appEnv.node.isProduction) {
+      console.info("[padde-ci] payload reçu", {
+        keys: Object.keys(payload),
+        hasEmail: Boolean(email),
+        hasPhone: Boolean(normalizedWhatsapp),
+        auditId,
+        auditType,
+      });
+    }
+
+    // Création du docId stable :
+    // 1) compte Infinite Core existant (même email)  → on relie l'audit au compte
+    // 2) email fourni sans compte                    → docId `padde_<email>` (stable entre re-soumissions)
+    // 3) email absent                                → docId `padde_<auditId>` (unique par audit, évite la perte du client)
+    let linkedClientId: string;
     if (email) {
       const account = await prisma.userAccount.findUnique({
         where: { email },
         select: { uid: true, email: true },
       });
       linkedClientId = account?.uid || `padde_${sanitizeIdSegment(email)}`;
-
-      const existingUserDoc = await prisma.dataDocument.findUnique({
-        where: {
-          collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH, docId: linkedClientId },
-        },
-        select: { data: true },
-      });
-      const existingUserData = readDataRowAsRecord(existingUserDoc?.data);
-
-      await prisma.dataDocument.upsert({
-        where: {
-          collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH, docId: linkedClientId },
-        },
-        create: {
-          collectionPath: USERS_COLLECTION_PATH,
-          docId: linkedClientId,
-          data: {
-            uid: linkedClientId,
-            email,
-            role: "client",
-            firstName: firstName || existingUserData.firstName || "",
-            lastName: lastName || existingUserData.lastName || "",
-            phone: normalizedWhatsapp || existingUserData.phone || "",
-            companyName: companyName || existingUserData.companyName || "",
-            source: "padde-ci",
-            createdAt,
-            updatedAt: createdAt,
-          } as never,
-        },
-        update: {
-          data: {
-            ...existingUserData,
-            uid: linkedClientId,
-            email,
-            role: "client",
-            firstName: firstName || String(existingUserData.firstName || ""),
-            lastName: lastName || String(existingUserData.lastName || ""),
-            phone: normalizedWhatsapp || String(existingUserData.phone || ""),
-            companyName: companyName || String(existingUserData.companyName || ""),
-            source: "padde-ci",
-            updatedAt: createdAt,
-          } as never,
-        },
-      });
+    } else {
+      linkedClientId = `padde_${sanitizeIdSegment(auditId.toLowerCase())}`;
     }
+
+    const existingUserDoc = await prisma.dataDocument.findUnique({
+      where: {
+        collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH, docId: linkedClientId },
+      },
+      select: { data: true },
+    });
+    const existingUserData = readDataRowAsRecord(existingUserDoc?.data);
+
+    const [fallbackFirst = "", ...fallbackLastParts] = clientName.split(/\s+/).filter(Boolean);
+    const fallbackLast = fallbackLastParts.join(" ");
+
+    await prisma.dataDocument.upsert({
+      where: {
+        collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH, docId: linkedClientId },
+      },
+      create: {
+        collectionPath: USERS_COLLECTION_PATH,
+        docId: linkedClientId,
+        data: {
+          uid: linkedClientId,
+          email: email || null,
+          role: "client",
+          firstName: firstName || fallbackFirst || existingUserData.firstName || "",
+          lastName: lastName || fallbackLast || existingUserData.lastName || "",
+          phone: normalizedWhatsapp || existingUserData.phone || "",
+          companyName: companyName || existingUserData.companyName || "",
+          source: "padde-ci",
+          createdAt,
+          updatedAt: createdAt,
+        } as never,
+      },
+      update: {
+        data: {
+          ...existingUserData,
+          uid: linkedClientId,
+          email: email || existingUserData.email || null,
+          role: "client",
+          firstName: firstName || String(existingUserData.firstName || "") || fallbackFirst,
+          lastName: lastName || String(existingUserData.lastName || "") || fallbackLast,
+          phone: normalizedWhatsapp || String(existingUserData.phone || ""),
+          companyName: companyName || String(existingUserData.companyName || ""),
+          source: "padde-ci",
+          updatedAt: createdAt,
+        } as never,
+      },
+    });
 
     await prisma.paddeCiAudit.create({
       data: {
@@ -936,14 +987,15 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           source: "padde-ci",
           status: "En attente",
           createdAt,
-          ...(linkedClientId ? { clientId: linkedClientId, userId: linkedClientId } : {}),
+          clientId: linkedClientId,
+          userId: linkedClientId,
           ...(email ? { clientEmail: email } : {}),
           clientName,
           serviceName: `Audit PADDE-CI: ${auditType}`,
           details: {
             ...payload,
             email: email || null,
-            whatsapp: payload.whatsapp || payload.telephone || payload.phone || normalizedWhatsapp || null,
+            whatsapp: normalizedWhatsapp || null,
           },
         } as never,
       },
@@ -953,14 +1005,15 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           source: "padde-ci",
           status: "En attente",
           createdAt,
-          ...(linkedClientId ? { clientId: linkedClientId, userId: linkedClientId } : {}),
+          clientId: linkedClientId,
+          userId: linkedClientId,
           ...(email ? { clientEmail: email } : {}),
           clientName,
           serviceName: `Audit PADDE-CI: ${auditType}`,
           details: {
             ...payload,
             email: email || null,
-            whatsapp: payload.whatsapp || payload.telephone || payload.phone || normalizedWhatsapp || null,
+            whatsapp: normalizedWhatsapp || null,
           },
         } as never,
       },
@@ -1104,6 +1157,60 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     } catch (error) {
       console.error("Erreur GET Webhook PADDE-CI:", error);
       res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
+  /**
+   * Backfill admin — rejoue `persistPaddeAuditToStores` pour tous les audits PADDE-CI
+   * déjà en base afin de créer rétroactivement les documents `users` correspondants.
+   * Idempotent : les upserts par email/docId stable ne dupliquent rien.
+   */
+  app.post("/api/webhooks/padde-ci/backfill", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifié." });
+      if (auth.role !== "admin" && auth.role !== "commando") {
+        return res.status(403).json({ success: false, error: "Accès refusé." });
+      }
+
+      if (!appEnv.database.url) {
+        return res.status(503).json({ success: false, error: "Base de données non configurée (DATABASE_URL)." });
+      }
+
+      const audits = await prisma.paddeCiAudit.findMany({ orderBy: { createdAt: "asc" } });
+
+      let processed = 0;
+      let skipped = 0;
+      const errors: Array<{ id: string; error: string }> = [];
+
+      for (const audit of audits) {
+        const raw = audit.payload as Record<string, unknown> | null | undefined;
+        if (!raw || typeof raw !== "object") {
+          skipped += 1;
+          continue;
+        }
+        try {
+          await persistPaddeAuditToStores(raw);
+          processed += 1;
+        } catch (err) {
+          errors.push({
+            id: audit.id,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+
+      return res.status(200).json({
+        success: true,
+        totalAudits: audits.length,
+        processed,
+        skipped,
+        failed: errors.length,
+        ...(errors.length > 0 ? { errors: errors.slice(0, 20) } : {}),
+      });
+    } catch (error) {
+      console.error("[padde-ci][backfill]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
 
