@@ -929,7 +929,7 @@ function getAllowedPrefixes(role, op) {
   }
   if (role === "client") {
     if (op === "read") return ["users", "notifications", "missions", "dossier_steps", "payments", "orders", "chats"];
-    return ["users", "notifications", "chats", "dossier_steps"];
+    return ["users", "notifications", "chats", "dossier_steps", "orders"];
   }
   return [];
 }
@@ -975,6 +975,13 @@ function hasClientWritablePayload(auth, collectionPath, data) {
   if (isPath(collectionPath, "chats")) {
     const clientId = typeof data.clientId === "string" ? data.clientId : auth.uid;
     return clientId === auth.uid;
+  }
+  if (isPath(collectionPath, "orders")) {
+    const userId = typeof data.userId === "string" ? data.userId : "";
+    if (userId !== auth.uid) return false;
+    const status = typeof data.status === "string" ? data.status : "";
+    if (status && status !== "En attente" && status !== "Paiement en cours") return false;
+    return true;
   }
   if (isPath(collectionPath, "dossier_steps")) {
     const allowedKeys = /* @__PURE__ */ new Set(["status", "validatedAt", "clientId"]);
@@ -2207,6 +2214,7 @@ var DB_FILE_PUBLIC_ID_PREFIX = "dbf/";
 var MAX_DB_FALLBACK_BYTES = 8 * 1024 * 1024;
 var ORDERS_COLLECTION_PATH = "orders";
 var USERS_COLLECTION_PATH = "users";
+var NOTIFICATIONS_COLLECTION_PATH = "notifications";
 function normalizeBillingCycle(raw) {
   const v = String(raw || "").trim().toLowerCase();
   if (["mensuel", "monthly", "month", "mois"].includes(v)) return "month";
@@ -2525,6 +2533,84 @@ async function createExpressApplication() {
       });
     } catch (error) {
       console.error("[stripe/checkout/subscription]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app.post("/api/orders/notify-team", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+      const body = req.body ?? {};
+      const orderId = String(body.orderId || "").trim();
+      const serviceName = String(body.serviceName || "").trim();
+      const note = String(body.note || "").trim();
+      const isSubscription = body.isSubscription === true;
+      const billingCycle = body.billingCycle ? String(body.billingCycle) : null;
+      const stripeUnavailable = body.stripeUnavailable === true;
+      if (!orderId || !serviceName) {
+        return res.status(400).json({ success: false, error: "Param\xE8tres manquants." });
+      }
+      const orderRow = await prisma.dataDocument.findUnique({
+        where: {
+          collectionPath_docId: { collectionPath: ORDERS_COLLECTION_PATH, docId: orderId }
+        }
+      });
+      if (!orderRow) {
+        return res.status(404).json({ success: false, error: "Commande introuvable." });
+      }
+      const orderData = readDataRowAsRecord(orderRow.data);
+      const orderOwnerId = String(orderData.userId || "");
+      if (orderOwnerId !== auth.uid && auth.role !== "admin" && auth.role !== "commando") {
+        return res.status(403).json({ success: false, error: "Acc\xE8s refus\xE9." });
+      }
+      const clientName = String(orderData.clientName || "").trim() || String(orderData.clientEmail || "").trim() || auth.email || "Client";
+      const teamRows = await prisma.dataDocument.findMany({
+        where: { collectionPath: USERS_COLLECTION_PATH }
+      });
+      const teamIds = teamRows.map((row) => {
+        const data = readDataRowAsRecord(row.data);
+        const role = String(data.role || "").toLowerCase();
+        if (role !== "commando" && role !== "admin") return null;
+        const uid = String(data.uid || row.docId || "").trim();
+        return uid || null;
+      }).filter((v) => Boolean(v));
+      const subLine = isSubscription ? ` \u2014 Abonnement ${billingCycle || "mensuel"}${stripeUnavailable ? " (paiement manuel, Stripe indisponible)" : ""}` : "";
+      const title = "Nouvelle commande boutique";
+      const message = `${clientName} : ${serviceName}${subLine}${note ? ` \u2014 Note : ${note.slice(0, 140)}` : ""}`;
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      let created = 0;
+      await Promise.all(
+        teamIds.map(async (uid) => {
+          const notifId = (0, import_crypto3.randomUUID)();
+          await prisma.dataDocument.create({
+            data: {
+              collectionPath: NOTIFICATIONS_COLLECTION_PATH,
+              docId: notifId,
+              data: {
+                id: notifId,
+                userId: uid,
+                title,
+                message,
+                type: "order",
+                read: false,
+                createdAt: now,
+                metadata: {
+                  orderId,
+                  clientId: orderOwnerId,
+                  serviceName,
+                  isSubscription,
+                  billingCycle,
+                  stripeUnavailable
+                }
+              }
+            }
+          });
+          created += 1;
+        })
+      );
+      return res.status(200).json({ success: true, notified: created });
+    } catch (error) {
+      console.error("[orders/notify-team]", error);
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
