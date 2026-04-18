@@ -25,7 +25,34 @@ export const config = {
   },
 };
 
+/**
+ * Sur Vercel / `next start`, `req.url` peut rester une forme interne (`/api/[[...path]]`, etc.)
+ * alors que les segments réels sont dans `req.query.path` — Express ne matche alors aucune route → 404.
+ */
+function rewriteReqUrlForExpress(req: NextApiRequest): void {
+  const q = req.query.path;
+  const segments = q === undefined ? [] : Array.isArray(q) ? q : [q];
+  const clean = segments.map(String).filter(Boolean);
+  if (clean.length === 0) return;
+
+  const pathname = `/api/${clean.join("/")}`;
+  const raw = String(req.url || "");
+  const cut = raw.indexOf("?");
+  let search = "";
+  if (cut >= 0) {
+    const sp = new URLSearchParams(raw.slice(cut + 1));
+    sp.delete("path");
+    const rest = sp.toString();
+    if (rest) search = `?${rest}`;
+  }
+  const nextUrl = pathname + search;
+  const incoming = req as NextApiRequest & { originalUrl?: string };
+  incoming.url = nextUrl;
+  incoming.originalUrl = nextUrl;
+}
+
 export default async function apiGateway(req: NextApiRequest, res: NextApiResponse) {
+  rewriteReqUrlForExpress(req);
   const coldStartT0 = Date.now();
   // #region agent log
   agentSessionLog({

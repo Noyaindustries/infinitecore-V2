@@ -189,10 +189,24 @@ Deux modèles valides (ne pas mélanger sans le vouloir) :
 
 ### 8.3 Vérification rapide
 
-Depuis votre machine (secret identique à la prod) :
+**État de la config sur l’API (sans secret, sans auth)** — ouvrir dans le navigateur ou `curl` :
+
+`https://www.infinitecore.net/api/webhooks/padde-ci/config-check`
+
+Réponse JSON : `databaseConfigured`, `webhookSecretConfigured`, `vercelEnv` (sur Vercel : `production` vs `preview` — les variables d’environnement **ne sont pas les mêmes** entre Preview et Production).
+
+**Script tout-en-un** (config-check + POST test + option relais Netlify) :
+
+```bash
+npm run diagnose:padde -- --api https://www.infinitecore.net
+# avec relais Netlify :
+npm run diagnose:padde -- --api https://www.infinitecore.net --netlify https://VOTRE-SITE.netlify.app
+```
+
+Test webhook seul (corps complet) :
 
 ```bash
 node --env-file=.env scripts/testPaddeWebhook.mjs --url https://www.infinitecore.net/api/webhooks/padde-ci
 ```
 
-Si **200** + `success: true` : l’API prod enregistre bien. Si **401** : secret. Si **timeout / 5xx** : Mongo, cold start, ou URL incorrecte.
+Si **200** + `success: true` : l’API enregistre. Si **401** : secret différent ou mauvais environnement Vercel (Preview vs Production). Si **timeout / 5xx** : Mongo, cold start, ou URL incorrecte.

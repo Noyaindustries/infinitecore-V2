@@ -1266,6 +1266,27 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
 
   const paddeSecretExpected = paddeWebhookSecret.trim();
 
+  /**
+   * Diagnostic public (sans auth) : état de config côté API — utile quand le formulaire / Netlify « ne passe pas ».
+   * Ne divulgue pas le secret, seulement s’il est attendu ou non.
+   */
+  app.get("/api/webhooks/padde-ci/config-check", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).json({
+      ok: true,
+      databaseConfigured: Boolean(appEnv.database.url),
+      webhookSecretConfigured: paddeSecretExpected.length > 0,
+      nodeEnv: appEnv.node.env,
+      vercel: Boolean(process.env.VERCEL),
+      /** Sur Vercel : production | preview | development — les variables peuvent différer par environnement. */
+      vercelEnv: process.env.VERCEL_ENV || null,
+      hint:
+        paddeSecretExpected.length > 0
+          ? "L’API exige le même secret que PADDE_WEBHOOK_SECRET (header X-Webhook-Secret ou champs JSON webhookSecret / secret)."
+          : "Aucun PADDE_WEBHOOK_SECRET : les POST JSON sont acceptés sans secret (évitez en prod).",
+    });
+  });
+
   // Webhook PADDE-CI standard — appel serveur-à-serveur (header secret recommandé).
   app.post("/api/webhooks/padde-ci", async (req, res) => {
     try {
