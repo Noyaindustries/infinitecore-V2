@@ -1400,7 +1400,8 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         };
       });
 
-      res.status(200).json({ success: true, audits });
+      // Tableau brut : compatibles avec les bundles encore en cache qui font `rows.map` sans lire `.audits`.
+      res.status(200).json(audits);
     } catch (error) {
       console.error("Erreur GET Webhook PADDE-CI:", error);
       res.status(500).json({ success: false, error: "Erreur interne du serveur." });
