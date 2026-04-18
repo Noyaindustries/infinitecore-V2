@@ -591,11 +591,12 @@ function pickUserPublicData(input: Record<string, unknown>) {
 }
 
 function normalizeCollectionPath(path: string): string {
-  return path
+  const segments = path
     .split("/")
     .map((segment) => segment.trim())
-    .filter(Boolean)
-    .join("/");
+    .filter(Boolean);
+  if (segments[0] === "padde-ci-audits") segments[0] = "padde_ci_audits";
+  return segments.join("/");
 }
 
 function compareValues(left: unknown, operator: QueryFilter["operator"], right: unknown) {

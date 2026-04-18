@@ -41,6 +41,13 @@ function normalizePath(path: string) {
     .join("/");
 }
 
+/** Aligne les alias de chemins « Firestore » sur les noms stockés côté API (`data_documents`). */
+function canonicalDataCollectionPath(collectionPath: string): string {
+  const parts = normalizePath(collectionPath).split("/");
+  if (parts[0] === "padde-ci-audits") parts[0] = "padde_ci_audits";
+  return parts.join("/");
+}
+
 function splitDocPath(path: string): { collectionPath: string; docId: string } {
   const parts = normalizePath(path).split("/");
   if (parts.length < 2) throw new Error(`Chemin document invalide: ${path}`);
@@ -190,13 +197,14 @@ async function fetchQuery(q: Query | CollectionReference): Promise<QuerySnapshot
   }>("/api/data/query", {
     method: "POST",
     body: JSON.stringify({
-      collectionPath: path,
+      collectionPath: canonicalDataCollectionPath(path),
       filters: filters.map((f) => ({ field: f.field, operator: f.operator, value: f.value })),
       orders: orders.map((o) => ({ field: o.field, direction: o.direction })),
       limit: capped?.value,
     }),
   });
-  return toQuerySnapshot(path, payload.docs || []);
+  const rows = Array.isArray(payload.docs) ? payload.docs : [];
+  return toQuerySnapshot(path, rows);
 }
 
 export async function getDocs(q: Query | CollectionReference) {
@@ -205,8 +213,9 @@ export async function getDocs(q: Query | CollectionReference) {
 
 export async function getDoc<T = any>(ref: DocumentReference<T>) {
   const { collectionPath, docId } = splitDocPath(ref.path);
+  const apiCollectionPath = canonicalDataCollectionPath(collectionPath);
   const payload = await apiRequest<{ success: boolean; exists: boolean; doc: InternalDoc | null }>(
-    `/api/data/doc?collectionPath=${encodeURIComponent(collectionPath)}&docId=${encodeURIComponent(docId)}`
+    `/api/data/doc?collectionPath=${encodeURIComponent(apiCollectionPath)}&docId=${encodeURIComponent(docId)}`
   );
   const data = payload.exists && payload.doc ? (payload.doc.data as T) : null;
   return new DocumentSnapshot<T>(ref, data);
@@ -221,7 +230,7 @@ export async function setDoc<T extends DocData = DocData>(ref: DocumentReference
   await apiRequest("/api/data/doc", {
     method: "POST",
     body: JSON.stringify({
-      collectionPath,
+      collectionPath: canonicalDataCollectionPath(collectionPath),
       docId,
       data,
       merge: Boolean(options?.merge),
@@ -246,7 +255,7 @@ export async function updateDoc<T = any>(ref: DocumentReference<T>, updates: Par
   await apiRequest("/api/data/doc", {
     method: "PATCH",
     body: JSON.stringify({
-      collectionPath,
+      collectionPath: canonicalDataCollectionPath(collectionPath),
       docId,
       data: normalized,
       deleteKeys,
@@ -256,7 +265,8 @@ export async function updateDoc<T = any>(ref: DocumentReference<T>, updates: Par
 
 export async function deleteDoc<T = any>(ref: DocumentReference<T>) {
   const { collectionPath, docId } = splitDocPath(ref.path);
-  await apiRequest(`/api/data/doc?collectionPath=${encodeURIComponent(collectionPath)}&docId=${encodeURIComponent(docId)}`, {
+  const apiCollectionPath = canonicalDataCollectionPath(collectionPath);
+  await apiRequest(`/api/data/doc?collectionPath=${encodeURIComponent(apiCollectionPath)}&docId=${encodeURIComponent(docId)}`, {
     method: "DELETE",
   });
 }
