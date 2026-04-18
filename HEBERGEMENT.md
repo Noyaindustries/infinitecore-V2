@@ -165,3 +165,34 @@ Détail opérationnel : **[DEPLOY.md](DEPLOY.md)**.
 | Webhooks | HTTPS public vers l’API ; secrets dédiés. |
 
 **Conclusion** : le projet est hébergeable en **Vercel tout-en-un**, **monolithe Node**, ou architectures **split** sur mesure. Les points critiques sont : **variables complètes sur l’hôte qui exécute Prisma**, **CORS**, **MongoDB + secret JWT**, et **stockage objet** (R2) pour les fichiers en serverless.
+
+---
+
+## 8. Dépannage — webhooks PADDE-CI « rien ne passe »
+
+### 8.1 Formulaire padde-ci.com : où envoyer le POST ?
+
+Deux modèles valides (ne pas mélanger sans le vouloir) :
+
+| Modèle | URL à configurer côté formulaire | Variables |
+|--------|-----------------------------------|-----------|
+| **A — Direct vers l’API Vercel** | `https://www.infinitecore.net/api/webhooks/padde-ci` (ou `/direct` depuis le navigateur padde-ci.com) | **`PADDE_WEBHOOK_SECRET`** identique sur **Vercel** et dans le formulaire / header `X-Webhook-Secret`. Netlify **non utilisé** pour ce flux. |
+| **B — Relais Netlify** | `https://VOTRE-SITE.netlify.app/api/webhooks/padde-ci` | Sur **Netlify** : **`INFINITE_CORE_API_URL`** = base **Vercel** (ex. `https://www.infinitecore.net`), **pas** l’URL Netlify elle-même. **`PADDE_WEBHOOK_SECRET`** = même valeur que sur Vercel. |
+
+### 8.2 Causes fréquentes
+
+1. **Boucle Netlify** : `INFINITE_CORE_API_URL` pointe vers le même hôte que le site Netlify → le handler `padde-ci` relaie vers lui-même. Corriger vers l’URL Vercel (voir message d’erreur JSON renvoyé par la fonction).
+2. **`PADDE_WEBHOOK_SECRET`** différent entre l’appelant et Vercel → **401** sur l’API (corps souvent `Webhook non autorisé`).
+3. **`DATABASE_URL`** absent ou erroné sur **Vercel** → **503** ou **500** après réception du POST (Prisma ne peut pas écrire).
+4. **Liste d’URL dans une variable** (virgules dans `INFINITE_CORE_API_URL` ou `NEXTAUTH_URL`) → URL invalide ; utiliser **une seule** URL pour ces clés (sauf `CORS_ORIGIN` qui est prévu multi-origines).
+5. **Admin « Audits PADDE-CI » vide** alors que le webhook répond 200 : déployer la version qui liste via **`GET /api/webhooks/padde-ci`** (table `padde_ci_audits`) ; vérifier que vous êtes connecté **admin** ou **commando** sur le **même domaine** que l’API.
+
+### 8.3 Vérification rapide
+
+Depuis votre machine (secret identique à la prod) :
+
+```bash
+node --env-file=.env scripts/testPaddeWebhook.mjs --url https://www.infinitecore.net/api/webhooks/padde-ci
+```
+
+Si **200** + `success: true` : l’API prod enregistre bien. Si **401** : secret. Si **timeout / 5xx** : Mongo, cold start, ou URL incorrecte.

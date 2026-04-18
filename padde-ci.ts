@@ -12,8 +12,21 @@ import { appEnv } from "./src/config/env";
 
 const ALLOWED_ORIGINS = ["https://padde-ci.com", "https://www.padde-ci.com"];
 
+function normalizeHost(raw: string | undefined): string {
+  if (!raw) return "";
+  const first = raw.split(",")[0].trim();
+  return first.replace(/:\d+$/, "").toLowerCase();
+}
+
+/** Base HTTPS de l’API (sans slash final). Une seule URL ; si plusieurs sont collées par erreur, on garde la première. */
 function apiBase(): string {
-  const raw = (appEnv.integrations.infiniteCoreApiUrl || appEnv.http.apiPublicUrl || "").trim();
+  let raw = (appEnv.integrations.infiniteCoreApiUrl || appEnv.http.apiPublicUrl || "").trim();
+  if (raw.includes(",")) {
+    raw = raw.split(",")[0].trim();
+  }
+  if (!/^https?:\/\//i.test(raw)) {
+    return "";
+  }
   return raw.replace(/\/$/, "");
 }
 
@@ -34,13 +47,49 @@ export const handler: Handler = async (event) => {
 
   const base = apiBase();
   if (!base) {
-    console.error("padde-ci: INFINITE_CORE_API_URL (ou API_PUBLIC_URL) non défini.");
+    console.error("padde-ci: INFINITE_CORE_API_URL (ou API_PUBLIC_URL) non défini ou URL invalide (https://… requis).");
     return {
       statusCode: 503,
       headers,
       body: JSON.stringify({
         success: false,
-        error: "API Infinite Core non configurée (INFINITE_CORE_API_URL).",
+        error:
+          "API Infinite Core non configurée : sur Netlify définissez INFINITE_CORE_API_URL (ou API_PUBLIC_URL) = URL HTTPS de l’API Vercel/Express, sans slash final — pas une liste séparée par des virgules.",
+      }),
+    };
+  }
+
+  const incomingHost = normalizeHost(
+    String(
+      event.headers["x-forwarded-host"] ||
+        event.headers["X-Forwarded-Host"] ||
+        event.headers.host ||
+        event.headers.Host ||
+        ""
+    )
+  );
+  let targetHost = "";
+  try {
+    targetHost = normalizeHost(new URL(base).hostname);
+  } catch {
+    return {
+      statusCode: 503,
+      headers,
+      body: JSON.stringify({
+        success: false,
+        error: "INFINITE_CORE_API_URL / API_PUBLIC_URL n’est pas une URL HTTP(S) valide.",
+      }),
+    };
+  }
+  if (incomingHost && targetHost && incomingHost === targetHost) {
+    console.error("padde-ci: boucle — INFINITE_CORE_API_URL pointe vers ce même hôte Netlify.", { incomingHost });
+    return {
+      statusCode: 503,
+      headers,
+      body: JSON.stringify({
+        success: false,
+        error:
+          "Configuration Netlify : INFINITE_CORE_API_URL ne doit pas être l’URL de ce site Netlify (boucle infinie). Mettez l’URL où tourne réellement l’API (ex. https://www.infinitecore.net).",
       }),
     };
   }

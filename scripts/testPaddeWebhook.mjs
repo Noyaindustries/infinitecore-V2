@@ -110,6 +110,12 @@ try {
 console.log("HTTP", res.status);
 console.log(JSON.stringify(json, null, 2));
 
+if (res.status === 401) {
+  console.error(
+    "\n401 Webhook non autorisé : la valeur de PADDE_WEBHOOK_SECRET (fichier .env / --env-file) doit être **identique** à celle définie sur l’hôte cible (ex. Vercel). Si tu passes par Netlify, le même secret doit aussi figurer dans les variables Netlify.\n"
+  );
+}
+
 if (!res.ok) {
   process.exitCode = 1;
 } else if (json && json.success !== true) {

@@ -1241,12 +1241,37 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     return { auditId };
   };
 
+  /** Secret fourni par l’appelant : header (recommandé), puis corps JSON `webhookSecret` / `secret`, puis `?secret=`. */
+  const extractPaddeProvidedSecret = (req: Request): string => {
+    const headerSecret = String(req.headers["x-webhook-secret"] || "").trim();
+    if (headerSecret) return headerSecret;
+    if (req.body && typeof req.body === "object" && !Array.isArray(req.body)) {
+      const b = req.body as Record<string, unknown>;
+      const bodySecret = String(b.webhookSecret ?? b.secret ?? "").trim();
+      if (bodySecret) return bodySecret;
+    }
+    const qRaw = req.query?.secret;
+    const qSecret = (Array.isArray(qRaw) ? String(qRaw[0] ?? "") : String(qRaw ?? "")).trim();
+    if (qSecret) return qSecret;
+    return "";
+  };
+
+  const bodyWithoutWebhookSecrets = (body: unknown): unknown => {
+    if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+    const o = { ...(body as Record<string, unknown>) };
+    delete o.webhookSecret;
+    delete o.secret;
+    return o;
+  };
+
+  const paddeSecretExpected = paddeWebhookSecret.trim();
+
   // Webhook PADDE-CI standard — appel serveur-à-serveur (header secret recommandé).
   app.post("/api/webhooks/padde-ci", async (req, res) => {
     try {
-      if (paddeWebhookSecret) {
-        const provided = String(req.headers["x-webhook-secret"] || "");
-        if (!provided || !secureSecretEquals(paddeWebhookSecret, provided)) {
+      if (paddeSecretExpected) {
+        const provided = extractPaddeProvidedSecret(req);
+        if (!provided || !secureSecretEquals(paddeSecretExpected, provided)) {
           return res.status(401).json({ success: false, error: "Webhook non autorisé." });
         }
       }
@@ -1256,7 +1281,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           error: "Base de données non configurée : définissez DATABASE_URL (MongoDB) pour Prisma.",
         });
       }
-      await persistPaddeAuditToStores(req.body);
+      await persistPaddeAuditToStores(bodyWithoutWebhookSecrets(req.body));
       res.status(200).json({ success: true, message: "Demande d'audit reçue et traitée avec succès." });
     } catch (error) {
       console.error("Erreur Webhook PADDE-CI:", error);
@@ -1274,15 +1299,12 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
 
       const bodyPayload =
         req.body && typeof req.body === "object" ? ({ ...(req.body as Record<string, unknown>) } as Record<string, unknown>) : {};
-      const bodySecret = String(bodyPayload.webhookSecret || bodyPayload.secret || "");
-      const querySecret = String(req.query.secret || "");
-      const headerSecret = String(req.headers["x-webhook-secret"] || "");
-      const providedSecret = headerSecret || bodySecret || querySecret;
+      const providedSecret = extractPaddeProvidedSecret(req);
       delete bodyPayload.webhookSecret;
       delete bodyPayload.secret;
 
-      if (paddeWebhookSecret) {
-        if (!providedSecret || !secureSecretEquals(paddeWebhookSecret, providedSecret)) {
+      if (paddeSecretExpected) {
+        if (!providedSecret || !secureSecretEquals(paddeSecretExpected, providedSecret)) {
           return res.status(401).json({ success: false, error: "Webhook non autorisé." });
         }
       }
