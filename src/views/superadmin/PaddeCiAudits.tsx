@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { db } from '@/lib/clientSdk';
 import { useAuth } from '../../components/AuthProvider';
-import { collection, onSnapshot, query, orderBy, where, doc, updateDoc, setDoc } from '@/lib/mongoFirestore';
+import { collection, limit, onSnapshot, query, orderBy, where, doc, updateDoc, setDoc } from '@/lib/mongoFirestore';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import { apiRequest } from '@/lib/apiClient';
 import toast from 'react-hot-toast';
@@ -113,7 +113,8 @@ export default function PaddeCiAudits() {
     const q = query(
       collection(db, 'orders'),
       where('source', '==', 'padde-ci'),
-      orderBy('createdAt', 'desc')
+      orderBy('createdAt', 'desc'),
+      limit(500)
     );
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setAudits(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PaddeAudit)));

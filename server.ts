@@ -223,7 +223,9 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         return callback(null, false);
       },
       methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT", "HEAD"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+      // Inclure X-Webhook-Secret : sans lui, les POST cross-origin depuis padde-ci.com
+      // vers /api/webhooks/padde-ci/direct échouent au préflight (navigateur).
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-Webhook-Secret"],
       credentials: true,
     })
   );

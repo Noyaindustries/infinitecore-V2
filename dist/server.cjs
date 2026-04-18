@@ -439,6 +439,7 @@ function registerDataRoutes(app, deps) {
       const fetchCap = Math.max(1, Math.floor(deps.queryFetchCap));
       const rows = await deps.prisma.dataDocument.findMany({
         where: { collectionPath },
+        orderBy: { updatedAt: "desc" },
         take: fetchCap
       });
       const normalized = rows.map((row) => ({
@@ -2438,7 +2439,9 @@ async function createExpressApplication() {
         return callback(null, false);
       },
       methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT", "HEAD"],
-      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+      // Inclure X-Webhook-Secret : sans lui, les POST cross-origin depuis padde-ci.com
+      // vers /api/webhooks/padde-ci/direct échouent au préflight (navigateur).
+      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-Webhook-Secret"],
       credentials: true
     })
   );

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot } from '@/lib/mongoFirestore';
+import { collection, limit, onSnapshot, orderBy, query } from '@/lib/mongoFirestore';
 import { db } from '@/lib/clientSdk';
 import toast from 'react-hot-toast';
 
@@ -31,12 +31,14 @@ export function useCommandoClients() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Tri côté API sur `data.updatedAt` + limite (plafond 1000 côté serveur) : évite de ne
+    // recevoir qu’un lot arbitraire de 100 profils sans les comptes créés via PADDE-CI.
     const unsub = onSnapshot(
-      collection(db, 'users'),
+      query(collection(db, 'users'), orderBy('updatedAt', 'desc'), limit(2000)),
       (snap) => {
         const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() } as CommandoClientRow));
 
-        // Fallback: reconstitue le nom du parrain via l'UID si le champ nommé n'existe pas encore.
+        // Fallback: reconstitue le nom du parrain via l’UID si le champ nommé n’existe pas encore.
         const partnerNameById = new Map<string, string>();
         for (const row of rows) {
           const role = String(row.role || '').toLowerCase();

@@ -122,8 +122,12 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       // MongoDB + Prisma : pas de filtre `Json.path` fiable — on charge par `collectionPath`
       // puis on applique les filtres en mémoire (déjà implémentés et testés côté `mongoApi`).
       const fetchCap = Math.max(1, Math.floor(deps.queryFetchCap));
+      // Toujours les documents les plus récemment modifiés en premier : les webhooks
+      // (ex. PADDE-CI) mettent à jour `updatedAt` — sinon `take` sans ordre peut exclure
+      // les nouvelles entrées si la collection dépasse le plafond.
       const rows = await deps.prisma.dataDocument.findMany({
         where: { collectionPath } as never,
+        orderBy: { updatedAt: "desc" },
         take: fetchCap,
       });
 

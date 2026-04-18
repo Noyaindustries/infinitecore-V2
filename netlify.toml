@@ -6,6 +6,9 @@
 
 [functions]
   node_bundler = "esbuild"
+  # Les implémentations vivent à la racine (`padde-ci.ts`, `files-*.ts`) ; ce dossier
+  # expose les handlers attendus par `/.netlify/functions/*`.
+  directory = "netlify/functions"
 
 [[redirects]]
   from = "/api/webhooks/padde-ci"
