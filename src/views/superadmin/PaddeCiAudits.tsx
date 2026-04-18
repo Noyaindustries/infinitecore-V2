@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { 
   CheckCircle, 
@@ -20,7 +20,6 @@ import {
 import { db } from '@/lib/clientSdk';
 import { useAuth } from '../../components/AuthProvider';
 import { collection, doc, updateDoc, setDoc } from '@/lib/mongoFirestore';
-import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import { apiRequest } from '@/lib/apiClient';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -45,6 +44,8 @@ export default function PaddeCiAudits() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isBackfilling, setIsBackfilling] = useState(false);
   const [backfillProgress, setBackfillProgress] = useState<{ done: number; total: number } | null>(null);
+  const [listFetchError, setListFetchError] = useState<string | null>(null);
+  const lastListErrorToast = useRef<string | null>(null);
 
   const handleBackfill = async () => {
     if (isBackfilling) return;
@@ -112,22 +113,32 @@ export default function PaddeCiAudits() {
   // En prod le volume `orders` peut dépasser le scan élargi de /api/data/query : on lit `padde_ci_audits` via GET.
   useEffect(() => {
     let cancelled = false;
+    type Row = {
+      id: string;
+      type_audit?: string;
+      date?: string;
+      clientName?: string;
+      serviceName?: string;
+      status?: string;
+      createdAt?: string;
+      details?: Record<string, unknown>;
+      donnees_completes?: Record<string, unknown>;
+    };
     const load = async () => {
       try {
-        const rows = await apiRequest<
-          Array<{
-            id: string;
-            type_audit?: string;
-            date?: string;
-            clientName?: string;
-            serviceName?: string;
-            status?: string;
-            createdAt?: string;
-            details?: Record<string, unknown>;
-            donnees_completes?: Record<string, unknown>;
-          }>
-        >('/api/webhooks/padde-ci');
+        const raw = await apiRequest<{ success?: boolean; audits?: Row[] } | Row[]>('/api/webhooks/padde-ci');
         if (cancelled) return;
+        const rows: Row[] = Array.isArray(raw)
+          ? raw
+          : raw && typeof raw === 'object' && Array.isArray(raw.audits)
+            ? raw.audits
+            : [];
+        if (!Array.isArray(rows)) {
+          setListFetchError('Réponse API inattendue.');
+          return;
+        }
+        setListFetchError(null);
+        lastListErrorToast.current = null;
         const mapped: PaddeAudit[] = rows.map((r) => ({
           id: r.id,
           clientName: String(r.clientName || 'Client PADDE-CI').trim() || 'Client PADDE-CI',
@@ -138,7 +149,13 @@ export default function PaddeCiAudits() {
         }));
         setAudits(mapped);
       } catch (error) {
-        handleFirestoreError(error, OperationType.LIST, 'padde-ci-audits');
+        if (cancelled) return;
+        const msg = error instanceof Error ? error.message : String(error);
+        setListFetchError(msg);
+        if (lastListErrorToast.current !== msg) {
+          lastListErrorToast.current = msg;
+          toast.error(`Impossible de charger les audits : ${msg}`, { id: 'padde-audit-list', duration: 8000 });
+        }
       }
     };
     void load();
@@ -181,8 +198,8 @@ export default function PaddeCiAudits() {
       );
       setSelected(null);
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, 'orders');
-      toast.error('Erreur lors de la validation.');
+      const msg = error instanceof Error ? error.message : String(error);
+      toast.error(`Erreur lors de la validation : ${msg}`);
     } finally {
       setIsValidating(null);
     }
@@ -209,6 +226,23 @@ export default function PaddeCiAudits() {
 
   return (
     <div className="p-6 space-y-8">
+      {listFetchError ? (
+        <div
+          role="alert"
+          className="rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100"
+        >
+          <p className="font-black uppercase tracking-widest text-[10px] text-red-200 mb-1">
+            Chargement de la liste impossible
+          </p>
+          <p className="font-mono text-xs opacity-90 break-all">{listFetchError}</p>
+          <p className="mt-2 text-xs text-red-200/80 leading-relaxed">
+            401 / « Non authentifié » : reconnecte-toi sur le même domaine que le site (ex.{' '}
+            <span className="whitespace-nowrap">https://www.infinitecore.net</span>), compte{' '}
+            <strong>admin</strong> ou <strong>commando</strong>. Apex <code className="text-[10px]">infinitecore.net</code> et{' '}
+            <code className="text-[10px]">www</code> ne partagent pas les cookies.
+          </p>
+        </div>
+      ) : null}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-black text-text-primary tracking-tight uppercase">Audits PADDE-CI</h1>

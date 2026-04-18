@@ -1400,7 +1400,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         };
       });
 
-      res.status(200).json(audits);
+      res.status(200).json({ success: true, audits });
     } catch (error) {
       console.error("Erreur GET Webhook PADDE-CI:", error);
       res.status(500).json({ success: false, error: "Erreur interne du serveur." });

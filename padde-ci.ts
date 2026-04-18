@@ -119,7 +119,13 @@ export const handler: Handler = async (event) => {
       const text = await res.text();
       let audits: unknown = [];
       try {
-        audits = JSON.parse(text) as unknown;
+        const parsed = JSON.parse(text) as unknown;
+        if (Array.isArray(parsed)) audits = parsed;
+        else if (parsed && typeof parsed === "object" && Array.isArray((parsed as { audits?: unknown }).audits)) {
+          audits = (parsed as { audits: unknown[] }).audits;
+        } else {
+          audits = [];
+        }
       } catch {
         audits = [];
       }
