@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { db } from '@/lib/clientSdk';
 import { useAuth } from '../../components/AuthProvider';
-import { collection, limit, onSnapshot, query, orderBy, where, doc, updateDoc, setDoc } from '@/lib/mongoFirestore';
+import { collection, doc, updateDoc, setDoc } from '@/lib/mongoFirestore';
 import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
 import { apiRequest } from '@/lib/apiClient';
 import toast from 'react-hot-toast';
@@ -109,19 +109,44 @@ export default function PaddeCiAudits() {
     }
   };
 
+  // En prod le volume `orders` peut dépasser le scan élargi de /api/data/query : on lit `padde_ci_audits` via GET.
   useEffect(() => {
-    const q = query(
-      collection(db, 'orders'),
-      where('source', '==', 'padde-ci'),
-      orderBy('createdAt', 'desc'),
-      limit(500)
-    );
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      setAudits(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as PaddeAudit)));
-    }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, 'orders');
-    });
-    return () => unsubscribe();
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const rows = await apiRequest<
+          Array<{
+            id: string;
+            type_audit?: string;
+            date?: string;
+            clientName?: string;
+            serviceName?: string;
+            status?: string;
+            createdAt?: string;
+            details?: Record<string, unknown>;
+            donnees_completes?: Record<string, unknown>;
+          }>
+        >('/api/webhooks/padde-ci');
+        if (cancelled) return;
+        const mapped: PaddeAudit[] = rows.map((r) => ({
+          id: r.id,
+          clientName: String(r.clientName || 'Client PADDE-CI').trim() || 'Client PADDE-CI',
+          serviceName: String(r.serviceName || `Audit PADDE-CI: ${r.type_audit || 'audit'}`).trim(),
+          status: String(r.status || 'En attente').trim() || 'En attente',
+          createdAt: String(r.createdAt || r.date || '').trim() || new Date().toISOString(),
+          details: (r.details && typeof r.details === 'object' ? r.details : r.donnees_completes) || {},
+        }));
+        setAudits(mapped);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.LIST, 'padde-ci-audits');
+      }
+    };
+    void load();
+    const intervalId = window.setInterval(load, 2000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
   }, []);
 
   const handleValidate = async (audit: PaddeAudit) => {

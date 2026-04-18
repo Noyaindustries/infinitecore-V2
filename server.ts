@@ -111,16 +111,45 @@ async function requireAuthenticatedUser(req: Request, res: Response, next: NextF
   }
 }
 
-async function requireAdminUser(req: Request, res: Response, next: NextFunction) {
+/** Liste audits PADDE-CI : même accès que la page /admin et /superadmin (admin + commando). */
+async function requirePaddeAuditViewer(req: Request, res: Response, next: NextFunction) {
   try {
     const auth = await readAuthenticatedUser(req);
     if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
-    if (auth.role !== "admin") return res.status(403).json({ success: false, error: "Acces refuse." });
+    if (auth.role !== "admin" && auth.role !== "commando") {
+      return res.status(403).json({ success: false, error: "Acces refuse." });
+    }
     return next();
   } catch (error) {
-    console.error("[auth] middleware admin:", error);
+    console.error("[auth] middleware padde audits:", error);
     return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
   }
+}
+
+function paddeClientNameFromPayload(payload: Record<string, unknown> | null | undefined): string {
+  if (!payload) return "";
+  const lower: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    lower[key.trim().toLowerCase().replace(/[\s-]+/g, "_")] = value;
+  }
+  const first = (...keys: string[]): string => {
+    for (const k of keys) {
+      const v = lower[k];
+      if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
+    }
+    return "";
+  };
+  return first(
+    "clientname",
+    "client_name",
+    "nom",
+    "name",
+    "entreprise",
+    "company",
+    "company_name",
+    "societe",
+    "organization"
+  );
 }
 
 /** Application Express (routes `/api/*`, `/health`) sans `listen` — utilisée par `startServer` et par le dev unifié Next+API. */
@@ -1272,8 +1301,8 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     }
   });
 
-  // GET audits PADDE-CI (ex. admin.html) — lecture MongoDB
-  app.get("/api/webhooks/padde-ci", requireAdminUser, async (req, res) => {
+  // GET audits PADDE-CI — source `padde_ci_audits` (fiable en prod même si /api/data/query ne parcourt pas tout `orders`).
+  app.get("/api/webhooks/padde-ci", requirePaddeAuditViewer, async (req, res) => {
     try {
       if (!appEnv.database.url) {
         return res.status(503).json({ success: false, error: "Base de données non configurée (DATABASE_URL)." });
@@ -1283,6 +1312,14 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         orderBy: { createdAt: "desc" },
         take: 500,
       });
+      const ids = rows.map((r) => r.id);
+      const orderRows =
+        ids.length > 0
+          ? await prisma.dataDocument.findMany({
+              where: { collectionPath: ORDERS_COLLECTION_PATH, docId: { in: ids } },
+            })
+          : [];
+      const orderById = new Map(orderRows.map((r) => [r.docId, readDataRowAsRecord(r.data)]));
 
       const audits = rows.map((row) => {
         const payload = row.payload as Record<string, unknown> | null | undefined;
@@ -1293,11 +1330,30 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
               ? (payload.type_audit as string)
               : "audit-inconnu";
 
+        const order = orderById.get(row.id);
+        const clientName = String(order?.clientName || paddeClientNameFromPayload(payload) || "Client PADDE-CI").trim();
+        const serviceName = String(order?.serviceName || `Audit PADDE-CI: ${typeFromPayload}`).trim();
+        const status = String(order?.status || "En attente").trim() || "En attente";
+        const createdAtRaw = order?.createdAt;
+        const createdAt =
+          typeof createdAtRaw === "string" && createdAtRaw.trim()
+            ? createdAtRaw
+            : row.createdAt.toISOString();
+        const details =
+          order && typeof order.details === "object" && order.details !== null
+            ? (order.details as Record<string, unknown>)
+            : (payload ?? {});
+
         return {
           id: row.id,
           type_audit: typeFromPayload,
           date: row.createdAt.toISOString(),
           donnees_completes: payload ?? {},
+          clientName,
+          serviceName,
+          status,
+          createdAt,
+          details,
         };
       });
 

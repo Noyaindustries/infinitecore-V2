@@ -2375,16 +2375,43 @@ async function requireAuthenticatedUser(req, res, next) {
     return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
   }
 }
-async function requireAdminUser(req, res, next) {
+async function requirePaddeAuditViewer(req, res, next) {
   try {
     const auth = await readAuthenticatedUser(req);
     if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
-    if (auth.role !== "admin") return res.status(403).json({ success: false, error: "Acces refuse." });
+    if (auth.role !== "admin" && auth.role !== "commando") {
+      return res.status(403).json({ success: false, error: "Acces refuse." });
+    }
     return next();
   } catch (error) {
-    console.error("[auth] middleware admin:", error);
+    console.error("[auth] middleware padde audits:", error);
     return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
   }
+}
+function paddeClientNameFromPayload(payload) {
+  if (!payload) return "";
+  const lower = {};
+  for (const [key, value] of Object.entries(payload)) {
+    lower[key.trim().toLowerCase().replace(/[\s-]+/g, "_")] = value;
+  }
+  const first = (...keys) => {
+    for (const k of keys) {
+      const v = lower[k];
+      if (v !== void 0 && v !== null && String(v).trim() !== "") return String(v).trim();
+    }
+    return "";
+  };
+  return first(
+    "clientname",
+    "client_name",
+    "nom",
+    "name",
+    "entreprise",
+    "company",
+    "company_name",
+    "societe",
+    "organization"
+  );
 }
 async function createExpressApplication() {
   const app = (0, import_express.default)();
@@ -3392,7 +3419,7 @@ async function createExpressApplication() {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.get("/api/webhooks/padde-ci", requireAdminUser, async (req, res) => {
+  app.get("/api/webhooks/padde-ci", requirePaddeAuditViewer, async (req, res) => {
     try {
       if (!appEnv.database.url) {
         return res.status(503).json({ success: false, error: "Base de donn\xE9es non configur\xE9e (DATABASE_URL)." });
@@ -3401,14 +3428,31 @@ async function createExpressApplication() {
         orderBy: { createdAt: "desc" },
         take: 500
       });
+      const ids = rows.map((r) => r.id);
+      const orderRows = ids.length > 0 ? await prisma.dataDocument.findMany({
+        where: { collectionPath: ORDERS_COLLECTION_PATH, docId: { in: ids } }
+      }) : [];
+      const orderById = new Map(orderRows.map((r) => [r.docId, readDataRowAsRecord(r.data)]));
       const audits = rows.map((row) => {
         const payload = row.payload;
         const typeFromPayload = typeof payload?.type === "string" ? payload.type : typeof payload?.type_audit === "string" ? payload.type_audit : "audit-inconnu";
+        const order = orderById.get(row.id);
+        const clientName = String(order?.clientName || paddeClientNameFromPayload(payload) || "Client PADDE-CI").trim();
+        const serviceName = String(order?.serviceName || `Audit PADDE-CI: ${typeFromPayload}`).trim();
+        const status = String(order?.status || "En attente").trim() || "En attente";
+        const createdAtRaw = order?.createdAt;
+        const createdAt = typeof createdAtRaw === "string" && createdAtRaw.trim() ? createdAtRaw : row.createdAt.toISOString();
+        const details = order && typeof order.details === "object" && order.details !== null ? order.details : payload ?? {};
         return {
           id: row.id,
           type_audit: typeFromPayload,
           date: row.createdAt.toISOString(),
-          donnees_completes: payload ?? {}
+          donnees_completes: payload ?? {},
+          clientName,
+          serviceName,
+          status,
+          createdAt,
+          details
         };
       });
       res.status(200).json(audits);

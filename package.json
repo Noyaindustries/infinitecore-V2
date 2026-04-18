@@ -13,6 +13,7 @@
     "start": "cross-env NODE_ENV=production node dist/startUnified.cjs",
     "start:api": "cross-env START_LISTEN=1 node dist/server.cjs",
     "verify:deploy": "node scripts/verifyDeploy.mjs",
+    "test:padde-webhook": "node scripts/testPaddeWebhook.mjs",
     "lint": "tsc --noEmit",
     "test": "npm run test:rbac && npm run test:data-query",
     "test:e2e": "playwright test",
