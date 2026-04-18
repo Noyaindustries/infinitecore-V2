@@ -422,6 +422,12 @@ function parseDataQueryInput(body) {
     offset
   };
 }
+function isOrdersPaddeCiSourceOnlyQuery(collectionPath, filters) {
+  if (collectionPath !== "orders") return false;
+  if (filters.length !== 1) return false;
+  const f = filters[0];
+  return f.field === "source" && f.operator === "==" && String(f.value) === "padde-ci";
+}
 function registerDataRoutes(app, deps) {
   app.post("/api/data/query", async (req, res) => {
     try {
@@ -437,30 +443,60 @@ function registerDataRoutes(app, deps) {
       const authz = deps.assertDataQueryAuthorized(auth, collectionPath, filters);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
       const fetchCap = Math.max(1, Math.floor(deps.queryFetchCap));
-      const rows = await deps.prisma.dataDocument.findMany({
-        where: { collectionPath },
-        orderBy: { updatedAt: "desc" },
-        take: fetchCap
-      });
-      const normalized = rows.map((row) => ({
-        docId: row.docId,
-        data: deps.coerceRecord(row.data)
-      }));
-      const filtered = deps.applyFilters(normalized, filters);
+      const paddeOrdersWide = isOrdersPaddeCiSourceOnlyQuery(collectionPath, filters);
+      let totalScanned = 0;
+      let filtered;
+      if (paddeOrdersWide) {
+        const PAGE_SIZE = 2500;
+        const MAX_RAW_DOCS = 15e4;
+        const matches = [];
+        let skip = 0;
+        while (totalScanned < MAX_RAW_DOCS) {
+          const page = await deps.prisma.dataDocument.findMany({
+            where: { collectionPath },
+            orderBy: { updatedAt: "desc" },
+            take: PAGE_SIZE,
+            skip
+          });
+          if (page.length === 0) break;
+          totalScanned += page.length;
+          const normalizedPage = page.map((row) => ({
+            docId: row.docId,
+            data: deps.coerceRecord(row.data)
+          }));
+          matches.push(...deps.applyFilters(normalizedPage, filters));
+          skip += page.length;
+          if (page.length < PAGE_SIZE) break;
+        }
+        filtered = matches;
+      } else {
+        const rows = await deps.prisma.dataDocument.findMany({
+          where: { collectionPath },
+          orderBy: { updatedAt: "desc" },
+          take: fetchCap
+        });
+        totalScanned = rows.length;
+        const normalized = rows.map((row) => ({
+          docId: row.docId,
+          data: deps.coerceRecord(row.data)
+        }));
+        filtered = deps.applyFilters(normalized, filters);
+      }
       const ordered = deps.applyOrder(filtered, orders);
       const paged = ordered.slice(parsed.offset, parsed.offset + parsed.limit);
       return res.status(200).json({
         success: true,
         docs: paged.map((row) => ({ id: row.docId, data: row.data })),
         queryMeta: {
-          scannedDocuments: rows.length,
+          scannedDocuments: totalScanned,
           fetchCap,
           matchedAfterFilter: filtered.length,
           returned: paged.length,
           offset: parsed.offset,
           limit: parsed.limit,
           /** `true` si on a atteint le plafond : d'autres documents peuvent exister en base non chargés. */
-          mayHaveMoreInDatabase: rows.length >= fetchCap
+          mayHaveMoreInDatabase: paddeOrdersWide ? totalScanned >= 15e4 : totalScanned >= fetchCap,
+          ...paddeOrdersWide ? { wideScanPaddeOrders: true } : {}
         }
       });
     } catch (error) {
@@ -3084,7 +3120,7 @@ async function createExpressApplication() {
   });
   const persistPaddeAuditToStores = async (data, options = {}) => {
     const payload = data && typeof data === "object" ? data : {};
-    const auditId = options.existingAuditId?.trim() || `PADDE-${Math.floor(1e3 + Math.random() * 9e3)}`;
+    const auditId = options.existingAuditId?.trim() || `PADDE-${(0, import_crypto3.randomUUID)().replace(/-/g, "")}`;
     const auditType = String(payload.type_audit || payload.type || payload.auditType || "Audit PADDE-CI").trim();
     const lowerKeyPayload = {};
     for (const [key, value] of Object.entries(payload)) {

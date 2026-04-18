@@ -71,6 +71,14 @@ export function parseDataQueryInput(body: unknown) {
  * Utile pour tests / référence — **non supporté** par le connecteur Prisma MongoDB
  * sur les champs `Json` (cf. doc Prisma : filtrage avancé JSON = PostgreSQL / MySQL uniquement).
  */
+/** Requête typique « Audits PADDE-CI » : sans parcours élargi, le filtre `source` est appliqué après un `take` trop petit et peut masquer toutes les lignes. */
+export function isOrdersPaddeCiSourceOnlyQuery(collectionPath: string, filters: QueryFilter[]): boolean {
+  if (collectionPath !== "orders") return false;
+  if (filters.length !== 1) return false;
+  const f = filters[0];
+  return f.field === "source" && f.operator === "==" && String(f.value) === "padde-ci";
+}
+
 export function buildDbFiltersFromQueryFilters(filters: QueryFilter[]) {
   const dbFilters: unknown[] = [];
   for (const filter of filters) {
@@ -122,20 +130,50 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       // MongoDB + Prisma : pas de filtre `Json.path` fiable — on charge par `collectionPath`
       // puis on applique les filtres en mémoire (déjà implémentés et testés côté `mongoApi`).
       const fetchCap = Math.max(1, Math.floor(deps.queryFetchCap));
-      // Toujours les documents les plus récemment modifiés en premier : les webhooks
-      // (ex. PADDE-CI) mettent à jour `updatedAt` — sinon `take` sans ordre peut exclure
-      // les nouvelles entrées si la collection dépasse le plafond.
-      const rows = await deps.prisma.dataDocument.findMany({
-        where: { collectionPath } as never,
-        orderBy: { updatedAt: "desc" },
-        take: fetchCap,
-      });
+      const paddeOrdersWide = isOrdersPaddeCiSourceOnlyQuery(collectionPath, filters);
 
-      const normalized = rows.map((row) => ({
-        docId: row.docId,
-        data: deps.coerceRecord(row.data),
-      }));
-      const filtered = deps.applyFilters(normalized, filters);
+      let totalScanned = 0;
+      let filtered: Array<{ docId: string; data: Record<string, unknown> }>;
+
+      if (paddeOrdersWide) {
+        // Parcourt la collection par pages jusqu'à épuisement (plafond sécurité) : les commandes
+        // PADDE sont rares par rapport au volume total `orders` après migration Prisma.
+        const PAGE_SIZE = 2500;
+        const MAX_RAW_DOCS = 150_000;
+        const matches: Array<{ docId: string; data: Record<string, unknown> }> = [];
+        let skip = 0;
+        while (totalScanned < MAX_RAW_DOCS) {
+          const page = await deps.prisma.dataDocument.findMany({
+            where: { collectionPath } as never,
+            orderBy: { updatedAt: "desc" },
+            take: PAGE_SIZE,
+            skip,
+          });
+          if (page.length === 0) break;
+          totalScanned += page.length;
+          const normalizedPage = page.map((row) => ({
+            docId: row.docId,
+            data: deps.coerceRecord(row.data),
+          }));
+          matches.push(...deps.applyFilters(normalizedPage, filters));
+          skip += page.length;
+          if (page.length < PAGE_SIZE) break;
+        }
+        filtered = matches;
+      } else {
+        const rows = await deps.prisma.dataDocument.findMany({
+          where: { collectionPath } as never,
+          orderBy: { updatedAt: "desc" },
+          take: fetchCap,
+        });
+        totalScanned = rows.length;
+        const normalized = rows.map((row) => ({
+          docId: row.docId,
+          data: deps.coerceRecord(row.data),
+        }));
+        filtered = deps.applyFilters(normalized, filters);
+      }
+
       const ordered = deps.applyOrder(filtered, orders);
       const paged = ordered.slice(parsed.offset, parsed.offset + parsed.limit);
 
@@ -143,14 +181,17 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
         success: true,
         docs: paged.map((row) => ({ id: row.docId, data: row.data })),
         queryMeta: {
-          scannedDocuments: rows.length,
+          scannedDocuments: totalScanned,
           fetchCap,
           matchedAfterFilter: filtered.length,
           returned: paged.length,
           offset: parsed.offset,
           limit: parsed.limit,
           /** `true` si on a atteint le plafond : d'autres documents peuvent exister en base non chargés. */
-          mayHaveMoreInDatabase: rows.length >= fetchCap,
+          mayHaveMoreInDatabase: paddeOrdersWide
+            ? totalScanned >= 150_000
+            : totalScanned >= fetchCap,
+          ...(paddeOrdersWide ? { wideScanPaddeOrders: true as const } : {}),
         },
       });
     } catch (error) {

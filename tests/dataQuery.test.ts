@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import { buildDbFiltersFromQueryFilters, parseDataQueryInput, type QueryFilter } from "../src/api/dataRoutes";
+import {
+  buildDbFiltersFromQueryFilters,
+  isOrdersPaddeCiSourceOnlyQuery,
+  parseDataQueryInput,
+  type QueryFilter,
+} from "../src/api/dataRoutes";
 
 const parsed = parseDataQueryInput({
   collectionPath: " users ",
@@ -25,5 +30,18 @@ const filters: QueryFilter[] = [
 const dbFilters = buildDbFiltersFromQueryFilters(filters);
 assert.ok(Array.isArray(dbFilters));
 assert.equal(dbFilters?.length, 3);
+
+assert.equal(
+  isOrdersPaddeCiSourceOnlyQuery("orders", [{ field: "source", operator: "==", value: "padde-ci" }]),
+  true
+);
+assert.equal(
+  isOrdersPaddeCiSourceOnlyQuery("orders", [
+    { field: "source", operator: "==", value: "padde-ci" },
+    { field: "status", operator: "==", value: "En attente" },
+  ]),
+  false
+);
+assert.equal(isOrdersPaddeCiSourceOnlyQuery("users", [{ field: "source", operator: "==", value: "padde-ci" }]), false);
 
 console.log("Data query tests passed");

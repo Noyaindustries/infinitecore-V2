@@ -963,8 +963,9 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       string,
       unknown
     >;
-    const auditId =
-      options.existingAuditId?.trim() || `PADDE-${Math.floor(1000 + Math.random() * 9000)}`;
+    // Anciennement PADDE-{1000..9999} : collisions fréquentes → `paddeCiAudit.create` échoue (id unique)
+    // et le webhook renvoie 500 sans créer la commande `orders` (admin vide).
+    const auditId = options.existingAuditId?.trim() || `PADDE-${randomUUID().replace(/-/g, "")}`;
     const auditType = String(payload.type_audit || payload.type || payload.auditType || "Audit PADDE-CI").trim();
 
     // Recherche insensible à la casse et aux variantes (`Email`, `EMAIL_CLIENT`, `Contact Email`, etc.).
