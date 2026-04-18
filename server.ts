@@ -1271,7 +1271,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
    * Ne divulgue pas le secret, seulement s’il est attendu ou non.
    */
   app.get("/api/webhooks/padde-ci/config-check", (_req, res) => {
-    res.setHeader("Cache-Control", "no-store");
+    res.setHeader("Cache-Control", "private, no-store, max-age=0, must-revalidate");
     return res.status(200).json({
       ok: true,
       databaseConfigured: Boolean(appEnv.database.url),
@@ -1347,6 +1347,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   // GET audits PADDE-CI — source `padde_ci_audits` (fiable en prod même si /api/data/query ne parcourt pas tout `orders`).
   app.get("/api/webhooks/padde-ci", requirePaddeAuditViewer, async (req, res) => {
     try {
+      res.setHeader("Cache-Control", "private, no-store, max-age=0, must-revalidate");
       if (!appEnv.database.url) {
         return res.status(503).json({ success: false, error: "Base de données non configurée (DATABASE_URL)." });
       }

@@ -127,12 +127,14 @@ function signAuthToken(payload: AuthPayload) {
 }
 
 function authCookieOptions() {
+  const domain = appEnv.auth.cookieDomain;
   return {
     httpOnly: true as const,
     sameSite: "lax" as const,
     secure: appEnv.node.isProduction,
     path: "/",
     maxAge: AUTH_COOKIE_TTL_MS,
+    ...(domain ? { domain } : {}),
   };
 }
 
@@ -141,11 +143,13 @@ function setAuthCookie(res: Response, token: string) {
 }
 
 function clearAuthCookie(res: Response) {
+  const domain = appEnv.auth.cookieDomain;
   res.clearCookie(AUTH_COOKIE_NAME, {
     httpOnly: true,
     sameSite: "lax",
     secure: appEnv.node.isProduction,
     path: "/",
+    ...(domain ? { domain } : {}),
   });
 }
 

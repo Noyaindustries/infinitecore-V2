@@ -61,7 +61,8 @@ const SuperAdminCommando = lazy(() => import('./views/superadmin/Commando'));
 const SuperAdminDevelopers = lazy(() => import('./views/superadmin/Developers'));
 const SuperAdminSupervision = lazy(() => import('./views/superadmin/Supervision'));
 const SuperAdminSettings = lazy(() => import('./views/superadmin/Settings'));
-const PaddeCiAudits = lazy(() => import('./views/superadmin/PaddeCiAudits'));
+/** Chunk dédié : change le nom de fichier hashé pour éviter un vieux bundle « .map » en cache après correctifs API. */
+const PaddeCiAudits = lazy(() => import(/* webpackChunkName: "padde-ci-audits-v3" */ './views/superadmin/PaddeCiAudits'));
 const SuperAdminMissions = lazy(() => import('./views/superadmin/Missions'));
 const PartnerDashboard = lazy(() => import('./views/partner/Dashboard'));
 const PartnerClients = lazy(() => import('./views/partner/Clients'));

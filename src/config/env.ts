@@ -92,6 +92,19 @@ export const appEnv = {
     jwtAudience: str("JWT_AUDIENCE", "infinitecore-web"),
     getJwtSecret,
     resetAppBaseUrl,
+    /**
+     * Domaine du cookie `ic_auth_token` (ex. `.infinitecore.net`).
+     * Requis si le navigateur charge le site sur un hôte et que `NEXT_PUBLIC_API_BASE_URL`
+     * pointe vers un **autre** hôte du même domaine : sans cela le cookie reste « host-only »
+     * et les `fetch` vers l’API n’envoient pas la session → 401 sur `/api/webhooks/padde-ci`, etc.
+     */
+    get cookieDomain(): string | undefined {
+      const raw = str("AUTH_COOKIE_DOMAIN");
+      if (!raw) return undefined;
+      const host = raw.replace(/^\./, "").split(":")[0]?.toLowerCase() ?? "";
+      if (!host || host === "localhost" || host.startsWith("127.")) return undefined;
+      return raw.startsWith(".") ? raw : `.${raw}`;
+    },
   },
   http: {
     /** Liste brute pour parser côté Express (CORS). */

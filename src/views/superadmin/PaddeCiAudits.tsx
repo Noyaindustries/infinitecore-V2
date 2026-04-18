@@ -34,6 +34,29 @@ interface PaddeAudit {
   details?: Record<string, any>;
 }
 
+type PaddeAuditRow = {
+  id: string;
+  type_audit?: string;
+  date?: string;
+  clientName?: string;
+  serviceName?: string;
+  status?: string;
+  createdAt?: string;
+  details?: Record<string, unknown>;
+  donnees_completes?: Record<string, unknown>;
+};
+
+/** Tolère tableau brut, `{ audits }`, ou réponse inattendue — évite « .map is not a function ». */
+function normalizePaddeAuditsPayload(raw: unknown): PaddeAuditRow[] {
+  if (raw == null) return [];
+  if (Array.isArray(raw)) return raw as PaddeAuditRow[];
+  if (typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    if (Array.isArray(o.audits)) return o.audits as PaddeAuditRow[];
+  }
+  return [];
+}
+
 export default function PaddeCiAudits() {
   const location = useLocation();
   const isCommandoSpace = location.pathname.startsWith('/admin');
@@ -113,28 +136,24 @@ export default function PaddeCiAudits() {
   // En prod le volume `orders` peut dépasser le scan élargi de /api/data/query : on lit `padde_ci_audits` via GET.
   useEffect(() => {
     let cancelled = false;
-    type Row = {
-      id: string;
-      type_audit?: string;
-      date?: string;
-      clientName?: string;
-      serviceName?: string;
-      status?: string;
-      createdAt?: string;
-      details?: Record<string, unknown>;
-      donnees_completes?: Record<string, unknown>;
-    };
     const load = async () => {
       try {
-        const raw = await apiRequest<{ success?: boolean; audits?: Row[] } | Row[]>('/api/webhooks/padde-ci');
+        const raw = await apiRequest<unknown>('/api/webhooks/padde-ci');
         if (cancelled) return;
-        const rows: Row[] = Array.isArray(raw)
-          ? raw
-          : raw && typeof raw === 'object' && Array.isArray(raw.audits)
-            ? raw.audits
-            : [];
-        if (!Array.isArray(rows)) {
-          setListFetchError('Réponse API inattendue.');
+        const rows = normalizePaddeAuditsPayload(raw);
+        const looksLikeWrongShape =
+          raw != null &&
+          typeof raw === "object" &&
+          !Array.isArray(raw) &&
+          rows.length === 0 &&
+          !("audits" in (raw as object));
+        if (looksLikeWrongShape) {
+          const keys = Object.keys(raw as object).join(", ");
+          setListFetchError(
+            keys
+              ? `Réponse API inattendue (pas un tableau, pas « audits » : ${keys.slice(0, 120)}).`
+              : "Réponse API inattendue."
+          );
           return;
         }
         setListFetchError(null);
@@ -235,12 +254,18 @@ export default function PaddeCiAudits() {
             Chargement de la liste impossible
           </p>
           <p className="font-mono text-xs opacity-90 break-all">{listFetchError}</p>
-          <p className="mt-2 text-xs text-red-200/80 leading-relaxed">
-            401 / « Non authentifié » : reconnecte-toi sur le même domaine que le site (ex.{' '}
-            <span className="whitespace-nowrap">https://www.infinitecore.net</span>), compte{' '}
-            <strong>admin</strong> ou <strong>commando</strong>. Apex <code className="text-[10px]">infinitecore.net</code> et{' '}
-            <code className="text-[10px]">www</code> ne partagent pas les cookies.
-          </p>
+          <ul className="mt-2 text-xs text-red-200/80 list-disc pl-4 space-y-1 leading-relaxed">
+            <li>
+              Compte <strong>admin</strong> ou <strong>commando</strong>, et même hôte que la barre d&apos;adresse (ex. toujours{' '}
+              <span className="whitespace-nowrap">https://www.infinitecore.net</span>).
+            </li>
+            <li>
+              Si <code className="text-[10px]">NEXT_PUBLIC_API_BASE_URL</code> pointe vers un autre hôte (apex,{' '}
+              <code className="text-[10px]">api.</code>, etc.), le cookie de session peut rester sur l&apos;hôte de la page
+              uniquement : définissez <code className="text-[10px]">AUTH_COOKIE_DOMAIN=.votredomaine.net</code> sur
+              l&apos;API, ou laissez l&apos;URL API vide pour des requêtes relatives <code className="text-[10px]">/api/…</code> sur le même site.
+            </li>
+          </ul>
         </div>
       ) : null}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
