@@ -101,7 +101,7 @@ export default function PartnerLayout() {
   ];
 
   return (
-    <div className="min-h-screen bg-noya-black flex flex-col md:flex-row font-sans text-text-primary">
+    <div className="application-workspace min-h-screen flex flex-col md:flex-row font-sans text-text-primary">
       {/* Mobile Header */}
       <div className="md:hidden bg-black border-b border-white/5 text-[#F2F4F8] px-4 py-3 min-h-[60px] flex justify-between items-center z-50 relative">
         <Logo lightText className="h-12 md:h-[5rem]" />
@@ -156,7 +156,7 @@ export default function PartnerLayout() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col min-h-0 md:min-h-screen overflow-hidden bg-noya-black text-text-primary">
+      <main className="flex-1 flex flex-col min-h-0 md:min-h-screen overflow-hidden bg-transparent text-text-primary">
         {/* Top bar */}
         <header className="bg-black border-b border-white/5 px-6 py-3 hidden md:flex items-center justify-end gap-4 z-40 relative">
           {/* Theme Toggle */}

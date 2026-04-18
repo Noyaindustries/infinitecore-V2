@@ -134,6 +134,11 @@ export const appEnv = {
   integrations: {
     infiniteCoreApiUrl: str("INFINITE_CORE_API_URL"),
   },
+  /** Alertes e-mail équipe (en plus des notifications in-app). */
+  notifications: {
+    /** E-mails supplémentaires (virgules / point-virgules), fusionnés avec `user_accounts` rôles admin & commando. */
+    staffNotifyEmails: str("STAFF_NOTIFY_EMAILS"),
+  },
   data: {
     /**
      * Max documents `data_documents` chargés par `POST /api/data/query` (une collection)

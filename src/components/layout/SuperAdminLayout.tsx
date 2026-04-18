@@ -152,7 +152,7 @@ export default function SuperAdminLayout() {
   };
 
   return (
-    <div className="min-h-screen bg-surface-primary flex flex-col md:flex-row font-sans text-text-primary">
+    <div className="application-workspace min-h-screen flex flex-col md:flex-row font-sans text-text-primary">
       {/* Mobile Header */}
       <div className="md:hidden bg-black border-b border-border-subtle text-text-primary px-4 py-3 min-h-[60px] flex justify-between items-center z-50 relative shadow-lg">
         <Logo lightText={theme === 'dark'} className="h-12 md:h-[5rem]" />
@@ -213,7 +213,7 @@ export default function SuperAdminLayout() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col h-screen overflow-hidden bg-surface-primary">
+      <main className="flex-1 flex flex-col h-screen overflow-hidden bg-transparent">
         {/* Desktop Header */}
         <header className="bg-black shadow-sm sticky top-0 z-40 hidden md:block border-b border-border-subtle">
           <div className="px-6 py-4 flex items-center justify-between">

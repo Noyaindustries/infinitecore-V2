@@ -181,7 +181,7 @@ export default function ClientLayout() {
       </aside>
 
       {/* Main Content */}
-      <main className="flex h-screen flex-1 flex-col overflow-hidden bg-black/20 md:bg-black/25">
+      <main className="flex h-screen flex-1 flex-col overflow-hidden bg-black/5 md:bg-black/10">
         {/* Desktop Header */}
         <header className="sticky top-0 z-40 hidden border-b border-white/[0.06] bg-black shadow-[0_12px_40px_-24px_rgba(0,0,0,0.8)] md:block">
           <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-luxe-champagne/25 to-transparent" aria-hidden />

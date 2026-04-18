@@ -103,7 +103,7 @@ export default function DeveloperLayout() {
     : 'Développeur';
 
   return (
-    <div className="min-h-screen bg-surface-primary flex font-sans text-text-primary">
+    <div className="application-workspace min-h-screen flex font-sans text-text-primary">
       {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 sidebar-responsive bg-black border-r border-border-subtle text-text-primary transform ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:block transition-transform duration-300 ease-in-out shadow-2xl lg:shadow-none`}>
         <div className="h-full flex flex-col">
@@ -152,7 +152,7 @@ export default function DeveloperLayout() {
       )}
 
       {/* Main Content */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-surface-primary">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-transparent">
         <header className="h-16 bg-black border-b border-border-subtle flex items-center justify-between px-6 lg:px-10 z-40 relative shadow-sm">
           <button
             onClick={() => setSidebarOpen(true)}

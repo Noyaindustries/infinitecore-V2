@@ -13,6 +13,7 @@ import { prisma } from "./prismaClient";
 import { buildFileUrl, sanitizeFolder } from "./_r2";
 import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } from "./storageUtils";
 import { parseAuthFromRequest, registerMongoApi, resolveAuthPayload } from "./mongoApi";
+import { sendStaffNotifyEmail } from "./src/server/staffNotifyEmail";
 
 const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "application/pdf",
@@ -494,6 +495,22 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           created += 1;
         })
       );
+
+      const clientEmailLine = String(orderData.clientEmail || auth.email || "").trim();
+      void sendStaffNotifyEmail({
+        subject: `[Infinite Core] ${title}`,
+        text: [
+          message,
+          "",
+          `Commande : ${orderId}`,
+          `Client : ${clientName}`,
+          clientEmailLine ? `E-mail : ${clientEmailLine}` : "",
+          `Abonnement : ${isSubscription ? "oui" : "non"}${isSubscription ? ` (${billingCycle || "mensuel"})` : ""}`,
+          stripeUnavailable ? "Paiement manuel (Stripe indisponible)." : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      }).catch((err) => console.warn("[orders/notify-team] staff email:", err));
 
       return res.status(200).json({ success: true, notified: created });
     } catch (error) {
@@ -1170,6 +1187,21 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           })
         )
       );
+
+      void sendStaffNotifyEmail({
+        subject: "[Infinite Core] Nouveau flux PADDE-CI",
+        text: [
+          notifMessage,
+          "",
+          `Audit : ${auditId}`,
+          `Type : ${auditType}`,
+          email ? `E-mail : ${email}` : "",
+          normalizedWhatsapp ? `WhatsApp : ${normalizedWhatsapp}` : "",
+          `Lien admin : ${resetAppBaseUrl()}/admin/audits-padde`,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      }).catch((mailErr) => console.warn("[padde-ci] staff email:", mailErr));
     } catch (notifyErr) {
       console.warn("[padde-ci] notification commando:", notifyErr);
     }

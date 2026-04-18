@@ -1,10 +1,11 @@
 import type { Express, Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
-import nodemailer, { type Transporter } from "nodemailer";
 import { createHash, randomBytes, randomUUID } from "crypto";
 import { prisma } from "./prismaClient";
 import { appEnv, getJwtSecret, resetAppBaseUrl } from "@/config/env";
+import { getSmtpTransport } from "@/server/smtpTransport";
+import { sendStaffNotifyEmail } from "@/server/staffNotifyEmail";
 import { agentSessionLog } from "./src/debug/agentSessionLog";
 import { registerDataRoutes } from "./src/api/dataRoutes";
 import type { QueryFilter, QueryOrder } from "./src/api/mongo/dataQueryTypes";
@@ -45,23 +46,6 @@ const USER_FIELDS = [
   "createdAt",
 ] as const;
 const authFailureBuckets = new Map<string, { failures: number; windowEndsAt: number; blockedUntil: number }>();
-let smtpTransport: Transporter | null = null;
-
-function getSmtpTransport(): Transporter | null {
-  if (smtpTransport) return smtpTransport;
-  const host = appEnv.smtp.host;
-  const port = appEnv.smtp.port;
-  const user = appEnv.smtp.user;
-  const pass = appEnv.smtp.pass;
-  if (!host || !Number.isFinite(port) || !user || !pass) return null;
-  smtpTransport = nodemailer.createTransport({
-    host,
-    port,
-    secure: appEnv.smtp.secure,
-    auth: { user, pass },
-  });
-  return smtpTransport;
-}
 
 async function sendResetPasswordEmail(input: { to: string; token: string }) {
   const transporter = getSmtpTransport();
@@ -1165,6 +1149,11 @@ export function registerMongoApi(app: Express) {
           )
         )
       );
+
+      void sendStaffNotifyEmail({
+        subject: "[Infinite Core] Nouveau formulaire parrainage",
+        text: `${message}\n\nE-mail prospect : ${email || "—"}\nTéléphone : ${phone || "—"}\nCode parrainage : ${referralCode}`,
+      }).catch((err) => console.warn("[auth/referral-signup-notify] staff email:", err));
 
       let leadCreated = false;
       if (referredByPartnerId && email) {

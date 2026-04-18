@@ -2,7 +2,7 @@
  * Fonction Netlify : relaie les demandes PADDE-CI vers l’API Infinite Core (MongoDB),
  * sans aucun SDK Firebase.
  *
- * Variables Netlify :
+ * Variables Netlify (voir **.env.netlify.example** dans le dépôt) :
  * - INFINITE_CORE_API_URL : URL de l’API Express, sans slash final (ex. https://api.example.com)
  * - PADDE_WEBHOOK_SECRET : optionnel mais recommandé — même valeur que sur l’API
  */

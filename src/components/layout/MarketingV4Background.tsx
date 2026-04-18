@@ -28,12 +28,12 @@ export default function MarketingV4Background() {
     const ctx: CanvasRenderingContext2D = ctxRaw;
 
     const orbs = [
-      { x: 0.2, y: 0.15, r: 0.45, color: [74, 127, 181] as const, a: 0.12, speed: 0.00012, phase: 0 },
-      { x: 0.8, y: 0.7, r: 0.38, color: [232, 150, 30] as const, a: 0.08, speed: 0.00018, phase: 1.5 },
-      { x: 0.5, y: 0.4, r: 0.55, color: [74, 127, 181] as const, a: 0.06, speed: 0.00009, phase: 3.0 },
-      { x: 0.15, y: 0.75, r: 0.28, color: [232, 150, 30] as const, a: 0.07, speed: 0.00022, phase: 0.7 },
-      { x: 0.85, y: 0.2, r: 0.32, color: [74, 127, 181] as const, a: 0.09, speed: 0.00015, phase: 2.2 },
-      { x: 0.6, y: 0.85, r: 0.25, color: [232, 150, 30] as const, a: 0.05, speed: 0.0002, phase: 4.5 },
+      { x: 0.2, y: 0.15, r: 0.45, color: [74, 127, 181] as const, a: 0.2, speed: 0.00012, phase: 0 },
+      { x: 0.8, y: 0.7, r: 0.38, color: [232, 150, 30] as const, a: 0.14, speed: 0.00018, phase: 1.5 },
+      { x: 0.5, y: 0.4, r: 0.55, color: [74, 127, 181] as const, a: 0.11, speed: 0.00009, phase: 3.0 },
+      { x: 0.15, y: 0.75, r: 0.28, color: [232, 150, 30] as const, a: 0.12, speed: 0.00022, phase: 0.7 },
+      { x: 0.85, y: 0.2, r: 0.32, color: [74, 127, 181] as const, a: 0.15, speed: 0.00015, phase: 2.2 },
+      { x: 0.6, y: 0.85, r: 0.25, color: [232, 150, 30] as const, a: 0.1, speed: 0.0002, phase: 4.5 },
     ];
 
     let W = 0;
@@ -58,8 +58,8 @@ export default function MarketingV4Background() {
           y: Math.random() * H,
           vx: (Math.random() - 0.5) * 0.22,
           vy: (Math.random() - 0.5) * 0.22,
-          r: Math.random() * 1.4 + 0.3,
-          a: Math.random() * 0.35 + 0.08,
+          r: Math.random() * 1.5 + 0.35,
+          a: Math.random() * 0.42 + 0.14,
           c: Math.random() > 0.55 ? ([74, 127, 181] as const) : ([232, 150, 30] as const),
         });
       }
@@ -116,8 +116,8 @@ export default function MarketingV4Background() {
         ctx.fill();
       });
 
-      const maxDist = W < 768 ? 80 : 100;
-      const connAlpha = W < 768 ? 0.035 : 0.055;
+      const maxDist = W < 768 ? 88 : 112;
+      const connAlpha = W < 768 ? 0.06 : 0.09;
       for (let i = 0; i < particles.length; i++) {
         for (let j = i + 1; j < particles.length; j++) {
           const dx = particles[i].x - particles[j].x;
@@ -127,8 +127,8 @@ export default function MarketingV4Background() {
             ctx.beginPath();
             ctx.moveTo(particles[i].x, particles[i].y);
             ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = `rgba(74,127,181,${connAlpha * (1 - dist / maxDist)})`;
-            ctx.lineWidth = 0.4;
+            ctx.strokeStyle = `rgba(110,167,234,${connAlpha * (1 - dist / maxDist)})`;
+            ctx.lineWidth = 0.55;
             ctx.stroke();
           }
         }
@@ -178,16 +178,17 @@ export default function MarketingV4Background() {
         aria-hidden
       />
       <div
-        className="pointer-events-none fixed inset-0 z-[1] bg-[length:64px_64px] opacity-100"
+        className="pointer-events-none fixed inset-0 z-[1] bg-[length:56px_56px] opacity-100"
         style={{
           /* Lignes horizontales uniquement — les lignes verticales laissaient une bande grise visible au bord droit */
-          backgroundImage: `linear-gradient(rgba(255,255,255,0.022) 1px, transparent 1px)`,
-          maskImage: 'radial-gradient(ellipse 120% 80% at 50% 0%, black 10%, transparent 75%)',
+          backgroundImage: `linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px)`,
+          maskImage:
+            'radial-gradient(ellipse 125% 85% at 50% 8%, black 18%, rgba(0,0,0,0.55) 52%, transparent 82%)',
         }}
         aria-hidden
       />
       <div
-        className="pointer-events-none fixed inset-0 z-[1] opacity-[0.016]"
+        className="pointer-events-none fixed inset-0 z-[1] opacity-[0.038]"
         style={{
           backgroundImage: noiseSvg,
           backgroundSize: '180px',
@@ -198,7 +199,7 @@ export default function MarketingV4Background() {
         ref={spotlightRef}
         className="pointer-events-none fixed left-0 top-0 z-[1] h-[700px] w-[700px] rounded-full transition-transform duration-75 ease-linear will-change-transform"
         style={{
-          background: 'radial-gradient(circle, rgba(74,127,181,0.05) 0%, transparent 70%)',
+          background: 'radial-gradient(circle, rgba(110,167,234,0.11) 0%, rgba(74,127,181,0.04) 42%, transparent 72%)',
           transform: 'translate(-50%, -50%)',
         }}
         aria-hidden

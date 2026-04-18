@@ -216,6 +216,11 @@ var appEnv = {
   integrations: {
     infiniteCoreApiUrl: str("INFINITE_CORE_API_URL")
   },
+  /** Alertes e-mail équipe (en plus des notifications in-app). */
+  notifications: {
+    /** E-mails supplémentaires (virgules / point-virgules), fusionnés avec `user_accounts` rôles admin & commando. */
+    staffNotifyEmails: str("STAFF_NOTIFY_EMAILS")
+  },
   data: {
     /**
      * Max documents `data_documents` chargés par `POST /api/data/query` (une collection)
@@ -323,8 +328,83 @@ function mimeFromStorageKey(keyOrPath) {
 // mongoApi.ts
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
-var import_nodemailer = __toESM(require("nodemailer"), 1);
 var import_crypto2 = require("crypto");
+
+// src/server/smtpTransport.ts
+var import_nodemailer = __toESM(require("nodemailer"), 1);
+var smtpTransport = null;
+function getSmtpTransport() {
+  if (smtpTransport) return smtpTransport;
+  const host = appEnv.smtp.host;
+  const port = appEnv.smtp.port;
+  const user = appEnv.smtp.user;
+  const pass = appEnv.smtp.pass;
+  if (!host || !Number.isFinite(port) || !user || !pass) return null;
+  smtpTransport = import_nodemailer.default.createTransport({
+    host,
+    port,
+    secure: appEnv.smtp.secure,
+    auth: { user, pass }
+  });
+  return smtpTransport;
+}
+
+// src/server/staffNotifyEmail.ts
+function parseExtraStaffEmails(raw) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const chunk of raw.split(/[,;\n\r]+/).map((s) => s.trim().toLowerCase()).filter(Boolean)) {
+    for (const part of chunk.split(/\s+/).map((s) => s.trim()).filter(Boolean)) {
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(part)) continue;
+      if (seen.has(part)) continue;
+      seen.add(part);
+      out.push(part);
+    }
+  }
+  return out;
+}
+async function resolveStaffNotifyEmails() {
+  const extra = parseExtraStaffEmails(appEnv.notifications.staffNotifyEmails);
+  const accounts = await prisma.userAccount.findMany({
+    where: { role: { in: ["admin", "commando"] } },
+    select: { email: true }
+  });
+  const fromDb = accounts.map((a) => String(a.email || "").trim().toLowerCase()).filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+  const seen = /* @__PURE__ */ new Set();
+  const merged = [];
+  for (const e of [...fromDb, ...extra]) {
+    if (seen.has(e)) continue;
+    seen.add(e);
+    merged.push(e);
+  }
+  return merged;
+}
+function escapeHtml(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+async function sendStaffNotifyEmail(input) {
+  const recipients = await resolveStaffNotifyEmails();
+  if (recipients.length === 0) {
+    console.warn("[staff-notify-email] aucun destinataire (pas d\u2019admin/commando en base ni STAFF_NOTIFY_EMAILS).");
+    return { sent: false, recipientCount: 0 };
+  }
+  const transporter = getSmtpTransport();
+  if (!transporter) {
+    console.warn("[staff-notify-email] SMTP non configur\xE9 \u2014 e-mail non envoy\xE9.");
+    return { sent: false, recipientCount: recipients.length };
+  }
+  const [primary, ...bccRest] = recipients;
+  const html = input.html ?? `<pre style="font-family:system-ui,sans-serif;white-space:pre-wrap">${escapeHtml(input.text)}</pre>`;
+  await transporter.sendMail({
+    from: appEnv.smtp.fromOrUser,
+    to: primary,
+    ...bccRest.length > 0 ? { bcc: bccRest } : {},
+    subject: input.subject,
+    text: input.text,
+    html
+  });
+  return { sent: true, recipientCount: recipients.length };
+}
 
 // src/api/dataRoutes.ts
 var import_crypto = require("crypto");
@@ -547,22 +627,6 @@ var USER_FIELDS = [
   "createdAt"
 ];
 var authFailureBuckets = /* @__PURE__ */ new Map();
-var smtpTransport = null;
-function getSmtpTransport() {
-  if (smtpTransport) return smtpTransport;
-  const host = appEnv.smtp.host;
-  const port = appEnv.smtp.port;
-  const user = appEnv.smtp.user;
-  const pass = appEnv.smtp.pass;
-  if (!host || !Number.isFinite(port) || !user || !pass) return null;
-  smtpTransport = import_nodemailer.default.createTransport({
-    host,
-    port,
-    secure: appEnv.smtp.secure,
-    auth: { user, pass }
-  });
-  return smtpTransport;
-}
 async function sendResetPasswordEmail(input) {
   const transporter = getSmtpTransport();
   const resetLink = `${resetAppBaseUrl()}/reset-password?email=${encodeURIComponent(input.to)}&token=${encodeURIComponent(input.token)}`;
@@ -1495,6 +1559,14 @@ function registerMongoApi(app) {
           )
         )
       );
+      void sendStaffNotifyEmail({
+        subject: "[Infinite Core] Nouveau formulaire parrainage",
+        text: `${message}
+
+E-mail prospect : ${email || "\u2014"}
+T\xE9l\xE9phone : ${phone || "\u2014"}
+Code parrainage : ${referralCode}`
+      }).catch((err) => console.warn("[auth/referral-signup-notify] staff email:", err));
       let leadCreated = false;
       if (referredByPartnerId && email) {
         const allLeads = await prisma.dataDocument.findMany({
@@ -2608,6 +2680,19 @@ async function createExpressApplication() {
           created += 1;
         })
       );
+      const clientEmailLine = String(orderData.clientEmail || auth.email || "").trim();
+      void sendStaffNotifyEmail({
+        subject: `[Infinite Core] ${title}`,
+        text: [
+          message,
+          "",
+          `Commande : ${orderId}`,
+          `Client : ${clientName}`,
+          clientEmailLine ? `E-mail : ${clientEmailLine}` : "",
+          `Abonnement : ${isSubscription ? "oui" : "non"}${isSubscription ? ` (${billingCycle || "mensuel"})` : ""}`,
+          stripeUnavailable ? "Paiement manuel (Stripe indisponible)." : ""
+        ].filter(Boolean).join("\n")
+      }).catch((err) => console.warn("[orders/notify-team] staff email:", err));
       return res.status(200).json({ success: true, notified: created });
     } catch (error) {
       console.error("[orders/notify-team]", error);
@@ -3199,6 +3284,18 @@ async function createExpressApplication() {
           })
         )
       );
+      void sendStaffNotifyEmail({
+        subject: "[Infinite Core] Nouveau flux PADDE-CI",
+        text: [
+          notifMessage,
+          "",
+          `Audit : ${auditId}`,
+          `Type : ${auditType}`,
+          email ? `E-mail : ${email}` : "",
+          normalizedWhatsapp ? `WhatsApp : ${normalizedWhatsapp}` : "",
+          `Lien admin : ${resetAppBaseUrl()}/admin/audits-padde`
+        ].filter(Boolean).join("\n")
+      }).catch((mailErr) => console.warn("[padde-ci] staff email:", mailErr));
     } catch (notifyErr) {
       console.warn("[padde-ci] notification commando:", notifyErr);
     }

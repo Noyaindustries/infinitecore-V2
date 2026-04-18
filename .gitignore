@@ -6,6 +6,7 @@ node_modules/
 .env.*
 !.env.example
 !.env.vercel.example
+!.env.netlify.example
 
 # Builds (générés par `npm run build`)
 dist/

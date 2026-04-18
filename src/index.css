@@ -39,35 +39,55 @@
 .client-portal {
   background-color: var(--color-luxe-ink);
   background-image:
-    radial-gradient(ellipse 130% 70% at 50% -25%, rgba(110, 167, 234, 0.14), transparent 55%),
-    radial-gradient(ellipse 55% 45% at 100% 0%, rgba(201, 169, 98, 0.1), transparent 50%),
-    radial-gradient(ellipse 45% 40% at 0% 100%, rgba(255, 179, 50, 0.06), transparent 45%);
+    radial-gradient(ellipse 130% 70% at 50% -25%, rgba(110, 167, 234, 0.26), transparent 58%),
+    radial-gradient(ellipse 55% 45% at 100% 0%, rgba(201, 169, 98, 0.2), transparent 52%),
+    radial-gradient(ellipse 45% 40% at 0% 100%, rgba(255, 179, 50, 0.14), transparent 48%);
 }
 
 .light .client-portal {
   background-color: var(--color-surface-primary);
   background-image:
-    radial-gradient(ellipse 120% 60% at 50% -20%, rgba(37, 99, 235, 0.08), transparent 50%),
-    radial-gradient(ellipse 50% 40% at 100% 0%, rgba(180, 140, 60, 0.06), transparent 45%);
+    radial-gradient(ellipse 120% 60% at 50% -20%, rgba(37, 99, 235, 0.14), transparent 52%),
+    radial-gradient(ellipse 50% 40% at 100% 0%, rgba(180, 140, 60, 0.1), transparent 46%);
 }
 
 /* ——— Infinite Commando — espace /admin, direction ultra-premium ——— */
 .commando-space {
   background-color: var(--color-luxe-ink);
   background-image:
-    radial-gradient(ellipse 125% 95% at 50% -38%, rgba(201, 169, 98, 0.16), transparent 58%),
-    radial-gradient(ellipse 52% 58% at 0% 28%, rgba(110, 167, 234, 0.1), transparent 52%),
-    radial-gradient(ellipse 48% 52% at 100% 88%, rgba(255, 179, 50, 0.07), transparent 48%),
-    linear-gradient(168deg, #0c121f 0%, #06080d 45%, #03050a 100%);
+    radial-gradient(ellipse 125% 95% at 50% -38%, rgba(201, 169, 98, 0.26), transparent 58%),
+    radial-gradient(ellipse 52% 58% at 0% 28%, rgba(110, 167, 234, 0.16), transparent 52%),
+    radial-gradient(ellipse 48% 52% at 100% 88%, rgba(255, 179, 50, 0.12), transparent 48%),
+    linear-gradient(168deg, #121c2e 0%, #080d16 42%, #03050a 100%);
   background-attachment: fixed;
 }
 
 .light .commando-space {
   background-color: var(--color-surface-primary);
   background-image:
-    radial-gradient(ellipse 105% 72% at 50% -22%, rgba(201, 169, 98, 0.1), transparent 54%),
-    radial-gradient(ellipse 52% 48% at 0% 45%, rgba(37, 99, 235, 0.07), transparent 50%),
+    radial-gradient(ellipse 105% 72% at 50% -22%, rgba(201, 169, 98, 0.16), transparent 54%),
+    radial-gradient(ellipse 52% 48% at 0% 45%, rgba(37, 99, 235, 0.11), transparent 50%),
     linear-gradient(168deg, #ffffff 0%, #f1f5f9 100%);
+  background-attachment: fixed;
+}
+
+/* Superadmin, développeur, partenaire — même lisibilité du fond qu’admin / client */
+.application-workspace {
+  background-color: var(--color-luxe-ink);
+  background-image:
+    radial-gradient(ellipse 110% 78% at 50% -30%, rgba(110, 167, 234, 0.2), transparent 56%),
+    radial-gradient(ellipse 48% 42% at 0% 20%, rgba(43, 198, 115, 0.1), transparent 50%),
+    radial-gradient(ellipse 52% 50% at 100% 90%, rgba(201, 169, 98, 0.14), transparent 50%),
+    linear-gradient(168deg, #101a2a 0%, #070b12 48%, #03050a 100%);
+  background-attachment: fixed;
+}
+
+.light .application-workspace {
+  background-color: var(--color-surface-primary);
+  background-image:
+    radial-gradient(ellipse 100% 68% at 50% -18%, rgba(37, 99, 235, 0.13), transparent 52%),
+    radial-gradient(ellipse 55% 45% at 100% 8%, rgba(43, 198, 115, 0.06), transparent 48%),
+    linear-gradient(168deg, #fafbfc 0%, #f1f5f9 100%);
   background-attachment: fixed;
 }
 
@@ -117,13 +137,13 @@
 }
 
 .commando-main-well {
-  background: radial-gradient(ellipse 80% 55% at 50% 0%, rgba(110, 167, 234, 0.04), transparent 62%);
+  background: radial-gradient(ellipse 80% 55% at 50% 0%, rgba(110, 167, 234, 0.1), transparent 62%);
   /* Réserve l’emplacement de la barre à droite pour limiter les sauts de mise en page */
   scrollbar-gutter: stable;
 }
 
 .light .commando-main-well {
-  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(37, 99, 235, 0.04), transparent 60%);
+  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(37, 99, 235, 0.08), transparent 60%);
 }
 
 .commando-dashboard-hero-mesh {
