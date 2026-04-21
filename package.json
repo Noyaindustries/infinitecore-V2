@@ -16,11 +16,12 @@
     "test:padde-webhook": "node scripts/testPaddeWebhook.mjs",
     "diagnose:padde": "node scripts/diagnosePadde.mjs",
     "lint": "tsc --noEmit",
-    "test": "npm run test:rbac && npm run test:data-query",
+    "test": "npm run test:rbac && npm run test:data-query && npm run test:padde-admin-list",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:rbac": "tsx tests/rbac.test.ts",
     "test:data-query": "tsx tests/dataQuery.test.ts",
+    "test:padde-admin-list": "tsx tests/paddeCiAdminList.integration.test.ts",
     "migrate:users": "tsx scripts/migrateUsersToUserAccounts.ts",
     "backfill:referrals": "tsx scripts/backfillReferralPartnerIds.ts",
     "backfill:partner-commissions": "tsx scripts/backfillPartnerCommissions.ts",
@@ -59,6 +60,7 @@
     "serverless-http": "^4.0.0",
     "stripe": "^22.0.1",
     "tailwind-merge": "^3.5.0",
+    "zod": "^4.3.6",
     "zustand": "^5.0.12"
   },
   "devDependencies": {

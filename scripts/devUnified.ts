@@ -14,7 +14,8 @@ import { createExpressApplication } from "../server";
 process.env.TURBOPACK ||= "1";
 
 const port = appEnv.http.port;
-const hostname = "localhost";
+/** Même `HOST` que la prod (`src/config/env.ts`, défaut `0.0.0.0`) : évite les soucis d’accès sous Windows (localhost vs 127.0.0.1, autre interface). */
+const listenHost = appEnv.http.host;
 
 const nextApp = next({ dev: true, dir: process.cwd() });
 const handle = nextApp.getRequestHandler();
@@ -38,6 +39,7 @@ main.use((req, res) => {
   void handle(req, res, parsedUrl);
 });
 
-main.listen(port, hostname, () => {
-  console.log(`[infinitecore] Next + API → http://${hostname}:${port}`);
+main.listen(port, listenHost, () => {
+  const openHost = listenHost === "0.0.0.0" ? "localhost" : listenHost;
+  console.log(`[infinitecore] Next + API → http://${openHost}:${port} (écoute ${listenHost}:${port})`);
 });

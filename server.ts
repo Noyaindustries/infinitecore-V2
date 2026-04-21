@@ -14,6 +14,7 @@ import { buildFileUrl, sanitizeFolder } from "./_r2";
 import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } from "./storageUtils";
 import { parseAuthFromRequest, registerMongoApi, resolveAuthPayload } from "./mongoApi";
 import { sendStaffNotifyEmail } from "./src/server/staffNotifyEmail";
+import { OrderSchema, PaddeAuditPayloadSchema } from "./src/lib/schemas";
 
 const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "application/pdf",
@@ -329,16 +330,11 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         });
       }
 
-      const body = (req.body ?? {}) as Record<string, unknown>;
-      const serviceId = String(body.serviceId || "").trim();
-      const serviceName = String(body.serviceName || "").trim();
-      const note = String(body.note || "").trim();
-      const amount = Number(body.amount);
-      const billingCycle = normalizeBillingCycle(body.billingCycle);
-
-      if (!serviceId || !serviceName || !Number.isFinite(amount) || amount <= 0 || !billingCycle) {
-        return res.status(400).json({ success: false, error: "Paramètres abonnement invalides." });
+      const validated = OrderSchema.safeParse(req.body);
+      if (!validated.success) {
+        return res.status(400).json({ success: false, error: "Paramètres abonnement invalides.", details: validated.error.format() });
       }
+      const { serviceId, serviceName, note = "", amount, billingCycle } = validated.data;
 
       const unitAmount = Math.round(amount);
       const orderId = `CMD-${randomUUID().split("-")[0].toUpperCase()}`;
@@ -988,6 +984,10 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   };
 
   const persistPaddeAuditToStores = async (data: unknown, options: PersistPaddeOptions = {}) => {
+    const validated = PaddeAuditPayloadSchema.safeParse(data);
+    if (!validated.success) {
+      console.warn("[padde-ci] payload invalide (Zod):", validated.error.format());
+    }
     const payload = (data && typeof data === "object" ? (data as Record<string, unknown>) : {}) as Record<
       string,
       unknown

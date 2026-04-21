@@ -46,14 +46,14 @@ const FOOTER_SOCIAL_LINKS: {
   },
   {
     label: 'Instagram',
-    href: 'https://www.instagram.com/infinitecore',
+    href: 'https://www.instagram.com/infinitecoresysteme/?utm_source=ig_web_button_share_sheet',
     Icon: Instagram,
     brandColor: '#E4405F',
     brandBg: 'rgba(228,64,95,0.14)',
   },
   {
     label: 'Facebook',
-    href: 'https://www.facebook.com/infinitecore',
+    href: 'https://web.facebook.com/infinitecoresysteme',
     Icon: Facebook,
     brandColor: '#1877F2',
     brandBg: 'rgba(24,119,242,0.14)',
@@ -107,24 +107,25 @@ export default function MarketingLayout() {
       {/* HEADER — nav fixe floutée (infinitecore-v4.html) */}
       <header
         className={cn(
-          'fixed left-0 right-0 top-0 z-[900] border-b border-white/[0.07] bg-black text-[#F5F7FF] transition-[box-shadow,colors] duration-300',
+          'fixed left-0 right-0 top-0 z-[900] overflow-visible border-b border-white/[0.07] bg-black text-[#F5F7FF] transition-[box-shadow,colors] duration-300',
           navSolid && 'shadow-[0_10px_28px_-12px_rgba(0,0,0,0.75)]',
         )}
       >
-        <div className="container mx-auto flex h-[112px] min-w-0 items-center justify-between gap-2 px-3 sm:h-[128px] sm:px-6 md:h-[84px] lg:px-[52px]">
-          <div className="flex min-w-0 flex-1 items-center justify-start">
+        <div className="container mx-auto flex h-[84px] min-w-0 items-center justify-between gap-2 overflow-visible px-3 sm:px-6 lg:px-[52px]">
+          {/* À partir de `md`, le menu est centré en absolu : on borne la zone logo pour éviter l’empiètement visuel */}
+          <div className="relative z-[904] flex min-h-0 min-w-0 flex-1 items-center justify-start overflow-visible md:max-w-[min(318px,48vw)] lg:max-w-[min(368px,42vw)]">
             <Link
               to="/"
-              className="group/logo flex min-w-0 shrink items-center self-center outline-none focus-visible:ring-2 focus-visible:ring-[#6EA7EA]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-black rounded-sm"
+              className="group/logo flex h-full min-w-0 shrink items-center overflow-visible self-stretch outline-none focus-visible:ring-2 focus-visible:ring-[#6EA7EA]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-black rounded-sm"
             >
-              <Logo
-                matchMarketingNav
-                className="h-24 w-auto shrink-0 sm:h-28 md:h-[4.25rem]"
-              />
+              {/* Barre 84px : plus de place réservée au logo sur md+ (max-w) + scale un peu plus haut sans empiéter sur le menu */}
+              <span className="inline-flex origin-left scale-[1.56] will-change-transform sm:scale-[1.64] md:scale-[1.42] lg:scale-[1.48]">
+                <Logo matchMarketingNav className="h-[3.15rem] w-auto shrink-0 sm:h-[3.45rem] md:h-[3.3rem] lg:h-[3.45rem]" />
+              </span>
             </Link>
           </div>
           
-          <nav className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 md:flex" aria-label="Navigation principale">
+          <nav className="absolute left-1/2 z-[905] hidden -translate-x-1/2 items-center gap-1 md:flex" aria-label="Navigation principale">
             <div className="relative group">
               <button
                 type="button"
@@ -338,7 +339,7 @@ export default function MarketingLayout() {
       </header>
 
       {/* MAIN — le contenu passe sous la nav fixe (padding géré par les pages, ex. Home) */}
-      <main className="relative z-10 pt-[112px] sm:pt-[128px] md:flex-1 md:pt-[84px]">
+      <main className="relative z-10 flex-1 pt-[84px]">
         <Outlet />
       </main>
 

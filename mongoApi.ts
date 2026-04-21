@@ -10,6 +10,7 @@ import { agentSessionLog } from "./src/debug/agentSessionLog";
 import { registerDataRoutes } from "./src/api/dataRoutes";
 import type { QueryFilter, QueryOrder } from "./src/api/mongo/dataQueryTypes";
 import { sanitizeFilters, sanitizeOrders } from "./src/api/mongo/sanitizeDataQuery";
+import { AuthRegisterSchema, UserProfileSchema } from "./src/lib/schemas";
 
 export type AuthPayload = {
   uid: string;
@@ -193,7 +194,8 @@ function parseAuth(req: Request): AuthPayload | null {
       return null;
     }
     return decoded;
-  } catch {
+  } catch (err) {
+    console.error("[auth] parseAuth error:", err);
     return null;
   }
 }
@@ -410,12 +412,14 @@ export async function resolveAuthPayload(raw: AuthPayload): Promise<AuthPayload 
 async function requireAuth(req: Request, res: Response): Promise<AuthPayload | null> {
   const auth = parseAuth(req);
   if (!auth) {
+    console.warn("[auth] requireAuth: No token or invalid token found in request.");
     res.status(401).json({ success: false, error: "Non authentifié." });
     return null;
   }
 
   const resolved = await resolveAuthPayload(auth);
   if (!resolved) {
+    console.warn("[auth] requireAuth: Token valid but user account not found for UID:", auth.uid);
     res.status(401).json({ success: false, error: "Session invalide." });
     return null;
   }
@@ -754,8 +758,12 @@ export function registerMongoApi(app: Express) {
     try {
       const auth = await requireAuth(req, res);
       if (!auth) return;
-      const rawDisplayName = req.body?.displayName;
-      const rawPhotoURL = req.body?.photoURL;
+      const validated = UserProfileSchema.partial().safeParse(req.body);
+      if (!validated.success) {
+        return res.status(400).json({ success: false, error: "Donnees de profil invalides.", details: validated.error.format() });
+      }
+      const rawDisplayName = validated.data.displayName;
+      const rawPhotoURL = validated.data.photoURL;
       const displayName = typeof rawDisplayName === "string" ? rawDisplayName.trim().slice(0, 120) : undefined;
       const photoURL = typeof rawPhotoURL === "string" ? rawPhotoURL.trim().slice(0, 500) : undefined;
 
@@ -789,15 +797,16 @@ export function registerMongoApi(app: Express) {
 
   app.post("/api/auth/register", async (req: Request, res: Response) => {
     try {
-      const email = String(req.body?.email || "").trim().toLowerCase();
+      const validated = AuthRegisterSchema.safeParse(req.body);
+      if (!validated.success) {
+        return res.status(400).json({ success: false, error: "Donnees d'inscription invalides.", details: validated.error.format() });
+      }
+      const { email: rawEmail, password, firstName, lastName, companyId = null } = validated.data;
+      const email = rawEmail.trim().toLowerCase();
       const authKey = authBucketKey(req, email);
       if (await isAuthTemporarilyBlocked(authKey)) {
         return res.status(429).json({ success: false, error: "Trop de tentatives. Réessayez plus tard." });
       }
-      const password = String(req.body?.password || "");
-      const firstName = String(req.body?.firstName || "").trim();
-      const lastName = String(req.body?.lastName || "").trim();
-      const companyId = req.body?.companyId ? String(req.body.companyId) : null;
       const referredBy = req.body?.referredBy ? String(req.body.referredBy) : null;
       const phone = req.body?.phone ? String(req.body.phone) : null;
 

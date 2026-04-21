@@ -173,7 +173,20 @@ var appEnv = {
     jwtIssuer: str("JWT_ISSUER", "infinitecore-api"),
     jwtAudience: str("JWT_AUDIENCE", "infinitecore-web"),
     getJwtSecret,
-    resetAppBaseUrl
+    resetAppBaseUrl,
+    /**
+     * Domaine du cookie `ic_auth_token` (ex. `.infinitecore.net`).
+     * Requis si le navigateur charge le site sur un hôte et que `NEXT_PUBLIC_API_BASE_URL`
+     * pointe vers un **autre** hôte du même domaine : sans cela le cookie reste « host-only »
+     * et les `fetch` vers l’API n’envoient pas la session → 401 sur `/api/webhooks/padde-ci`, etc.
+     */
+    get cookieDomain() {
+      const raw = str("AUTH_COOKIE_DOMAIN");
+      if (!raw) return void 0;
+      const host = raw.replace(/^\./, "").split(":")[0]?.toLowerCase() ?? "";
+      if (!host || host === "localhost" || host.startsWith("127.")) return void 0;
+      return raw.startsWith(".") ? raw : `.${raw}`;
+    }
   },
   http: {
     /** Liste brute pour parser côté Express (CORS). */
@@ -638,6 +651,38 @@ function sanitizeOrders(raw) {
   return orders;
 }
 
+// src/lib/schemas.ts
+var import_zod = require("zod");
+var UserProfileSchema = import_zod.z.object({
+  firstName: import_zod.z.string().min(1, "Pr\xE9nom requis").max(80),
+  lastName: import_zod.z.string().min(1, "Nom requis").max(80),
+  displayName: import_zod.z.string().optional(),
+  phone: import_zod.z.string().optional(),
+  companyName: import_zod.z.string().optional(),
+  photoURL: import_zod.z.string().url().optional().or(import_zod.z.literal(""))
+});
+var OrderSchema = import_zod.z.object({
+  serviceId: import_zod.z.string().min(1),
+  serviceName: import_zod.z.string().min(1),
+  amount: import_zod.z.number().positive(),
+  billingCycle: import_zod.z.enum(["month", "year"]),
+  note: import_zod.z.string().optional()
+});
+var PaddeAuditPayloadSchema = import_zod.z.record(import_zod.z.string(), import_zod.z.unknown()).and(
+  import_zod.z.object({
+    email: import_zod.z.string().email().optional().or(import_zod.z.literal("")),
+    whatsapp: import_zod.z.string().optional(),
+    type: import_zod.z.string().optional()
+  })
+);
+var AuthRegisterSchema = import_zod.z.object({
+  email: import_zod.z.string().email("Email invalide"),
+  password: import_zod.z.string().min(12, "Le mot de passe doit faire au moins 12 caract\xE8res"),
+  firstName: import_zod.z.string().min(1),
+  lastName: import_zod.z.string().min(1),
+  companyId: import_zod.z.string().optional()
+});
+
 // mongoApi.ts
 var AUTH_HEADER_PREFIX = "Bearer ";
 var AUTH_COOKIE_NAME = "ic_auth_token";
@@ -738,23 +783,27 @@ function signAuthToken(payload) {
   });
 }
 function authCookieOptions() {
+  const domain = appEnv.auth.cookieDomain;
   return {
     httpOnly: true,
     sameSite: "lax",
     secure: appEnv.node.isProduction,
     path: "/",
-    maxAge: AUTH_COOKIE_TTL_MS
+    maxAge: AUTH_COOKIE_TTL_MS,
+    ...domain ? { domain } : {}
   };
 }
 function setAuthCookie(res, token) {
   res.cookie(AUTH_COOKIE_NAME, token, authCookieOptions());
 }
 function clearAuthCookie(res) {
+  const domain = appEnv.auth.cookieDomain;
   res.clearCookie(AUTH_COOKIE_NAME, {
     httpOnly: true,
     sameSite: "lax",
     secure: appEnv.node.isProduction,
-    path: "/"
+    path: "/",
+    ...domain ? { domain } : {}
   });
 }
 function parseCookieValue(header, key) {
@@ -795,7 +844,8 @@ function parseAuth(req) {
       return null;
     }
     return decoded;
-  } catch {
+  } catch (err) {
+    console.error("[auth] parseAuth error:", err);
     return null;
   }
 }
@@ -982,11 +1032,13 @@ async function resolveAuthPayload(raw) {
 async function requireAuth(req, res) {
   const auth = parseAuth(req);
   if (!auth) {
+    console.warn("[auth] requireAuth: No token or invalid token found in request.");
     res.status(401).json({ success: false, error: "Non authentifi\xE9." });
     return null;
   }
   const resolved = await resolveAuthPayload(auth);
   if (!resolved) {
+    console.warn("[auth] requireAuth: Token valid but user account not found for UID:", auth.uid);
     res.status(401).json({ success: false, error: "Session invalide." });
     return null;
   }
@@ -1133,7 +1185,9 @@ function pickUserPublicData(input) {
   return out;
 }
 function normalizeCollectionPath(path4) {
-  return path4.split("/").map((segment) => segment.trim()).filter(Boolean).join("/");
+  const segments = path4.split("/").map((segment) => segment.trim()).filter(Boolean);
+  if (segments[0] === "padde-ci-audits") segments[0] = "padde_ci_audits";
+  return segments.join("/");
 }
 function compareValues(left, operator, right) {
   switch (operator) {
@@ -1252,8 +1306,12 @@ function registerMongoApi(app) {
     try {
       const auth = await requireAuth(req, res);
       if (!auth) return;
-      const rawDisplayName = req.body?.displayName;
-      const rawPhotoURL = req.body?.photoURL;
+      const validated = UserProfileSchema.partial().safeParse(req.body);
+      if (!validated.success) {
+        return res.status(400).json({ success: false, error: "Donnees de profil invalides.", details: validated.error.format() });
+      }
+      const rawDisplayName = validated.data.displayName;
+      const rawPhotoURL = validated.data.photoURL;
       const displayName = typeof rawDisplayName === "string" ? rawDisplayName.trim().slice(0, 120) : void 0;
       const photoURL = typeof rawPhotoURL === "string" ? rawPhotoURL.trim().slice(0, 500) : void 0;
       const [firstName = "", ...last] = (displayName || "").split(/\s+/).filter(Boolean);
@@ -1282,15 +1340,16 @@ function registerMongoApi(app) {
   });
   app.post("/api/auth/register", async (req, res) => {
     try {
-      const email = String(req.body?.email || "").trim().toLowerCase();
+      const validated = AuthRegisterSchema.safeParse(req.body);
+      if (!validated.success) {
+        return res.status(400).json({ success: false, error: "Donnees d'inscription invalides.", details: validated.error.format() });
+      }
+      const { email: rawEmail, password, firstName, lastName, companyId = null } = validated.data;
+      const email = rawEmail.trim().toLowerCase();
       const authKey = authBucketKey(req, email);
       if (await isAuthTemporarilyBlocked(authKey)) {
         return res.status(429).json({ success: false, error: "Trop de tentatives. R\xE9essayez plus tard." });
       }
-      const password = String(req.body?.password || "");
-      const firstName = String(req.body?.firstName || "").trim();
-      const lastName = String(req.body?.lastName || "").trim();
-      const companyId = req.body?.companyId ? String(req.body.companyId) : null;
       const referredBy = req.body?.referredBy ? String(req.body.referredBy) : null;
       const phone = req.body?.phone ? String(req.body.phone) : null;
       if (!email || !password || !isValidEmail(email)) {
@@ -2324,12 +2383,6 @@ var MAX_DB_FALLBACK_BYTES = 8 * 1024 * 1024;
 var ORDERS_COLLECTION_PATH = "orders";
 var USERS_COLLECTION_PATH = "users";
 var NOTIFICATIONS_COLLECTION_PATH = "notifications";
-function normalizeBillingCycle(raw) {
-  const v = String(raw || "").trim().toLowerCase();
-  if (["mensuel", "monthly", "month", "mois"].includes(v)) return "month";
-  if (["annuel", "yearly", "annual", "year", "an"].includes(v)) return "year";
-  return null;
-}
 function subscriptionStatusFromStripe(raw) {
   const status = String(raw || "").trim().toLowerCase();
   if (["active", "trialing", "past_due", "incomplete", "incomplete_expired", "unpaid"].includes(status)) {
@@ -2571,15 +2624,11 @@ async function createExpressApplication() {
           error: "Stripe non configur\xE9. Ajoutez STRIPE_SECRET_KEY."
         });
       }
-      const body = req.body ?? {};
-      const serviceId = String(body.serviceId || "").trim();
-      const serviceName = String(body.serviceName || "").trim();
-      const note = String(body.note || "").trim();
-      const amount = Number(body.amount);
-      const billingCycle = normalizeBillingCycle(body.billingCycle);
-      if (!serviceId || !serviceName || !Number.isFinite(amount) || amount <= 0 || !billingCycle) {
-        return res.status(400).json({ success: false, error: "Param\xE8tres abonnement invalides." });
+      const validated = OrderSchema.safeParse(req.body);
+      if (!validated.success) {
+        return res.status(400).json({ success: false, error: "Param\xE8tres abonnement invalides.", details: validated.error.format() });
       }
+      const { serviceId, serviceName, note = "", amount, billingCycle } = validated.data;
       const unitAmount = Math.round(amount);
       const orderId = `CMD-${(0, import_crypto3.randomUUID)().split("-")[0].toUpperCase()}`;
       const customerId = await resolveStripeCustomerId({ uid: auth.uid, email: auth.email });
@@ -3146,6 +3195,10 @@ async function createExpressApplication() {
     }
   });
   const persistPaddeAuditToStores = async (data, options = {}) => {
+    const validated = PaddeAuditPayloadSchema.safeParse(data);
+    if (!validated.success) {
+      console.warn("[padde-ci] payload invalide (Zod):", validated.error.format());
+    }
     const payload = data && typeof data === "object" ? data : {};
     const auditId = options.existingAuditId?.trim() || `PADDE-${(0, import_crypto3.randomUUID)().replace(/-/g, "")}`;
     const auditType = String(payload.type_audit || payload.type || payload.auditType || "Audit PADDE-CI").trim();
@@ -3388,6 +3441,19 @@ async function createExpressApplication() {
     return o;
   };
   const paddeSecretExpected = paddeWebhookSecret.trim();
+  app.get("/api/webhooks/padde-ci/config-check", (_req, res) => {
+    res.setHeader("Cache-Control", "private, no-store, max-age=0, must-revalidate");
+    return res.status(200).json({
+      ok: true,
+      databaseConfigured: Boolean(appEnv.database.url),
+      webhookSecretConfigured: paddeSecretExpected.length > 0,
+      nodeEnv: appEnv.node.env,
+      vercel: Boolean(process.env.VERCEL),
+      /** Sur Vercel : production | preview | development — les variables peuvent différer par environnement. */
+      vercelEnv: process.env.VERCEL_ENV || null,
+      hint: paddeSecretExpected.length > 0 ? "L\u2019API exige le m\xEAme secret que PADDE_WEBHOOK_SECRET (header X-Webhook-Secret ou champs JSON webhookSecret / secret)." : "Aucun PADDE_WEBHOOK_SECRET : les POST JSON sont accept\xE9s sans secret (\xE9vitez en prod)."
+    });
+  });
   app.post("/api/webhooks/padde-ci", async (req, res) => {
     try {
       if (paddeSecretExpected) {
@@ -3439,6 +3505,7 @@ async function createExpressApplication() {
   });
   app.get("/api/webhooks/padde-ci", requirePaddeAuditViewer, async (req, res) => {
     try {
+      res.setHeader("Cache-Control", "private, no-store, max-age=0, must-revalidate");
       if (!appEnv.database.url) {
         return res.status(503).json({ success: false, error: "Base de donn\xE9es non configur\xE9e (DATABASE_URL)." });
       }

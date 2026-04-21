@@ -1,7 +1,10 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { Suspense, lazy } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { PageLoadingFallback } from './components/PageLoadingFallback';
+import ScrollToTop from './components/ScrollToTop';
 import { AuthProvider } from './components/AuthProvider';
 import CookieBanner from './components/CookieBanner';
 import GoogleEmailModal from './components/GoogleEmailModal';
@@ -61,7 +64,6 @@ const SuperAdminCommando = lazy(() => import('./views/superadmin/Commando'));
 const SuperAdminDevelopers = lazy(() => import('./views/superadmin/Developers'));
 const SuperAdminSupervision = lazy(() => import('./views/superadmin/Supervision'));
 const SuperAdminSettings = lazy(() => import('./views/superadmin/Settings'));
-/** Chunk dédié : change le nom de fichier hashé pour éviter un vieux bundle « .map » en cache après correctifs API. */
 const PaddeCiAudits = lazy(() => import(/* webpackChunkName: "padde-ci-audits-v3" */ './views/superadmin/PaddeCiAudits'));
 const SuperAdminMissions = lazy(() => import('./views/superadmin/Missions'));
 const PartnerDashboard = lazy(() => import('./views/partner/Dashboard'));
@@ -88,8 +90,20 @@ function App() {
         <GoogleConfirmModal />
         <CookieBanner />
         <Router>
-          <Suspense fallback={null}>
-            <Routes>
+          <ScrollToTop />
+          <AnimatedRoutes />
+        </Router>
+      </AuthProvider>
+    </ErrorBoundary>
+  );
+}
+
+function AnimatedRoutes() {
+  const location = useLocation();
+  return (
+    <AnimatePresence mode="wait">
+      <Suspense fallback={<PageLoadingFallback />}>
+        <Routes location={location} key={location.pathname}>
           {/* Marketing Routes */}
           <Route element={<MarketingLayout />}>
             <Route path="/" element={<Home />} />
@@ -195,11 +209,9 @@ function App() {
           </Route>
 
           <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
-          </Suspense>
-        </Router>
-      </AuthProvider>
-    </ErrorBoundary>
+        </Routes>
+      </Suspense>
+    </AnimatePresence>
   );
 }
 

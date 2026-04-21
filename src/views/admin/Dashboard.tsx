@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { motion } from 'framer-motion';
 import { useAuth } from '../../components/AuthProvider';
 import { cn } from '../../lib/utils';
 import { useCommandoClients, clientDisplayName } from '../../hooks/useCommandoClients';
@@ -7,6 +8,7 @@ import { collection, doc, limit, onSnapshot, orderBy, query, setDoc, updateDoc, 
 import { db } from '@/lib/clientSdk';
 import { leadService } from '../../services/leadService';
 import toast from 'react-hot-toast';
+import { SkeletonLoader } from '../../components/SkeletonLoader';
 import {
   FolderOpen,
   KanbanSquare,
@@ -371,7 +373,13 @@ export default function AdminDashboard() {
   };
 
   return (
-    <div className="mx-auto max-w-6xl px-5 py-6 pb-6 md:px-8 md:py-8">
+    <motion.div 
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -10 }}
+      transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+      className="mx-auto max-w-6xl px-5 py-6 pb-6 md:px-8 md:py-8"
+    >
       {/* Bandeau contextualisé */}
       <div className="mb-8 flex flex-col gap-3 border-b border-white/6 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div className="flex items-center gap-3">
@@ -564,42 +572,42 @@ export default function AdminDashboard() {
         <div className="commando-luxe-hero-shell relative overflow-hidden rounded-2xl border border-luxe-champagne/15 bg-noya-sidebar/40 p-5 backdrop-blur-md md:p-7">
           <div className="commando-dashboard-hero-mesh pointer-events-none absolute inset-0 opacity-35" aria-hidden />
           <div className="relative overflow-x-auto custom-scrollbar">
-            {partnerLeads.length === 0 ? (
-              <div className="rounded-xl border border-white/6 bg-white/[0.02] px-4 py-6 text-sm text-text-muted">
-                Aucun lead partenaire pour l&apos;instant.
-              </div>
-            ) : (
-              <table className="w-full min-w-[760px] text-left">
-                <thead>
-                  <tr className="border-b border-white/10 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-dim">
-                    <th className="px-3 py-3">Contact</th>
-                    <th className="px-3 py-3">Entreprise</th>
-                    <th className="px-3 py-3">Partenaire</th>
-                    <th className="px-3 py-3">Téléphone</th>
-                    <th className="px-3 py-3">Statut</th>
-                    <th className="px-3 py-3">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {partnerLeads.map((lead) => (
-                    <tr key={lead.id} className="border-b border-white/5 text-sm text-text-secondary">
-                      <td className="px-3 py-3 text-text-primary">
-                        {`${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Contact'}
-                      </td>
-                      <td className="px-3 py-3">{lead.companyName || '—'}</td>
-                    <td className="px-3 py-3">
-                      {lead.partnerName || (lead.partnerId ? partnerNameById[lead.partnerId] || `Partenaire ${lead.partnerId}` : '—')}
-                    </td>
-                      <td className="px-3 py-3">{lead.phone || lead.whatsapp || '—'}</td>
-                      <td className="px-3 py-3 uppercase text-[11px]">{lead.status || 'soumis'}</td>
-                      <td className="px-3 py-3 text-[12px]">
-                        {lead.createdAt ? new Date(lead.createdAt).toLocaleString('fr-FR') : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+                {partnerLeads.length === 0 ? (
+                  <div className="rounded-xl border border-white/6 bg-white/[0.02] px-4 py-6 text-sm text-text-muted">
+                    Aucun lead partenaire pour l&apos;instant.
+                  </div>
+                ) : (
+                  <table className="w-full min-w-[760px] text-left">
+                    <thead>
+                      <tr className="border-b border-white/10 text-[10px] font-semibold uppercase tracking-[0.16em] text-text-dim">
+                        <th className="px-3 py-3">Contact</th>
+                        <th className="px-3 py-3">Entreprise</th>
+                        <th className="px-3 py-3">Partenaire</th>
+                        <th className="px-3 py-3">Téléphone</th>
+                        <th className="px-3 py-3">Statut</th>
+                        <th className="px-3 py-3">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {partnerLeads.map((lead) => (
+                        <tr key={lead.id} className="border-b border-white/5 text-sm text-text-secondary">
+                          <td className="px-3 py-3 text-text-primary">
+                            {`${lead.firstName || ''} ${lead.lastName || ''}`.trim() || 'Contact'}
+                          </td>
+                          <td className="px-3 py-3">{lead.companyName || '—'}</td>
+                        <td className="px-3 py-3">
+                          {lead.partnerName || (lead.partnerId ? partnerNameById[lead.partnerId] || `Partenaire ${lead.partnerId}` : '—')}
+                        </td>
+                          <td className="px-3 py-3">{lead.phone || lead.whatsapp || '—'}</td>
+                          <td className="px-3 py-3 uppercase text-[11px]">{lead.status || 'soumis'}</td>
+                          <td className="px-3 py-3 text-[12px]">
+                            {lead.createdAt ? new Date(lead.createdAt).toLocaleString('fr-FR') : '—'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
           </div>
         </div>
       </section>
@@ -642,9 +650,11 @@ export default function AdminDashboard() {
             </div>
             <ul className="flex min-w-0 flex-[1.4] flex-col gap-2">
               {crmLoading ? (
-                <li className="rounded-xl border border-white/6 bg-white/[0.02] px-4 py-6 text-center text-sm text-text-muted">
-                  Chargement des fiches…
-                </li>
+                <div className="flex flex-col gap-2">
+                  <SkeletonLoader className="h-10 w-full" variant="text" />
+                  <SkeletonLoader className="h-10 w-full" variant="text" />
+                  <SkeletonLoader className="h-10 w-full" variant="text" />
+                </div>
               ) : recentCrm.length === 0 ? (
                 <li className="rounded-xl border border-white/6 bg-white/[0.02] px-4 py-6 text-center text-sm text-text-muted">
                   Aucun client enregistré pour le moment.
@@ -706,14 +716,19 @@ export default function AdminDashboard() {
           {featured ? (
             <ShortcutCard item={featured} className="commando-luxe-module-card lg:col-span-2" large />
           ) : null}
-          {others.map((item) => (
-            <Fragment key={item.to}>
+          {others.map((item, index) => (
+            <motion.div
+              key={item.to}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05 + 0.2 }}
+            >
               <ShortcutCard item={item} className="commando-luxe-module-card" />
-            </Fragment>
+            </motion.div>
           ))}
         </div>
       </div>
-    </div>
+    </motion.div>
   );
 }
 
