@@ -202,7 +202,7 @@ export default function IconPreviewPage() {
 
         <footer style={{ marginTop: 40, padding: 20, borderTop: "1px solid rgba(255,255,255,0.08)" }}>
           <p style={{ margin: 0, fontSize: 13, color: "#8E9EAE", lineHeight: 1.6 }}>
-            Dis‑moi juste <em>&laquo; adopte la variante X &raquo;</em> (par exemple <code style={{ color: "#F5F7FF" }}>halo-orange</code> ou <code style={{ color: "#F5F7FF" }}>cercle-champagne</code>) et je mets à jour <code style={{ color: "#F5F7FF" }}>src/app/icon.tsx</code> et <code style={{ color: "#F5F7FF" }}>src/app/apple-icon.tsx</code> avec les valeurs exactes.
+            Les favicons en production utilisent les PNG dans <code style={{ color: "#F5F7FF" }}>public/</code> et <code style={{ color: "#F5F7FF" }}>metadata.icons</code> dans <code style={{ color: "#F5F7FF" }}>src/app/layout.tsx</code> (plus de génération ImageResponse, qui pouvait sortir tout noir). Pour adopter une variante visuelle ici, il faut exporter un asset PNG carré dédié et mettre à jour ces chemins.
           </p>
         </footer>
       </div>

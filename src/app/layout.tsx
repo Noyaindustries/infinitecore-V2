@@ -23,11 +23,22 @@ const dmMono = DM_Mono({
   display: "swap",
 });
 
-/** Favicons : cercle + contour doré via `icon.tsx` / `apple-icon.tsx`. */
+/**
+ * Favicons : fichiers PNG servis tels quels depuis `/public`.
+ * Les routes dynamiques `icon.tsx` / `apple-icon.tsx` (ImageResponse + Satori)
+ * pouvaient rendre un carré entièrement noir avec le logo en data-URL.
+ */
 export const metadata: Metadata = {
   title: "Infinite Core | The Operating System for African Business",
   description:
     "Infinite Core unifie CRM, Finance, RH et Projets dans un système unique modulaire pour propulser les entreprises africaines.",
+  icons: {
+    icon: [
+      { url: "/infinite-core-logo.png", type: "image/png", sizes: "32x32" },
+      { url: "/infinite-core-logo.png", type: "image/png", sizes: "192x192" },
+    ],
+    apple: [{ url: "/infinite-core-logo.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

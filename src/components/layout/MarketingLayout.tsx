@@ -112,16 +112,16 @@ export default function MarketingLayout() {
         )}
       >
         <div className="container mx-auto flex h-[84px] min-w-0 items-center justify-between gap-2 overflow-visible px-3 sm:px-6 lg:px-[52px]">
-          {/* À partir de `md`, le menu est centré en absolu : on borne la zone logo pour éviter l’empiètement visuel */}
-          <div className="relative z-[904] flex min-h-0 min-w-0 flex-1 items-center justify-start overflow-visible md:max-w-[min(318px,48vw)] lg:max-w-[min(368px,42vw)]">
+          {/* Menu centré en absolu dès `md` : zone logo élargie ; hauteur logo ≤ 82px dans barre 84px (2px de marge verticale). */}
+          <div className="relative z-[904] flex min-h-0 min-w-0 flex-1 items-center justify-start overflow-x-clip md:max-w-[min(440px,58vw)] lg:max-w-[min(500px,52vw)]">
             <Link
               to="/"
-              className="group/logo flex h-full min-w-0 shrink items-center overflow-visible self-stretch outline-none focus-visible:ring-2 focus-visible:ring-[#6EA7EA]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-black rounded-sm"
+              className="group/logo flex h-full min-h-0 min-w-0 max-h-[84px] shrink items-center self-stretch outline-none focus-visible:ring-2 focus-visible:ring-[#6EA7EA]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-black rounded-sm"
             >
-              {/* Barre 84px : plus de place réservée au logo sur md+ (max-w) + scale un peu plus haut sans empiéter sur le menu */}
-              <span className="inline-flex origin-left scale-[1.56] will-change-transform sm:scale-[1.64] md:scale-[1.42] lg:scale-[1.48]">
-                <Logo matchMarketingNav className="h-[3.15rem] w-auto shrink-0 sm:h-[3.45rem] md:h-[3.3rem] lg:h-[3.45rem]" />
-              </span>
+              <Logo
+                matchMarketingNav
+                className="h-[78px] w-auto max-w-full shrink-0 sm:h-[80px] md:h-[82px] lg:h-[82px]"
+              />
             </Link>
           </div>
           
