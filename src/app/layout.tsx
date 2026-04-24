@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Cormorant_Garamond, DM_Mono, Urbanist } from "next/font/google";
+import { Analytics } from '@vercel/analytics/next';
 import "./globals.css";
 
 const urbanist = Urbanist({
@@ -44,7 +45,10 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="fr" className={`${urbanist.variable} ${cormorant.variable} ${dmMono.variable}`}>
-      <body className={`${urbanist.className} antialiased`}>{children}</body>
+      <body className={`${urbanist.className} antialiased`}>
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
