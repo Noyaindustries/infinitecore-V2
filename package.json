@@ -39,6 +39,7 @@
     "@google/genai": "^0.7.0",
     "@prisma/client": "^6.19.3",
     "@types/multer": "^2.1.0",
+    "@vercel/analytics": "^2.0.1",
     "bcryptjs": "^3.0.2",
     "busboy": "^1.6.0",
     "clsx": "^2.1.1",
