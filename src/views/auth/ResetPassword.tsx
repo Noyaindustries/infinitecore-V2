@@ -7,7 +7,7 @@ import { confirmPasswordReset } from "@/lib/mongoAuth";
 import toast from "react-hot-toast";
 
 function passwordMeetsPolicy(password: string) {
-  if (password.length < 12) return false;
+  if (password.length < 8) return false;
   return /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
 }
 
@@ -30,7 +30,7 @@ export default function ResetPassword() {
       return;
     }
     if (!passwordMeetsPolicy(newPassword)) {
-      toast.error("Mot de passe faible (12+ caractères, majuscule, minuscule, chiffre, symbole).");
+      toast.error("Mot de passe faible (8+ caractères, majuscule, minuscule, chiffre, symbole).");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -111,7 +111,7 @@ export default function ResetPassword() {
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
                 className="block w-full pl-9 pr-3 py-3 rounded-xl border border-white/10 bg-white/5 text-white placeholder-gray-500 focus:ring-2 focus:ring-noya-accent focus:border-transparent"
-                placeholder="12+ caractères, fort"
+                placeholder="8+ caractères, fort"
               />
             </div>
           </div>

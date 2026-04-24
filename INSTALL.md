@@ -79,7 +79,7 @@ En cas d’erreurs Next bizarres, supprime le dossier **`.next`** puis relance `
 
 Mot de passe : **`SEED_TEST_PASSWORD`** ou **`Test1234!`** par défaut.
 
-Les **nouveaux** comptes créés via l’UI doivent respecter la politique de mot de passe forte (12+ caractères, majuscule, minuscule, chiffre, symbole).
+Les **nouveaux** comptes créés via l’UI doivent respecter la politique de mot de passe forte (8+ caractères, majuscule, minuscule, chiffre, symbole).
 
 ## Structure du dépôt (aperçu)
 

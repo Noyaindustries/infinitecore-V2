@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import type { PrismaClient } from "@prisma/client";
 import { randomUUID } from "crypto";
 import type { QueryFilter, QueryOrder } from "./mongo/dataQueryTypes";
+import { deleteSplitDoc, getSplitDoc, listSplitDocs, upsertSplitDoc } from "@/server/dataStores";
 
 export type { QueryFilter, QueryOrder } from "./mongo/dataQueryTypes";
 
@@ -139,10 +140,13 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
         // Parcourt la collection par pages jusqu'à épuisement (plafond sécurité) : les commandes
         // PADDE sont rares par rapport au volume total `orders` après migration Prisma.
         const PAGE_SIZE = 2500;
-        const MAX_RAW_DOCS = 150_000;
+        const MAX_RAW_DOCS = Math.min(50_000, Math.max(fetchCap * 20, 10_000));
+        const MAX_SCAN_MS = 8_000;
+        const startedAt = Date.now();
         const matches: Array<{ docId: string; data: Record<string, unknown> }> = [];
         let skip = 0;
         while (totalScanned < MAX_RAW_DOCS) {
+          if (Date.now() - startedAt >= MAX_SCAN_MS) break;
           const page = await deps.prisma.dataDocument.findMany({
             where: { collectionPath } as never,
             orderBy: { updatedAt: "desc" },
@@ -161,16 +165,21 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
         }
         filtered = matches;
       } else {
+        const splitRows = await listSplitDocs(collectionPath, fetchCap);
+        const splitById = new Map(splitRows.map((row) => [row.docId, row]));
         const rows = await deps.prisma.dataDocument.findMany({
           where: { collectionPath } as never,
           orderBy: { updatedAt: "desc" },
           take: fetchCap,
         });
-        totalScanned = rows.length;
-        const normalized = rows.map((row) => ({
-          docId: row.docId,
-          data: deps.coerceRecord(row.data),
-        }));
+        const mergedLegacy = rows
+          .map((row) => ({
+            docId: row.docId,
+            data: deps.coerceRecord(row.data),
+          }))
+          .filter((row) => !splitById.has(row.docId));
+        const normalized = [...splitRows, ...mergedLegacy].slice(0, fetchCap);
+        totalScanned = normalized.length;
         filtered = deps.applyFilters(normalized, filters);
       }
 
@@ -189,7 +198,7 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
           limit: parsed.limit,
           /** `true` si on a atteint le plafond : d'autres documents peuvent exister en base non chargés. */
           mayHaveMoreInDatabase: paddeOrdersWide
-            ? totalScanned >= 150_000
+            ? totalScanned >= Math.min(50_000, Math.max(fetchCap * 20, 10_000))
             : totalScanned >= fetchCap,
           ...(paddeOrdersWide ? { wideScanPaddeOrders: true as const } : {}),
         },
@@ -215,10 +224,15 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       const row = await deps.prisma.dataDocument.findUnique({
         where: { collectionPath_docId: { collectionPath, docId } },
       });
+      const splitRow = await getSplitDoc(collectionPath, docId);
       return res.status(200).json({
         success: true,
-        exists: Boolean(row),
-        doc: row ? { id: row.docId, data: deps.coerceRecord(row.data) } : null,
+        exists: Boolean(splitRow || row),
+        doc: splitRow
+          ? { id: splitRow.docId, data: deps.coerceRecord(splitRow.data) }
+          : row
+            ? { id: row.docId, data: deps.coerceRecord(row.data) }
+            : null,
       });
     } catch (error) {
       console.error("[data/doc:get]", error);
@@ -240,7 +254,16 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       const authz = deps.assertDataDocAuthorized(auth, "write", collectionPath, docId, incoming);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
 
+      const splitCurrent = await getSplitDoc(collectionPath, docId);
+      const legacyCurrent = await deps.prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath, docId } },
+        select: { data: true },
+      });
+      const fallbackCurrent = splitCurrent
+        ? deps.coerceRecord(splitCurrent.data)
+        : deps.coerceRecord(legacyCurrent?.data);
       await deps.upsertDataDocument(collectionPath, docId, incoming, merge);
+      await upsertSplitDoc(collectionPath, docId, incoming, merge, fallbackCurrent);
       return res.status(200).json({ success: true, docId });
     } catch (error) {
       console.error("[data/doc:post]", error);
@@ -268,18 +291,24 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       const authz = deps.assertDataDocAuthorized(auth, "write", collectionPath, docId, updates);
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
 
+      const splitExisting = await getSplitDoc(collectionPath, docId);
       const existing = await deps.prisma.dataDocument.findUnique({
         where: { collectionPath_docId: { collectionPath, docId } },
       });
-      if (!existing) return res.status(404).json({ success: false, error: "Document introuvable." });
+      const current = splitExisting ? deps.coerceRecord(splitExisting.data) : deps.coerceRecord(existing?.data);
+      if (!Object.keys(current).length && !existing && !splitExisting) {
+        return res.status(404).json({ success: false, error: "Document introuvable." });
+      }
 
-      const next = { ...deps.coerceRecord(existing.data), ...updates };
+      const next = { ...current, ...updates };
       for (const key of deleteKeys) delete next[key];
 
-      await deps.prisma.dataDocument.update({
+      await deps.prisma.dataDocument.upsert({
         where: { collectionPath_docId: { collectionPath, docId } },
-        data: { data: next as never },
+        create: { collectionPath, docId, data: next as never },
+        update: { data: next as never },
       });
+      await upsertSplitDoc(collectionPath, docId, next, false);
 
       return res.status(200).json({ success: true });
     } catch (error) {
@@ -303,6 +332,7 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       await deps.prisma.dataDocument.deleteMany({
         where: { collectionPath, docId },
       });
+      await deleteSplitDoc(collectionPath, docId);
       return res.status(200).json({ success: true });
     } catch (error) {
       console.error("[data/doc:delete]", error);

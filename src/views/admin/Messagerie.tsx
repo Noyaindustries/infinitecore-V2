@@ -25,6 +25,7 @@ import { cn } from '../../lib/utils';
 import { formatFileSize } from '../../lib/formatFileSize';
 import { formatTimeShort } from '../../lib/formatTimeShort';
 import { notificationService } from '../../services/notificationService';
+import { apiRequest } from '@/lib/apiClient';
 
 interface ChatMeta {
   clientId: string;
@@ -236,6 +237,20 @@ export default function AdminMessagerie() {
       'message',
       { chatClientId: selectedChat.clientId },
     );
+
+    const preview = msg.text ? msg.text.substring(0, 180) : `Fichier : ${msg.fileName || 'pièce jointe'}`;
+    await apiRequest('/api/chats/client-email-notify', {
+      method: 'POST',
+      body: JSON.stringify({
+        clientId: selectedChat.clientId,
+        clientEmail: selectedChat.clientEmail || '',
+        clientName: selectedChat.clientName || 'Client',
+        senderName: commandoName,
+        messagePreview: preview,
+      }),
+    }).catch(() => {
+      // Non bloquant: le chat reste envoyé même si l'email échoue.
+    });
   };
 
   const handleCreateNewChat = async (client: any) => {

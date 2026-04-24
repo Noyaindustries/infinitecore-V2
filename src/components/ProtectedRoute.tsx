@@ -7,6 +7,9 @@ interface ProtectedRouteProps {
 
 export default function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
   const { user, userData, isAuthReady } = useAuth();
+  const roleFromProfile = typeof userData?.role === "string" ? userData.role : undefined;
+  const roleFromAuth = typeof user?.role === "string" ? user.role : undefined;
+  const effectiveRole = roleFromProfile || roleFromAuth;
 
   if (!isAuthReady) {
     return (
@@ -20,28 +23,27 @@ export default function ProtectedRoute({ allowedRoles }: ProtectedRouteProps) {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !userData) {
+  if (allowedRoles && !effectiveRole) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-6 text-center">
         <p className="text-sm font-medium text-gray-700 max-w-md">
-          Profil utilisateur introuvable dans la base. Un document <code className="font-mono text-xs">users/{'{votre UID}'}</code> avec un
-          champ <code className="font-mono text-xs">role</code> (ex. <code className="font-mono text-xs">commando</code> ou{' '}
-          <code className="font-mono text-xs">admin</code>) est requis pour accéder à cet espace.
+          Impossible de déterminer votre rôle. Vérifiez que votre compte contient un champ{" "}
+          <code className="font-mono text-xs">role</code> (ex. <code className="font-mono text-xs">commando</code> ou{" "}
+          <code className="font-mono text-xs">admin</code>), puis reconnectez-vous.
         </p>
       </div>
     );
   }
 
-  const role = typeof userData?.role === "string" ? userData.role : undefined;
-  if (allowedRoles && userData && role && !allowedRoles.includes(role)) {
+  if (allowedRoles && effectiveRole && !allowedRoles.includes(effectiveRole)) {
     // User is logged in but doesn't have the right role
-    if (role === "admin") {
+    if (effectiveRole === "admin") {
       return <Navigate to="/superadmin" replace />;
-    } else if (role === "commando") {
+    } else if (effectiveRole === "commando") {
       return <Navigate to="/admin" replace />;
-    } else if (role === "developer") {
+    } else if (effectiveRole === "developer") {
       return <Navigate to="/developer" replace />;
-    } else if (role === "partner") {
+    } else if (effectiveRole === "partner") {
       return <Navigate to="/partenaire" replace />;
     }
     return <Navigate to="/dashboard" replace />;

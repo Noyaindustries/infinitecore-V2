@@ -42,7 +42,13 @@ const USER_FIELDS = [
   "phone",
   "role",
   "companyId",
+  "companyName",
+  "companyDescription",
+  "industry",
+  "size",
   "referredBy",
+  "referredByPartnerId",
+  "referredByPartnerName",
   "photoURL",
   "createdAt",
 ] as const;
@@ -90,6 +96,37 @@ async function sendLoginVerificationEmail(input: { to: string; code: string }) {
       `<p style="font-size: 24px; font-weight: 700; letter-spacing: 0.12em;">${input.code}</p>` +
       `<p>Il expire dans <strong>10 minutes</strong>.</p>` +
       `<p>Si vous n'êtes pas a l'origine de cette tentative de connexion, ignorez cet email.</p>`,
+  });
+  return { delivered: true as const };
+}
+
+const CLIENT_CHAT_EMAIL_THROTTLE_MS = 10 * 60 * 1000;
+
+async function sendClientChatMessageEmail(input: {
+  to: string;
+  clientName: string;
+  senderName: string;
+  messagePreview: string;
+}) {
+  const transporter = getSmtpTransport();
+  if (!transporter) return { delivered: false as const };
+  const portalUrl = `${resetAppBaseUrl()}/dashboard/chat`;
+  await transporter.sendMail({
+    from: appEnv.smtp.fromOrUser,
+    to: input.to,
+    subject: "Nouveau message dans votre espace client",
+    text:
+      `Bonjour ${input.clientName || "Client"},\n\n` +
+      `${input.senderName} vous a envoyé un message dans votre espace client Infinite Core.\n\n` +
+      `Aperçu : ${input.messagePreview}\n\n` +
+      `Répondre : ${portalUrl}\n\n` +
+      `— Équipe Infinite Core`,
+    html:
+      `<p>Bonjour ${input.clientName || "Client"},</p>` +
+      `<p><strong>${input.senderName}</strong> vous a envoyé un message dans votre espace client Infinite Core.</p>` +
+      `<p><strong>Aperçu :</strong> ${input.messagePreview}</p>` +
+      `<p><a href="${portalUrl}">Ouvrir la messagerie client</a></p>` +
+      `<p>— Équipe Infinite Core</p>`,
   });
   return { delivered: true as const };
 }
@@ -211,7 +248,7 @@ function isValidEmail(email: string) {
 }
 
 function isStrongPassword(password: string) {
-  if (password.length < 12 || password.length > 128) return false;
+  if (password.length < 8 || password.length > 128) return false;
   return /[a-z]/.test(password) && /[A-Z]/.test(password) && /\d/.test(password) && /[^A-Za-z0-9]/.test(password);
 }
 
@@ -374,6 +411,97 @@ function isSafeDocId(docId: string) {
 
 function normalizePartnerCode(raw: string) {
   return String(raw || "").trim().toUpperCase().replace("PART-USR", "PART-INF");
+}
+
+function leadDedupDocId(partnerId: string, email: string) {
+  const p = String(partnerId || "").trim();
+  const e = String(email || "").trim().toLowerCase();
+  return sha256Hex(`lead_dedup:${p}|${e}`);
+}
+
+type PartnerLookupEntry = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  referralCode: string;
+  partnerCode: string;
+};
+
+const PARTNER_LOOKUP_MAX = 5000;
+
+async function listPartnerLookupEntries(): Promise<PartnerLookupEntry[]> {
+  const partnerAccounts = await prisma.userAccount.findMany({
+    where: { role: "partner" },
+    select: { uid: true, firstName: true, lastName: true, email: true },
+    take: PARTNER_LOOKUP_MAX,
+  });
+  if (!partnerAccounts.length) return [];
+
+  const profileRows = await prisma.dataDocument.findMany({
+    where: {
+      collectionPath: "users",
+      docId: { in: partnerAccounts.map((account) => account.uid) },
+    },
+    select: { docId: true, data: true },
+  });
+  const profileByUid = new Map(profileRows.map((row) => [row.docId, coerceRecord(row.data)]));
+
+  return partnerAccounts.map((account) => {
+    const profile = profileByUid.get(account.uid) || {};
+    const firstName =
+      (typeof profile.firstName === "string" && profile.firstName) || account.firstName || "";
+    const lastName =
+      (typeof profile.lastName === "string" && profile.lastName) || account.lastName || "";
+    const email =
+      (typeof profile.email === "string" && profile.email) || account.email || "";
+    return {
+      id: account.uid,
+      firstName,
+      lastName,
+      email,
+      referralCode: normalizePartnerCode(String(profile.referralCode || "")),
+      partnerCode: normalizePartnerCode(String(profile.partnerCode || "")),
+    };
+  });
+}
+
+async function resolvePartnerFromReferralCode(refRaw: string): Promise<PartnerLookupEntry | null> {
+  const trimmedRef = String(refRaw || "").trim();
+  if (!trimmedRef) return null;
+  const normalizedRef = normalizePartnerCode(trimmedRef);
+
+  const directPartner = await prisma.userAccount.findUnique({
+    where: { uid: trimmedRef },
+    select: { uid: true, firstName: true, lastName: true, email: true, role: true },
+  });
+  if (directPartner?.role === "partner") {
+    return {
+      id: directPartner.uid,
+      firstName: directPartner.firstName || "",
+      lastName: directPartner.lastName || "",
+      email: directPartner.email,
+      referralCode: "",
+      partnerCode: "",
+    };
+  }
+
+  const entries = await listPartnerLookupEntries();
+  for (const entry of entries) {
+    const uid = entry.id;
+    const derivedCode5 = normalizePartnerCode(`PART-${uid.substring(0, 5).toUpperCase().replace("USR", "INF")}`);
+    const derivedCode6 = normalizePartnerCode(`PART-${uid.substring(0, 6).toUpperCase().replace("USR", "INF")}`);
+    if (
+      entry.referralCode === normalizedRef ||
+      entry.partnerCode === normalizedRef ||
+      derivedCode5 === normalizedRef ||
+      derivedCode6 === normalizedRef ||
+      uid === trimmedRef
+    ) {
+      return entry;
+    }
+  }
+  return null;
 }
 
 export async function resolveAuthPayload(raw: AuthPayload): Promise<AuthPayload | null> {
@@ -683,8 +811,10 @@ async function ensureUserDocumentFromAccount(account: {
   companyId: string | null;
   referredBy: string | null;
   photoURL: string | null;
+  profile: unknown;
   createdAt: Date;
 }) {
+  const profile = coerceRecord(account.profile);
   await upsertDataDocument(
     "users",
     account.uid,
@@ -696,7 +826,13 @@ async function ensureUserDocumentFromAccount(account: {
       phone: account.phone || "",
       role: account.role,
       companyId: account.companyId || null,
+      companyName: typeof profile.companyName === "string" ? profile.companyName : null,
+      companyDescription: typeof profile.companyDescription === "string" ? profile.companyDescription : null,
+      industry: typeof profile.industry === "string" ? profile.industry : null,
+      size: typeof profile.size === "string" ? profile.size : null,
       referredBy: account.referredBy || null,
+      referredByPartnerId: typeof profile.referredByPartnerId === "string" ? profile.referredByPartnerId : null,
+      referredByPartnerName: typeof profile.referredByPartnerName === "string" ? profile.referredByPartnerName : null,
       photoURL: account.photoURL || null,
       createdAt: account.createdAt.toISOString(),
     },
@@ -717,9 +853,16 @@ export function registerMongoApi(app: Express) {
       const account = await prisma.userAccount.findUnique({ where: { uid: auth.uid } });
       if (!account) return res.status(401).json({ success: false, error: "Session invalide." });
 
-      const profileDoc = await prisma.dataDocument.findUnique({
+      let profileDoc = await prisma.dataDocument.findUnique({
         where: { collectionPath_docId: { collectionPath: "users", docId: account.uid } },
       });
+      if (!profileDoc) {
+        // Auto-réparation: certains comptes historiques peuvent ne pas avoir de doc users/{uid}.
+        await ensureUserDocumentFromAccount(account);
+        profileDoc = await prisma.dataDocument.findUnique({
+          where: { collectionPath_docId: { collectionPath: "users", docId: account.uid } },
+        });
+      }
       const profile = coerceRecord(profileDoc?.data);
 
       return res.status(200).json({
@@ -801,14 +944,32 @@ export function registerMongoApi(app: Express) {
       if (!validated.success) {
         return res.status(400).json({ success: false, error: "Donnees d'inscription invalides.", details: validated.error.format() });
       }
-      const { email: rawEmail, password, firstName, lastName, companyId = null } = validated.data;
+      const {
+        email: rawEmail,
+        password,
+        firstName,
+        lastName,
+        companyId = null,
+        companyName = "",
+        companyDescription = "",
+        industry = "",
+        size = "",
+        referredByPartnerId = "",
+        referredByPartnerName = "",
+      } = validated.data;
       const email = rawEmail.trim().toLowerCase();
       const authKey = authBucketKey(req, email);
       if (await isAuthTemporarilyBlocked(authKey)) {
         return res.status(429).json({ success: false, error: "Trop de tentatives. Réessayez plus tard." });
       }
-      const referredBy = req.body?.referredBy ? String(req.body.referredBy) : null;
-      const phone = req.body?.phone ? String(req.body.phone) : null;
+      const referredBy = req.body?.referredBy ? String(req.body.referredBy).trim() : null;
+      const phone = req.body?.phone ? String(req.body.phone).trim() : null;
+      const normalizedCompanyName = String(companyName || "").trim();
+      const normalizedCompanyDescription = String(companyDescription || "").trim();
+      const normalizedIndustry = String(industry || "").trim();
+      const normalizedSize = String(size || "").trim();
+      const normalizedReferredByPartnerId = String(referredByPartnerId || "").trim();
+      const normalizedReferredByPartnerName = String(referredByPartnerName || "").trim();
 
       if (!email || !password || !isValidEmail(email)) {
         await registerAuthFailure(authKey);
@@ -818,7 +979,7 @@ export function registerMongoApi(app: Express) {
         await registerAuthFailure(authKey);
         return res.status(400).json({
           success: false,
-          error: "Mot de passe insuffisant (12+ caractères, majuscule, minuscule, chiffre et symbole).",
+          error: "Mot de passe insuffisant (8+ caractères, majuscule, minuscule, chiffre et symbole).",
         });
       }
 
@@ -842,7 +1003,13 @@ export function registerMongoApi(app: Express) {
           firstName,
           lastName,
           companyId,
+          companyName: normalizedCompanyName || null,
+          companyDescription: normalizedCompanyDescription || null,
+          industry: normalizedIndustry || null,
+          size: normalizedSize || null,
           referredBy,
+          referredByPartnerId: normalizedReferredByPartnerId || null,
+          referredByPartnerName: normalizedReferredByPartnerName || null,
           phone,
           attempts: 0,
           used: false,
@@ -901,7 +1068,13 @@ export function registerMongoApi(app: Express) {
       const firstName = String(challenge.firstName || "").trim();
       const lastName = String(challenge.lastName || "").trim();
       const companyId = challenge.companyId ? String(challenge.companyId) : null;
+      const companyName = challenge.companyName ? String(challenge.companyName) : null;
+      const companyDescription = challenge.companyDescription ? String(challenge.companyDescription) : null;
+      const industry = challenge.industry ? String(challenge.industry) : null;
+      const size = challenge.size ? String(challenge.size) : null;
       const referredBy = challenge.referredBy ? String(challenge.referredBy) : null;
+      const referredByPartnerId = challenge.referredByPartnerId ? String(challenge.referredByPartnerId) : null;
+      const referredByPartnerName = challenge.referredByPartnerName ? String(challenge.referredByPartnerName) : null;
       const phone = challenge.phone ? String(challenge.phone) : null;
       const codeHash = String(challenge.codeHash || "");
       const used = Boolean(challenge.used);
@@ -956,7 +1129,14 @@ export function registerMongoApi(app: Express) {
           referredBy,
           phone,
           provider: "password",
-          profile: {} as any,
+          profile: {
+            ...(companyName ? { companyName } : {}),
+            ...(companyDescription ? { companyDescription } : {}),
+            ...(industry ? { industry } : {}),
+            ...(size ? { size } : {}),
+            ...(referredByPartnerId ? { referredByPartnerId } : {}),
+            ...(referredByPartnerName ? { referredByPartnerName } : {}),
+          } as any,
         },
       });
 
@@ -997,53 +1177,17 @@ export function registerMongoApi(app: Express) {
         return res.status(400).json({ success: false, error: "Paramètre ref requis." });
       }
 
-      const ref = normalizePartnerCode(refRaw);
-
-      // 1) Compat direct : ref = uid
-      const byUid = await prisma.dataDocument.findUnique({
-        where: { collectionPath_docId: { collectionPath: "users", docId: refRaw } },
-      });
-      if (byUid) {
-        const data = coerceRecord(byUid.data);
-        const role = String(data.role || "").toLowerCase();
-        if (role === "partner") {
-          return res.status(200).json({
-            success: true,
-            partner: {
-              id: byUid.docId,
-              firstName: typeof data.firstName === "string" ? data.firstName : "",
-              lastName: typeof data.lastName === "string" ? data.lastName : "",
-              email: typeof data.email === "string" ? data.email : "",
-            },
-          });
-        }
-      }
-
-      // 2) ref = referralCode / partnerCode (fallback mémoire pour compat)
-      const rows = await prisma.dataDocument.findMany({
-        where: { collectionPath: "users" },
-      });
-      for (const row of rows) {
-        const data = coerceRecord(row.data);
-        const role = String(data.role || "").toLowerCase();
-        if (role !== "partner") continue;
-
-        const referralCode = normalizePartnerCode(String(data.referralCode || ""));
-        const partnerCode = normalizePartnerCode(String(data.partnerCode || ""));
-        const uid = String(data.uid || row.docId || "");
-        const derivedCode5 = normalizePartnerCode(`PART-${uid.substring(0, 5).toUpperCase().replace("USR", "INF")}`);
-        const derivedCode6 = normalizePartnerCode(`PART-${uid.substring(0, 6).toUpperCase().replace("USR", "INF")}`);
-        if (referralCode === ref || partnerCode === ref || derivedCode5 === ref || derivedCode6 === ref || uid === refRaw) {
-          return res.status(200).json({
-            success: true,
-            partner: {
-              id: row.docId,
-              firstName: typeof data.firstName === "string" ? data.firstName : "",
-              lastName: typeof data.lastName === "string" ? data.lastName : "",
-              email: typeof data.email === "string" ? data.email : "",
-            },
-          });
-        }
+      const resolvedPartner = await resolvePartnerFromReferralCode(refRaw);
+      if (resolvedPartner) {
+        return res.status(200).json({
+          success: true,
+          partner: {
+            id: resolvedPartner.id,
+            firstName: resolvedPartner.firstName,
+            lastName: resolvedPartner.lastName,
+            email: resolvedPartner.email,
+          },
+        });
       }
 
       return res.status(404).json({ success: false, error: "Référence de parrainage introuvable." });
@@ -1080,32 +1224,11 @@ export function registerMongoApi(app: Express) {
 
       // Si l'ID partenaire n'est pas fourni côté client, on le résout côté serveur via le code de parrainage.
       if (!referredByPartnerId) {
-        const partnerRows = await prisma.dataDocument.findMany({
-          where: { collectionPath: "users" },
-        });
-        const resolvedPartner = partnerRows.find((row) => {
-          const data = coerceRecord(row.data);
-          const role = String(data.role || "").toLowerCase();
-          if (role !== "partner") return false;
-          const referral = normalizePartnerCode(String(data.referralCode || ""));
-          const partnerCode = normalizePartnerCode(String(data.partnerCode || ""));
-          const uid = String(data.uid || row.docId || "");
-          const derivedCode5 = normalizePartnerCode(`PART-${uid.substring(0, 5).toUpperCase().replace("USR", "INF")}`);
-          const derivedCode6 = normalizePartnerCode(`PART-${uid.substring(0, 6).toUpperCase().replace("USR", "INF")}`);
-          return (
-            referral === referralCode ||
-            partnerCode === referralCode ||
-            derivedCode5 === referralCode ||
-            derivedCode6 === referralCode ||
-            uid === referralCodeRaw
-          );
-        });
-
+        const resolvedPartner = await resolvePartnerFromReferralCode(referralCodeRaw);
         if (resolvedPartner) {
-          const partnerData = coerceRecord(resolvedPartner.data);
-          referredByPartnerId = resolvedPartner.docId;
-          const resolvedName = `${String(partnerData.firstName || "")} ${String(partnerData.lastName || "")}`.trim();
-          partnerLabel = resolvedName || String(partnerData.email || "") || partnerLabel;
+          referredByPartnerId = resolvedPartner.id;
+          const resolvedName = `${resolvedPartner.firstName} ${resolvedPartner.lastName}`.trim();
+          partnerLabel = resolvedName || resolvedPartner.email || partnerLabel;
         }
       }
 
@@ -1171,16 +1294,17 @@ export function registerMongoApi(app: Express) {
 
       let leadCreated = false;
       if (referredByPartnerId && email) {
-        const allLeads = await prisma.dataDocument.findMany({
-          where: { collectionPath: "leads" },
+        const dedupId = leadDedupDocId(referredByPartnerId, email);
+        const existingDedup = await prisma.dataDocument.findUnique({
+          where: {
+            collectionPath_docId: {
+              collectionPath: "lead_dedup",
+              docId: dedupId,
+            },
+          },
+          select: { docId: true },
         });
-        const alreadyExists = allLeads.some((row) => {
-          const data = coerceRecord(row.data);
-          return (
-            String(data.partnerId || "") === referredByPartnerId &&
-            String(data.email || "").trim().toLowerCase() === email
-          );
-        });
+        const alreadyExists = Boolean(existingDedup);
 
         if (!alreadyExists) {
           const leadId = randomUUID().replace(/-/g, "");
@@ -1208,6 +1332,17 @@ export function registerMongoApi(app: Express) {
               phone: phone || "Non renseigné",
               note: leadNoteParts.join(" "),
               status: "soumis",
+              createdAt: new Date().toISOString(),
+            },
+            false
+          );
+          await upsertDataDocument(
+            "lead_dedup",
+            dedupId,
+            {
+              partnerId: referredByPartnerId,
+              email,
+              leadId,
               createdAt: new Date().toISOString(),
             },
             false
@@ -1361,6 +1496,83 @@ export function registerMongoApi(app: Express) {
   app.post("/api/auth/logout", async (_req: Request, res: Response) => {
     clearAuthCookie(res);
     return res.status(200).json({ success: true });
+  });
+
+  app.post("/api/chats/client-email-notify", async (req: Request, res: Response) => {
+    try {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      if (auth.role !== "admin" && auth.role !== "commando") {
+        return res.status(403).json({ success: false, error: "Accès refusé." });
+      }
+
+      const clientId = String(req.body?.clientId || "").trim();
+      const senderName = String(req.body?.senderName || "").trim() || "L'équipe Infinite Core";
+      const messagePreviewRaw = String(req.body?.messagePreview || "").trim();
+      const fallbackEmail = String(req.body?.clientEmail || "").trim().toLowerCase();
+      const fallbackClientName = String(req.body?.clientName || "").trim();
+      if (!clientId || !isSafeDocId(clientId)) {
+        return res.status(400).json({ success: false, error: "clientId invalide." });
+      }
+      if (!messagePreviewRaw) {
+        return res.status(400).json({ success: false, error: "messagePreview requis." });
+      }
+
+      const now = Date.now();
+      const throttleDocId = `chat_client_mail_${clientId}`;
+      const throttleRow = await prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath: "chat_email_rate_limits", docId: throttleDocId } },
+        select: { data: true },
+      });
+      const throttleData = coerceRecord(throttleRow?.data);
+      const lastSentAt = Number(throttleData.lastSentAt || 0);
+      if (Number.isFinite(lastSentAt) && lastSentAt > 0 && now - lastSentAt < CLIENT_CHAT_EMAIL_THROTTLE_MS) {
+        return res.status(200).json({ success: true, skipped: true, reason: "throttled" });
+      }
+
+      const clientRow = await prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath: "users", docId: clientId } },
+        select: { data: true },
+      });
+      const clientData = coerceRecord(clientRow?.data);
+      const email = String(clientData.email || fallbackEmail || "").trim().toLowerCase();
+      if (!email || !isValidEmail(email)) {
+        return res.status(200).json({ success: true, skipped: true, reason: "missing_email" });
+      }
+      const clientName =
+        `${String(clientData.firstName || "").trim()} ${String(clientData.lastName || "").trim()}`.trim() ||
+        fallbackClientName ||
+        "Client";
+
+      const messagePreview = messagePreviewRaw.length > 180 ? `${messagePreviewRaw.slice(0, 180)}...` : messagePreviewRaw;
+      const result = await sendClientChatMessageEmail({
+        to: email,
+        clientName,
+        senderName,
+        messagePreview,
+      });
+      if (!result.delivered) {
+        return res.status(200).json({ success: true, skipped: true, reason: "smtp_unavailable" });
+      }
+
+      await upsertDataDocument(
+        "chat_email_rate_limits",
+        throttleDocId,
+        {
+          clientId,
+          lastSentAt: now,
+          lastSenderUid: auth.uid,
+          lastPreview: messagePreview,
+          updatedAt: new Date().toISOString(),
+        },
+        false
+      );
+
+      return res.status(200).json({ success: true, sent: true });
+    } catch (error) {
+      console.error("[chats/client-email-notify]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
   });
 
   app.post("/api/auth/login/verify", async (req: Request, res: Response) => {
@@ -1753,7 +1965,7 @@ export function registerMongoApi(app: Express) {
       if (password && !isStrongPassword(password)) {
         return res.status(400).json({
           success: false,
-          error: "Mot de passe insuffisant (12+ caractères, majuscule, minuscule, chiffre et symbole).",
+          error: "Mot de passe insuffisant (8+ caractères, majuscule, minuscule, chiffre et symbole).",
         });
       }
 

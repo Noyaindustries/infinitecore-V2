@@ -158,7 +158,61 @@ export function onAuthStateChanged(_auth: Auth, callback: AuthListener) {
   };
 }
 
-export async function createUserWithEmailAndPassword(_auth: Auth, email: string, password: string) {
+/** Champs attendus par `AuthRegisterSchema` côté serveur (prénom / nom obligatoires). */
+export type RegisterEmailPasswordExtras = {
+  firstName: string;
+  lastName: string;
+  phone?: string | null;
+  referredBy?: string | null;
+  referredByPartnerId?: string | null;
+  referredByPartnerName?: string | null;
+  companyId?: string | null;
+  companyName?: string | null;
+  companyDescription?: string | null;
+  industry?: string | null;
+  size?: string | null;
+};
+
+/** `extras` est obligatoire : le serveur valide avec `AuthRegisterSchema` (prénom + nom min. 1 caractère). */
+export async function createUserWithEmailAndPassword(
+  _auth: Auth,
+  email: string,
+  password: string,
+  extras: RegisterEmailPasswordExtras,
+) {
+  const payload: Record<string, unknown> = {
+    email,
+    password,
+    firstName: String(extras.firstName || "").trim(),
+    lastName: String(extras.lastName || "").trim(),
+  };
+  if (extras.phone != null && String(extras.phone).trim()) {
+    payload.phone = String(extras.phone).trim();
+  }
+  if (extras.referredBy != null && String(extras.referredBy).trim()) {
+    payload.referredBy = String(extras.referredBy).trim();
+  }
+  if (extras.referredByPartnerId != null && String(extras.referredByPartnerId).trim()) {
+    payload.referredByPartnerId = String(extras.referredByPartnerId).trim();
+  }
+  if (extras.referredByPartnerName != null && String(extras.referredByPartnerName).trim()) {
+    payload.referredByPartnerName = String(extras.referredByPartnerName).trim();
+  }
+  if (extras.companyId != null && String(extras.companyId).trim()) {
+    payload.companyId = String(extras.companyId).trim();
+  }
+  if (extras.companyName != null && String(extras.companyName).trim()) {
+    payload.companyName = String(extras.companyName).trim();
+  }
+  if (extras.companyDescription != null && String(extras.companyDescription).trim()) {
+    payload.companyDescription = String(extras.companyDescription).trim();
+  }
+  if (extras.industry != null && String(extras.industry).trim()) {
+    payload.industry = String(extras.industry).trim();
+  }
+  if (extras.size != null && String(extras.size).trim()) {
+    payload.size = String(extras.size).trim();
+  }
   const data = await apiRequest<{
     success: boolean;
     token?: string;
@@ -167,7 +221,7 @@ export async function createUserWithEmailAndPassword(_auth: Auth, email: string,
     user?: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
   }>("/api/auth/register", {
     method: "POST",
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify(payload),
   });
   if (data.verificationRequired) {
     return {

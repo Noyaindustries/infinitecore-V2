@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ShieldAlert, Plus, Mail, Phone, CheckCircle, Clock, X, Copy, Trash2, Edit2 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { collection, onSnapshot, query, where, setDoc, doc, deleteDoc, updateDoc } from '@/lib/mongoFirestore';
+import { collection, onSnapshot, query, where, doc, deleteDoc, updateDoc } from '@/lib/mongoFirestore';
 import { db } from '@/lib/clientSdk';
 import { createUserAsAdmin } from '../../utils/adminAuth';
 
@@ -71,17 +71,20 @@ export default function SuperAdminCommando() {
       const firstName = nameParts[0];
       const lastName = nameParts.slice(1).join(' ');
 
-      // 2. Profil utilisateur (documents MongoDB)
-      await setDoc(doc(db, 'users', authResult.uid), {
-        uid: authResult.uid,
-        email: newMember.email,
-        firstName: firstName,
-        lastName: lastName,
-        phone: newMember.phone || null,
-        role: 'commando',
-        jobTitle: newMember.role || 'Commando',
-        createdAt: new Date().toISOString()
-      });
+      // 2. Le document users/{uid} est deja cree cote API admin-create.
+      // On applique seulement des champs complementaires, sans bloquer le flux si cela echoue.
+      try {
+        await updateDoc(doc(db, 'users', authResult.uid), {
+          firstName: firstName,
+          lastName: lastName,
+          phone: newMember.phone || null,
+          role: 'commando',
+          jobTitle: newMember.role || 'Commando',
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (profilePatchError) {
+        console.warn('Commando created but profile patch failed:', profilePatchError);
+      }
 
       setGeneratedPassword(authResult.invitationSent ? "Invitation envoyée par email" : "Invitation non envoyée");
       toast.success('Membre ajouté avec succès.');

@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { User, onAuthStateChanged, signOut } from '@/lib/mongoAuth';
 import { auth } from '@/lib/clientSdk';
-import { apiRequest } from '../lib/apiClient';
+import { apiRequest, ApiHttpError } from '../lib/apiClient';
 import { agentSessionLog } from '@/debug/agentSessionLog';
+import toast from 'react-hot-toast';
 
 function agentDebugLog(payload: Record<string, unknown>) {
   agentSessionLog(payload);
@@ -42,6 +43,7 @@ export const useAuth = () => useContext(AuthContext);
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const ACTIVITY_WRITE_THROTTLE_MS = 15000;
 const LAST_ACTIVITY_KEY = 'ic_last_activity_at';
+const SESSION_EXPIRED_TOAST_ID = 'session-expired';
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
@@ -67,6 +69,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setUserData(payload.userData || null);
           })
           .catch((error) => {
+            // 401 = session/cookie expiré(e) ; ce n'est pas une erreur "bruyante" en prod.
+            if (error instanceof ApiHttpError && error.status === 401) {
+              toast.error('Session expirée, reconnectez-vous.', { id: SESSION_EXPIRED_TOAST_ID });
+              void signOut(auth);
+              return;
+            }
             console.error('Error fetching user data:', error);
             setUserData(null);
           })
@@ -107,7 +115,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .then((payload) => {
           setUserData(payload.userData || null);
         })
-        .catch(() => {
+        .catch((error) => {
+          if (error instanceof ApiHttpError && error.status === 401) {
+            toast.error('Session expirée, reconnectez-vous.', { id: SESSION_EXPIRED_TOAST_ID });
+            void signOut(auth);
+            return;
+          }
           // Ignorer les erreurs temporaires réseau
         });
     }, 15000);

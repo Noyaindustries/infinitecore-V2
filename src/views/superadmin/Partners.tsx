@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect, Fragment } from 'react';
 import { Search, Filter, Edit2, Save, X, Plus, Mail, Phone, CheckCircle, Clock, Copy, Briefcase, Trash2, Users, ExternalLink, Package, MessageSquare } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { collection, onSnapshot, query, where, setDoc, doc, updateDoc, deleteDoc, orderBy } from '@/lib/mongoFirestore';
+import { collection, onSnapshot, query, where, doc, updateDoc, deleteDoc, orderBy } from '@/lib/mongoFirestore';
 import { db } from '@/lib/clientSdk';
 import { createUserAsAdmin } from '../../utils/adminAuth';
 
@@ -213,19 +213,23 @@ export default function SuperAdminPartners() {
       const firstName = nameParts[0];
       const lastName = nameParts.slice(1).join(' ');
 
-      await setDoc(doc(db, 'users', authResult.uid), {
-        uid: authResult.uid,
-        email: newPartner.email,
-        firstName: firstName,
-        lastName: lastName,
-        companyName: newPartner.company || null,
-        phone: newPartner.phone || null,
-        role: 'partner',
-        commissionRate: 10,
-        referredClientsCount: 0,
-        partnerCode: `PART-${authResult.uid.substring(0, 5).toUpperCase()}`,
-        createdAt: new Date().toISOString()
-      });
+      // Le profil users/{uid} est initialise par l'API admin-create.
+      // On complete ensuite les champs metier sans rendre l'inscription bloquante.
+      try {
+        await updateDoc(doc(db, 'users', authResult.uid), {
+          firstName: firstName,
+          lastName: lastName,
+          companyName: newPartner.company || null,
+          phone: newPartner.phone || null,
+          role: 'partner',
+          commissionRate: 10,
+          referredClientsCount: 0,
+          partnerCode: `PART-${authResult.uid.substring(0, 5).toUpperCase()}`,
+          updatedAt: new Date().toISOString(),
+        });
+      } catch (profilePatchError) {
+        console.warn('Partner created but profile patch failed:', profilePatchError);
+      }
 
       setGeneratedPassword(authResult.invitationSent ? "Invitation envoyée par email" : "Invitation non envoyée");
       toast.success('Partenaire ajouté avec succès.');

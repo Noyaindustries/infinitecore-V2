@@ -23,9 +23,7 @@ import {
   verifyEmailLoginCode,
   verifyEmailSignupCode,
 } from '@/lib/mongoAuth';
-import { doc, setDoc } from '@/lib/mongoFirestore';
-import { apiRequest } from '../../lib/apiClient';
-import { handleFirestoreError, OperationType } from '../../utils/firestoreErrorHandler';
+import { apiRequest, isEmailAlreadyRegisteredError } from '../../lib/apiClient';
 import { openGoogleConfirmDialog } from '../../lib/googleConfirmUI';
 import toast from 'react-hot-toast';
 
@@ -174,20 +172,43 @@ export default function Signup() {
   const getPasswordStrength = (password: string) => {
     if (!password) return 0;
     let score = 0;
-    if (password.length >= 12) score += 1;
+    if (password.length >= 8) score += 1;
     if (/[a-zA-Z]/.test(password) && /[0-9]/.test(password)) score += 1;
     if (/[^a-zA-Z0-9]/.test(password)) score += 1;
     return Math.max(1, score);
   };
 
   const isStrongPassword = (password: string) =>
-    password.length >= 12 &&
+    password.length >= 8 &&
     /[a-z]/.test(password) &&
     /[A-Z]/.test(password) &&
     /\d/.test(password) &&
     /[^A-Za-z0-9]/.test(password);
 
   const strength = getPasswordStrength(formData.password);
+
+  /** Aligné sur `AuthRegisterSchema` : prénom + nom requis à l’étape register API. */
+  const buildRegisterExtras = () => {
+    const nameParts = formData.fullName.trim().split(/\s+/).filter(Boolean);
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ").trim() || firstName;
+    const effectiveIndustry =
+      formData.industry === 'Autre' && formData.industryOther.trim()
+        ? formData.industryOther.trim()
+        : formData.industry;
+    return {
+      firstName,
+      lastName,
+      phone: formData.phone.trim() || null,
+      referredBy: referralCode?.trim() || null,
+      referredByPartnerId: referrerId?.trim() || null,
+      referredByPartnerName: referrerName?.trim() || null,
+      companyName: formData.company.trim() || null,
+      companyDescription: formData.companyDescription.trim() || null,
+      industry: effectiveIndustry.trim() || null,
+      size: formData.employees.trim() || null,
+    };
+  };
 
   const validateStep = (step: 1 | 2 | 3) => {
     if (step === 1) {
@@ -231,7 +252,7 @@ export default function Signup() {
       return false;
     }
     if (!isStrongPassword(formData.password)) {
-      toast.error('Mot de passe insuffisant (12+ caractères, majuscule, minuscule, chiffre et symbole).');
+      toast.error('Mot de passe insuffisant (8+ caractères, majuscule, minuscule, chiffre et symbole).');
       return false;
     }
     if (formData.password !== formData.confirmPassword) {
@@ -276,7 +297,12 @@ export default function Signup() {
     try {
       let user: { uid: string; email: string | null } | null = null;
       if (!awaitingEmailVerification) {
-        const userCredential = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+        const userCredential = await createUserWithEmailAndPassword(
+          auth,
+          formData.email,
+          formData.password,
+          buildRegisterExtras()
+        );
         if ('verificationRequired' in userCredential && userCredential.verificationRequired) {
           if (!userCredential.challengeId) {
             throw new Error("Impossible de démarrer la vérification email.");
@@ -301,38 +327,15 @@ export default function Signup() {
         throw new Error('Compte utilisateur indisponible après vérification.');
       }
 
-      // Extract first and last name from fullName
-      const nameParts = formData.fullName.split(' ');
-      const firstName = nameParts[0];
-      const lastName = nameParts.slice(1).join(' ');
+      // Même découpe que pour `POST /api/auth/register` (évite lastName vide si un seul mot).
+      const { firstName, lastName } = buildRegisterExtras();
       const isAdminEmail = formData.email === 'superadmin@infinitecore.com';
       const effectiveIndustry =
         formData.industry === 'Autre' && formData.industryOther.trim()
           ? formData.industryOther.trim()
           : formData.industry;
 
-      // Create user profile in Firestore
-      try {
-        await setDoc(doc(db, 'users', user.uid), {
-          uid: user.uid,
-          email: formData.email,
-          firstName: firstName,
-          lastName: lastName,
-          phone: formData.phone,
-          company: formData.company,
-          companyDescription: formData.companyDescription.trim() || '',
-          industry: effectiveIndustry,
-          employees: formData.employees,
-          role: isAdminEmail ? 'admin' : 'client',
-          companyId: null,
-          referredBy: referralCode || null,
-          referredByPartnerId: referrerId || null,
-          referredByPartnerName: referrerName?.trim() || null,
-          createdAt: new Date().toISOString()
-        });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.CREATE, `users/${user.uid}`);
-      }
+      // Le profil principal est créé côté API auth. Éviter une écriture cliente bloquante ici.
 
       await syncReferralSignupSideEffects({
         signupUserId: user.uid,
@@ -357,9 +360,18 @@ export default function Signup() {
       setIsSuccess(true);
       await navigateAfterSignup();
       
-    } catch (error: any) {
-      console.error('Registration error:', error);
-      
+    } catch (error: unknown) {
+      const duplicateEmail =
+        isEmailAlreadyRegisteredError(error) ||
+        (typeof error === 'object' &&
+          error !== null &&
+          'code' in error &&
+          String((error as { code?: string }).code) === 'auth/email-already-in-use');
+
+      if (!duplicateEmail) {
+        console.error('Registration error:', error);
+      }
+
       // If user was created in Auth but Firestore failed, clean up
       if (auth.currentUser) {
         try {
@@ -369,10 +381,10 @@ export default function Signup() {
         }
       }
 
-      if (error.code === 'auth/email-already-in-use' || (error.message && error.message.includes('auth/email-already-in-use'))) {
+      if (duplicateEmail) {
         toast.error('Cet email est déjà utilisé.');
       } else {
-        const msg = typeof error?.message === 'string' ? error.message : '';
+        const msg = error instanceof Error ? error.message : '';
         toast.error(msg || 'Une erreur est survenue lors de la création du compte.');
       }
     } finally {
@@ -871,7 +883,7 @@ export default function Signup() {
                         value={formData.password}
                         onChange={(e) => updateFormData('password', e.target.value)}
                         className="block w-full rounded-xl border border-[#2d2d3d] bg-[#0A0A0F] py-2.5 pl-10 pr-10 text-sm text-white placeholder-[#4B5563] focus:border-[#6366F1] focus:ring-[#6366F1]"
-                        placeholder="12+ caractères, majuscule, minuscule, chiffre, symbole"
+                        placeholder="8+ caractères, majuscule, minuscule, chiffre, symbole"
                       />
                       <button
                         type="button"
@@ -932,7 +944,12 @@ export default function Signup() {
                           if (!validateStep(3)) return;
                           setIsLoading(true);
                           try {
-                            const retry = await createUserWithEmailAndPassword(auth, formData.email, formData.password);
+                            const retry = await createUserWithEmailAndPassword(
+                              auth,
+                              formData.email,
+                              formData.password,
+                              buildRegisterExtras()
+                            );
                             if ('verificationRequired' in retry && retry.verificationRequired && retry.challengeId) {
                               setSignupChallengeId(retry.challengeId);
                               setVerificationCode('');
@@ -940,9 +957,13 @@ export default function Signup() {
                               return;
                             }
                             toast.error("Impossible de renvoyer le code pour le moment.");
-                          } catch (error) {
-                            const msg = error instanceof Error ? error.message : 'Impossible de renvoyer le code.';
-                            toast.error(msg);
+                          } catch (error: unknown) {
+                            if (isEmailAlreadyRegisteredError(error)) {
+                              toast.error('Cet email est déjà utilisé.');
+                            } else {
+                              const msg = error instanceof Error ? error.message : 'Impossible de renvoyer le code.';
+                              toast.error(msg);
+                            }
                           } finally {
                             setIsLoading(false);
                           }

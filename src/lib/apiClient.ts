@@ -1,6 +1,23 @@
 import { apiUrl } from "./apiBase";
 import { agentSessionLog } from "@/debug/agentSessionLog";
 
+/**
+ * Réponse `!response.ok` avec corps JSON typique `{ error?: string }`.
+ * Permet aux écrans de distinguer 409 / 401 etc. sans parser le message.
+ */
+export class ApiHttpError extends Error {
+  readonly status: number;
+  readonly body: Record<string, unknown>;
+
+  constructor(status: number, message: string, body: Record<string, unknown>) {
+    super(message);
+    this.name = "ApiHttpError";
+    this.status = status;
+    this.body = body;
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
 const AUTH_TOKEN_KEY = "ic_auth_token";
 const USE_LEGACY_BEARER =
   typeof process !== "undefined" &&
@@ -101,7 +118,7 @@ async function fetchAndParse<T>(url: string, init: RequestInit, fetchSignal: Abo
       response.status === 500 &&
       (!fromJson || /^internal server error$/i.test(String(fromJson).trim())) &&
       (!snippet || /^internal server error$/i.test(snippet.trim()));
-    throw new Error(
+    const message = String(
       fromJson ||
         snippet ||
         (response.status === 502 || response.status === 503
@@ -110,8 +127,16 @@ async function fetchAndParse<T>(url: string, init: RequestInit, fetchSignal: Abo
             ? `Erreur serveur (500). Consultez le terminal « api » : souvent MongoDB injoignable (Atlas, TLS, IP autorisées) ou cache Next corrompu (supprimez le dossier .next puis relancez npm run dev).`
             : `Erreur API (${response.status})`)
     );
+    throw new ApiHttpError(response.status, message, obj);
   }
   return parsed as T;
+}
+
+/** Conflit « compte / email déjà présent » (ex. inscription sur un email existant). */
+export function isEmailAlreadyRegisteredError(error: unknown): boolean {
+  if (error instanceof ApiHttpError && error.status === 409) return true;
+  const msg = error instanceof Error ? error.message : String(error);
+  return /existe déjà|déjà utilisé/i.test(msg);
 }
 
 export async function apiRequest<T>(url: string, init: RequestInit = {}): Promise<T> {

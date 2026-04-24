@@ -28,8 +28,16 @@ export const PaddeAuditPayloadSchema = z.record(z.string(), z.unknown()).and(
 
 export const AuthRegisterSchema = z.object({
   email: z.string().email('Email invalide'),
-  password: z.string().min(12, 'Le mot de passe doit faire au moins 12 caractères'),
+  password: z.string().min(8, 'Le mot de passe doit faire au moins 8 caractères'),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   companyId: z.string().optional(),
+  companyName: z.string().optional(),
+  companyDescription: z.string().optional(),
+  industry: z.string().optional(),
+  size: z.string().optional(),
+  phone: z.string().optional(),
+  referredBy: z.string().optional(),
+  referredByPartnerId: z.string().optional(),
+  referredByPartnerName: z.string().optional(),
 });
