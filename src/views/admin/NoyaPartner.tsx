@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ExternalLink, Handshake, ShieldCheck } from 'lucide-react';
+import { ExternalLink, Handshake, ShieldCheck, X, Mail, Phone, Building2, FileText } from 'lucide-react';
 import { collection, limit, onSnapshot, orderBy, query, where } from '@/lib/mongoFirestore';
 import { db } from '@/lib/clientSdk';
 
@@ -11,12 +11,18 @@ type NoyaRecruitmentLead = {
   firstName?: string;
   lastName?: string;
   email?: string;
+  whatsapp?: string;
   phone?: string;
   companyName?: string;
   status?: string;
   createdAt?: string;
   source?: string;
+  sourcePlatform?: string;
+  partnerId?: string;
   partnerName?: string;
+  parcours?: 'partenaire' | 'investisseur' | string;
+  urgency?: string;
+  note?: string;
 };
 
 function formatDate(value?: string) {
@@ -35,6 +41,7 @@ function formatDate(value?: string) {
 export default function AdminNoyaPartner() {
   const [rows, setRows] = useState<NoyaRecruitmentLead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState<NoyaRecruitmentLead | null>(null);
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -45,7 +52,10 @@ export default function AdminNoyaPartner() {
         limit(50)
       ),
       (snapshot) => {
-        const data = snapshot.docs.map((d) => ({ id: d.id, ...(d.data() as Omit<NoyaRecruitmentLead, 'id'>) }));
+        const data = snapshot.docs.map((d) => ({
+          id: d.id,
+          ...(d.data() as Omit<NoyaRecruitmentLead, 'id'>),
+        }));
         setRows(data);
         setLoading(false);
       },
@@ -62,6 +72,18 @@ export default function AdminNoyaPartner() {
     const submitted = rows.filter((r) => String(r.status || '').toLowerCase() === 'soumis').length;
     return { total: rows.length, submitted };
   }, [rows]);
+
+  const getParcoursLabel = (r: NoyaRecruitmentLead) => {
+    const p = String(r.parcours || '').toLowerCase();
+    if (p === 'investisseur') return 'Investisseur';
+    if (p === 'partenaire') return 'Partenaire';
+    // Fallback via libellé du partenaire (ancienne donnée).
+    const pn = String(r.partnerName || '').toLowerCase();
+    if (pn.includes('investisseur')) return 'Investisseur';
+    return 'Partenaire';
+  };
+
+  const closeModal = () => setSelected(null);
 
   return (
     <div className="p-6 space-y-6">
@@ -123,20 +145,21 @@ export default function AdminNoyaPartner() {
                 <th className="px-4 py-3">Contact</th>
                 <th className="px-4 py-3">Entreprise</th>
                 <th className="px-4 py-3">Statut</th>
-                <th className="px-4 py-3">Partenaire</th>
+                <th className="px-4 py-3">Parcours</th>
                 <th className="px-4 py-3">Reçu le</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-text-secondary">
+                  <td colSpan={6} className="px-4 py-6 text-center text-text-secondary">
                     Chargement des inscriptions...
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-6 text-center text-text-secondary">
+                  <td colSpan={6} className="px-4 py-6 text-center text-text-secondary">
                     Aucune inscription Noya détectée pour le moment.
                   </td>
                 </tr>
@@ -155,8 +178,18 @@ export default function AdminNoyaPartner() {
                         {row.status || 'soumis'}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-text-secondary">{row.partnerName || 'Noya Partenaire'}</td>
+                    <td className="px-4 py-3 text-text-secondary">{getParcoursLabel(row)}</td>
                     <td className="px-4 py-3 text-text-secondary">{formatDate(row.createdAt)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button
+                        type="button"
+                        onClick={() => setSelected(row)}
+                        className="inline-flex items-center gap-2 rounded-xl border border-border-subtle bg-surface-primary/30 px-3 py-2 text-[12px] font-semibold text-text-secondary hover:text-text-primary hover:border-border-medium transition-all"
+                      >
+                        <FileText size={14} />
+                        Détails
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
@@ -164,6 +197,99 @@ export default function AdminNoyaPartner() {
           </table>
         </div>
       </section>
+
+      {selected && (
+        <div
+          className="fixed inset-0 bg-noya-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-3xl rounded-3xl border border-border-medium bg-surface-secondary shadow-2xl overflow-hidden">
+            <div className="flex items-start justify-between gap-4 p-6 border-b border-border-subtle">
+              <div>
+                <h3 className="text-xl font-black text-text-primary">
+                  Détails soumission Noya
+                </h3>
+                <p className="mt-1 text-sm text-text-secondary">
+                  {getParcoursLabel(selected)} · Reçu le {formatDate(selected.createdAt)}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeModal}
+                className="p-2 rounded-xl hover:bg-surface-tertiary transition-colors text-text-secondary"
+                aria-label="Fermer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-2xl border border-border-subtle bg-surface-primary/30 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-bold text-text-primary">
+                    <Mail size={16} />
+                    Contact
+                  </div>
+                  <div className="text-sm text-text-secondary">
+                    <div className="font-semibold text-text-primary">
+                      {`${selected.firstName || ''} ${selected.lastName || ''}`.trim() || '—'}
+                    </div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <Mail size={14} className="opacity-70" />
+                      <span>{selected.email || '—'}</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2">
+                      <Phone size={14} className="opacity-70" />
+                      <span>{selected.phone || selected.whatsapp || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-border-subtle bg-surface-primary/30 p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-sm font-bold text-text-primary">
+                    <Building2 size={16} />
+                    Entreprise / Candidat
+                  </div>
+                  <div className="text-sm text-text-secondary">
+                    <div className="font-semibold text-text-primary">{selected.companyName || '—'}</div>
+                    <div className="mt-1">
+                      Statut :{' '}
+                      <span className="font-bold text-text-primary">{selected.status || 'soumis'}</span>
+                    </div>
+                    {selected.urgency ? (
+                      <div className="mt-1">
+                        Urgence : <span className="font-bold text-text-primary">{selected.urgency}</span>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border-subtle bg-surface-primary/30 p-4 space-y-2">
+                <div className="flex items-center gap-2 text-sm font-bold text-text-primary">
+                  <FileText size={16} />
+                  Message / Proposition
+                </div>
+                <div className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">
+                  {selected.note || '—'}
+                </div>
+              </div>
+
+              <div className="text-xs text-text-dim">
+                id lead: <span className="font-mono text-text-secondary">{selected.id}</span>
+                {selected.sourcePlatform ? (
+                  <>
+                    {' '}
+                    · sourcePlatform:{' '}
+                    <span className="font-mono text-text-secondary">{selected.sourcePlatform}</span>
+                  </>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="rounded-2xl border border-border-subtle bg-surface-secondary p-6">
         <div className="flex items-start gap-3 text-text-secondary">

@@ -1397,6 +1397,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
             companyName: companyName || "Candidat Noya",
             status: "soumis",
             urgency: "moyenne",
+            parcours,
             note:
               note ||
               `Soumission via formulaire Noya (${parcours}).`,
