@@ -42,6 +42,7 @@ const AdminDossiers = lazy(() => import('./views/admin/Dossiers'));
 const AdminMessagerie = lazy(() => import('./views/admin/Messagerie'));
 const AdminInstances = lazy(() => import('./views/admin/Instances'));
 const AdminPartners = lazy(() => import('./views/admin/Partners'));
+const AdminNoyaPartner = lazy(() => import('./views/admin/NoyaPartner'));
 const AdminLeads = lazy(() => import('./views/admin/Leads'));
 const ClientDashboard = lazy(() => import('./views/client/Dashboard'));
 const ClientDocuments = lazy(() => import('./views/client/Documents'));
@@ -167,6 +168,7 @@ function AnimatedRoutes() {
               <Route path="dossiers" element={<AdminDossiers />} />
               <Route path="instances" element={<AdminInstances />} />
               <Route path="partners" element={<AdminPartners />} />
+              <Route path="noya-partenaire" element={<AdminNoyaPartner />} />
               <Route path="leads" element={<AdminLeads />} />
               <Route path="audits-padde" element={<PaddeCiAudits />} />
             </Route>
@@ -197,7 +199,7 @@ function AnimatedRoutes() {
           </Route>
 
           {/* Partner Routes */}
-          <Route element={<ProtectedRoute allowedRoles={['partner', 'admin']} />}>
+          <Route element={<ProtectedRoute allowedRoles={['partner', 'admin', 'commando']} />}>
             <Route path="/partenaire" element={<PartnerLayout />}>
               <Route index element={<PartnerDashboard />} />
               <Route path="clients" element={<PartnerClients />} />

@@ -110,7 +110,7 @@ export const appEnv = {
     /** Liste brute pour parser côté Express (CORS). */
     corsOriginRaw: str(
       "CORS_ORIGIN",
-      "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,https://www.infinitecore.net,https://infinitecore.net,https://infinitecore-v2.vercel.app,https://padde-ci.com,https://www.padde-ci.com"
+      "http://localhost:3000,http://127.0.0.1:3000,http://localhost:5173,http://127.0.0.1:5173,https://www.infinitecore.net,https://infinitecore.net,https://infinitecore-v2.vercel.app,https://padde-ci.com,https://www.padde-ci.com,https://www.noyaindustries.com,https://noyaindustries.com"
     ),
     apiPublicUrl: str("API_PUBLIC_URL"),
     port: int("PORT", 3000),
@@ -139,6 +139,11 @@ export const appEnv = {
   },
   webhooks: {
     paddeWebhookSecret: str("PADDE_WEBHOOK_SECRET"),
+    noyaRecrutementWebhookSecret: str("NOYA_RECRUTEMENT_WEBHOOK_SECRET"),
+    /** UID du compte partenaire Noya cible pour le formulaire https://www.noyaindustries.com/recrutement */
+    noyaRecrutementPartnerId: str("NOYA_RECRUTEMENT_PARTNER_ID"),
+    /** Libellé affiché si aucun nom partenaire n'est disponible côté données. */
+    noyaRecrutementPartnerLabel: str("NOYA_RECRUTEMENT_PARTNER_LABEL", "Noya Partenaire"),
   },
   stripe: {
     secretKey: str("STRIPE_SECRET_KEY"),

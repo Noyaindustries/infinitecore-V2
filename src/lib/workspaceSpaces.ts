@@ -55,7 +55,7 @@ const WORKSPACES: readonly WorkspaceEntry[] = [
     id: 'partner',
     to: '/partenaire',
     label: 'Espace partenaire',
-    allowedRoles: ['admin', 'partner'],
+    allowedRoles: ['admin', 'partner', 'commando'],
   },
 ] as const;
 

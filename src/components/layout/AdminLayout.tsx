@@ -109,12 +109,18 @@ export default function AdminLayout() {
     setShowNotifications(false);
   };
 
-  const navItems = [
+  const navItems: Array<{
+    id: string;
+    to: string;
+    icon: typeof LayoutDashboard;
+    label: string;
+  }> = [
     { id: 'admin', to: '/admin', icon: LayoutDashboard, label: 'Tableau de bord' },
     { id: 'pipeline', to: '/admin/pipeline', icon: KanbanSquare, label: 'Pipeline Noya' },
     { id: 'audits-padde', to: '/admin/audits-padde', icon: ClipboardList, label: 'Audits PADDE-CI' },
     { id: 'clients', to: '/admin/clients', icon: Users, label: 'CRM Clients' },
     { id: 'partners', to: '/admin/partners', icon: Handshake, label: 'Partenaires' },
+    { id: 'noya-partner-form', to: '/admin/noya-partenaire', icon: Handshake, label: 'Noya Partenaire' },
     { id: 'leads', to: '/admin/leads', icon: UserPlus, label: 'Leads partenaires' },
     { id: 'operations', to: '/admin/operations', icon: Briefcase, label: 'Opérations' },
     { id: 'finance', to: '/admin/finance', icon: Wallet, label: 'Finance' },

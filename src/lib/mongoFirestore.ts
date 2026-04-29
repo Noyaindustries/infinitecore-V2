@@ -28,6 +28,8 @@ type InternalDoc = { id: string; data: DocData };
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLL_INTERVAL_MS = 15000;
 const DELETE_FIELD_SENTINEL = "__delete_field__";
+const SESSION_HINT_KEY = "ic_has_session_hint";
+const LEGACY_TOKEN_KEY = "ic_auth_token";
 
 function randomId() {
   return crypto.randomUUID().replace(/-/g, "");
@@ -39,6 +41,34 @@ function normalizePath(path: string) {
     .map((segment) => segment.trim())
     .filter(Boolean)
     .join("/");
+}
+
+function hasLikelyClientSession(): boolean {
+  if (typeof window === "undefined") return true;
+  try {
+    const hasHint = localStorage.getItem(SESSION_HINT_KEY) === "1";
+    const hasLegacyToken = Boolean(localStorage.getItem(LEGACY_TOKEN_KEY));
+    return hasHint || hasLegacyToken;
+  } catch {
+    return false;
+  }
+}
+
+function isAuthHttpError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  if (!("status" in error)) return false;
+  const status = Number((error as { status?: unknown }).status);
+  return status === 401 || status === 403;
+}
+
+function clearClientSessionHints() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(SESSION_HINT_KEY);
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+  } catch {
+    // Ignore localStorage errors.
+  }
 }
 
 /** Aligne les alias de chemins « Firestore » sur les noms stockés côté API (`data_documents`). */
@@ -186,23 +216,39 @@ function toQuerySnapshot(path: string, docs: InternalDoc[]) {
 
 async function fetchQuery(q: Query | CollectionReference): Promise<QuerySnapshot> {
   const path = q instanceof Query ? q.path : q.path;
+  if (!hasLikelyClientSession()) {
+    return toQuerySnapshot(path, []);
+  }
   const constraints = q instanceof Query ? q.constraints : [];
   const filters = constraints.filter((c): c is QueryFilterConstraint => c.kind === "where");
   const orders = constraints.filter((c): c is QueryOrderConstraint => c.kind === "orderBy");
   const capped = constraints.find((c): c is QueryLimitConstraint => c.kind === "limit");
-  const payload = await apiRequest<{
+  let payload: {
     success: boolean;
     docs: InternalDoc[];
     queryMeta?: Record<string, unknown>;
-  }>("/api/data/query", {
-    method: "POST",
-    body: JSON.stringify({
-      collectionPath: canonicalDataCollectionPath(path),
-      filters: filters.map((f) => ({ field: f.field, operator: f.operator, value: f.value })),
-      orders: orders.map((o) => ({ field: o.field, direction: o.direction })),
-      limit: capped?.value,
-    }),
-  });
+  };
+  try {
+    payload = await apiRequest<{
+      success: boolean;
+      docs: InternalDoc[];
+      queryMeta?: Record<string, unknown>;
+    }>("/api/data/query", {
+      method: "POST",
+      body: JSON.stringify({
+        collectionPath: canonicalDataCollectionPath(path),
+        filters: filters.map((f) => ({ field: f.field, operator: f.operator, value: f.value })),
+        orders: orders.map((o) => ({ field: o.field, direction: o.direction })),
+        limit: capped?.value,
+      }),
+    });
+  } catch (error) {
+    if (isAuthHttpError(error)) {
+      clearClientSessionHints();
+      return toQuerySnapshot(path, []);
+    }
+    throw error;
+  }
   const rows = Array.isArray(payload.docs) ? payload.docs : [];
   return toQuerySnapshot(path, rows);
 }
@@ -212,11 +258,23 @@ export async function getDocs(q: Query | CollectionReference) {
 }
 
 export async function getDoc<T = any>(ref: DocumentReference<T>) {
+  if (!hasLikelyClientSession()) {
+    return new DocumentSnapshot<T>(ref, null);
+  }
   const { collectionPath, docId } = splitDocPath(ref.path);
   const apiCollectionPath = canonicalDataCollectionPath(collectionPath);
-  const payload = await apiRequest<{ success: boolean; exists: boolean; doc: InternalDoc | null }>(
-    `/api/data/doc?collectionPath=${encodeURIComponent(apiCollectionPath)}&docId=${encodeURIComponent(docId)}`
-  );
+  let payload: { success: boolean; exists: boolean; doc: InternalDoc | null };
+  try {
+    payload = await apiRequest<{ success: boolean; exists: boolean; doc: InternalDoc | null }>(
+      `/api/data/doc?collectionPath=${encodeURIComponent(apiCollectionPath)}&docId=${encodeURIComponent(docId)}`
+    );
+  } catch (error) {
+    if (isAuthHttpError(error)) {
+      clearClientSessionHints();
+      return new DocumentSnapshot<T>(ref, null);
+    }
+    throw error;
+  }
   const data = payload.exists && payload.doc ? (payload.doc.data as T) : null;
   return new DocumentSnapshot<T>(ref, data);
 }
@@ -323,6 +381,19 @@ export function onSnapshot<T = DocData>(
         currentIntervalMs = Math.min(MAX_POLL_INTERVAL_MS, Math.round(currentIntervalMs * 1.5));
       }
     } catch (error) {
+      const status =
+        typeof error === "object" && error !== null && "status" in error
+          ? Number((error as { status?: unknown }).status)
+          : NaN;
+      if (status === 401 || status === 403) {
+        // Session absente/expirée : stoppe ce listener pour éviter une boucle d'erreurs réseau.
+        active = false;
+        if (timeoutId !== null) {
+          window.clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        return;
+      }
       currentIntervalMs = Math.min(MAX_POLL_INTERVAL_MS, currentIntervalMs * 2);
       onError?.(error);
     } finally {

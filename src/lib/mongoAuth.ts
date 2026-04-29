@@ -52,6 +52,7 @@ const authState: Auth = {
 };
 const listeners = new Set<AuthListener>();
 let bootstrapPromise: Promise<void> | null = null;
+const SESSION_HINT_KEY = "ic_has_session_hint";
 
 function agentDebugLog(payload: Record<string, unknown>) {
   agentSessionLog(payload);
@@ -79,6 +80,26 @@ function emitAuthState() {
   for (const listener of listeners) listener(authState.currentUser);
 }
 
+function getSessionHint(): boolean {
+  if (typeof window === "undefined") return false;
+  return localStorage.getItem(SESSION_HINT_KEY) === "1";
+}
+
+function setSessionHint(enabled: boolean) {
+  if (typeof window === "undefined") return;
+  if (enabled) {
+    localStorage.setItem(SESSION_HINT_KEY, "1");
+    return;
+  }
+  localStorage.removeItem(SESSION_HINT_KEY);
+}
+
+function isAuthEntryPath(): boolean {
+  if (typeof window === "undefined") return false;
+  const p = window.location.pathname || "";
+  return p.startsWith("/login") || p.startsWith("/signup") || p.startsWith("/reset-password");
+}
+
 async function bootstrapAuthState() {
   if (bootstrapPromise) return bootstrapPromise;
   bootstrapPromise = (async () => {
@@ -92,6 +113,7 @@ async function bootstrapAuthState() {
     });
     // #endregion
     const token = getAuthToken();
+    const hasSessionHint = getSessionHint();
     if (!token) {
       // #region agent log
       agentDebugLog({
@@ -103,12 +125,26 @@ async function bootstrapAuthState() {
       });
       // #endregion
     }
+    if (!token && !hasSessionHint) {
+      authState.currentUser = null;
+      emitAuthState();
+      return;
+    }
+    if (!token && hasSessionHint && isAuthEntryPath()) {
+      // Evite un appel /api/auth/me sur les écrans d'auth quand aucun token client n'est présent.
+      // Cela supprime le 401 bruité en console si l'indice de session est périmé.
+      setSessionHint(false);
+      authState.currentUser = null;
+      emitAuthState();
+      return;
+    }
     try {
       const data = await apiRequest<{
         success: boolean;
         user: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
       }>("/api/auth/me");
       authState.currentUser = toUser(data.user);
+      setSessionHint(true);
       // #region agent log
       agentDebugLog({
         runId: "initial",
@@ -120,6 +156,7 @@ async function bootstrapAuthState() {
       // #endregion
     } catch {
       if (token) setAuthToken(null);
+      setSessionHint(false);
       authState.currentUser = null;
       // #region agent log
       agentDebugLog({
@@ -249,6 +286,7 @@ export async function verifyEmailSignupCode(_auth: Auth, payload: { email: strin
     body: JSON.stringify(payload),
   });
   setAuthToken(data.token || null);
+  setSessionHint(true);
   authState.currentUser = toUser(data.user);
   emitAuthState();
   return { user: authState.currentUser };
@@ -276,6 +314,7 @@ export async function signInWithEmailAndPassword(_auth: Auth, email: string, pas
     throw new Error("Réponse de connexion invalide.");
   }
   setAuthToken(data.token || null);
+  setSessionHint(true);
   authState.currentUser = toUser(data.user);
   emitAuthState();
   return { user: authState.currentUser };
@@ -291,6 +330,7 @@ export async function verifyEmailLoginCode(_auth: Auth, payload: { email: string
     body: JSON.stringify(payload),
   });
   setAuthToken(data.token || null);
+  setSessionHint(true);
   authState.currentUser = toUser(data.user);
   emitAuthState();
   return { user: authState.currentUser };
@@ -358,6 +398,7 @@ export async function signInWithPopup(
       throw new Error("Réponse Google invalide.");
     }
     setAuthToken(data.token || null);
+    setSessionHint(true);
     authState.currentUser = toUser(data.user);
     emitAuthState();
     return { user: authState.currentUser, isNew: data.isNew };
@@ -420,6 +461,7 @@ export async function signInWithPopup(
     throw new Error("Réponse Google invalide.");
   }
   setAuthToken(data.token || null);
+  setSessionHint(true);
   authState.currentUser = toUser(data.user);
   emitAuthState();
   return { user: authState.currentUser, isNew: data.isNew };
@@ -432,6 +474,7 @@ export async function signOut(_auth: Auth) {
     // no-op
   }
   setAuthToken(null);
+  setSessionHint(false);
   authState.currentUser = null;
   emitAuthState();
 }

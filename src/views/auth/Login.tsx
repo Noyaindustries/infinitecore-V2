@@ -9,7 +9,7 @@ import {
   signInWithPopup,
   verifyEmailLoginCode,
 } from '@/lib/mongoAuth';
-import { collection, doc, getDoc, getDocs, query, where } from '@/lib/mongoFirestore';
+import { apiRequest } from '../../lib/apiClient';
 import { auth, db } from '@/lib/clientSdk';
 import { useAuth } from '../../components/AuthProvider';
 import { openGoogleConfirmDialog } from '../../lib/googleConfirmUI';
@@ -53,9 +53,10 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
   };
 
   React.useEffect(() => {
-    if (!isAuthReady || !user || !userData) return;
-    navigate(homePathForRole(userData.role), { replace: true });
-  }, [isAuthReady, user, userData, navigate]);
+    if (!isAuthReady || !user) return;
+    const role = userData?.role || user.role;
+    navigate(homePathForRole(role), { replace: true });
+  }, [isAuthReady, user, userData?.role, navigate]);
 
   const runGoogleSignIn = useCallback(
     async () => {
@@ -142,29 +143,13 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
 
     const fetchPartner = async () => {
       try {
-        const partnerById = await getDoc(doc(db, 'users', ref));
-        if (partnerById.exists()) {
-          const data = partnerById.data() as { firstName?: string; lastName?: string; email?: string };
-          setReferrerId(partnerById.id);
-          setReferrerName(getPartnerLabel(data, partnerById.id));
-          return;
-        }
-
-        const partnerByReferralCode = await getDocs(query(collection(db, 'users'), where('referralCode', '==', ref)));
-        if (!partnerByReferralCode.empty) {
-          const match = partnerByReferralCode.docs[0];
-          const data = match.data() as { firstName?: string; lastName?: string; email?: string };
-          setReferrerId(match.id);
-          setReferrerName(getPartnerLabel(data, match.id));
-          return;
-        }
-
-        const partnerByLegacyCode = await getDocs(query(collection(db, 'users'), where('partnerCode', '==', ref)));
-        if (!partnerByLegacyCode.empty) {
-          const match = partnerByLegacyCode.docs[0];
-          const data = match.data() as { firstName?: string; lastName?: string; email?: string };
-          setReferrerId(match.id);
-          setReferrerName(getPartnerLabel(data, match.id));
+        const payload = await apiRequest<{
+          success: boolean;
+          partner?: { id: string; firstName?: string; lastName?: string; email?: string };
+        }>(`/api/auth/referral?ref=${encodeURIComponent(ref)}`);
+        if (payload?.success && payload.partner) {
+          setReferrerId(payload.partner.id);
+          setReferrerName(getPartnerLabel(payload.partner, payload.partner.id));
         }
       } catch (error) {
         console.error('[Login] unable to resolve referral code:', error);

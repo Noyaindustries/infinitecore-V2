@@ -540,7 +540,9 @@ export async function resolveAuthPayload(raw: AuthPayload): Promise<AuthPayload 
 async function requireAuth(req: Request, res: Response): Promise<AuthPayload | null> {
   const auth = parseAuth(req);
   if (!auth) {
-    console.warn("[auth] requireAuth: No token or invalid token found in request.");
+    console.warn(
+      `[auth] requireAuth: No token or invalid token found in request. route=${req.method} ${req.originalUrl || req.url}`
+    );
     res.status(401).json({ success: false, error: "Non authentifié." });
     return null;
   }

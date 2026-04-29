@@ -159,7 +159,9 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   const port = appEnv.http.port;
   const corsOrigins = parseCorsOrigins(appEnv.http.corsOriginRaw);
   const paddeAllowedOrigins = new Set(["https://padde-ci.com", "https://www.padde-ci.com"]);
+  const noyaAllowedOrigins = new Set(["https://noyaindustries.com", "https://www.noyaindustries.com"]);
   const paddeWebhookSecret = appEnv.webhooks.paddeWebhookSecret;
+  const noyaWebhookSecret = appEnv.webhooks.noyaRecrutementWebhookSecret;
   const stripeSecretKey = appEnv.stripe.secretKey;
   const stripeWebhookSecret = appEnv.stripe.webhookSecret;
   const r2AccountId = appEnv.r2.accountId;
@@ -1265,6 +1267,203 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   };
 
   const paddeSecretExpected = paddeWebhookSecret.trim();
+  const noyaSecretExpected = noyaWebhookSecret.trim();
+
+  const normalizeLower = (value: unknown) => String(value || "").trim().toLowerCase();
+  const normalizeText = (value: unknown) => String(value || "").trim();
+  const normalizeEmail = (value: unknown): string | null => {
+    const raw = normalizeLower(value);
+    if (!raw) return null;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) return null;
+    return raw;
+  };
+  const extractFirstFilled = (payload: Record<string, unknown>, ...keys: string[]): unknown => {
+    for (const key of keys) {
+      const v = payload[key];
+      if (v !== undefined && v !== null && String(v).trim() !== "") return v;
+    }
+    return undefined;
+  };
+
+  app.get("/api/webhooks/noya-recrutement/config-check", (_req, res) => {
+    const configuredPartnerId = appEnv.webhooks.noyaRecrutementPartnerId.trim();
+    res.setHeader("Cache-Control", "private, no-store, max-age=0, must-revalidate");
+    return res.status(200).json({
+      ok: true,
+      databaseConfigured: Boolean(appEnv.database.url),
+      webhookSecretConfigured: noyaSecretExpected.length > 0,
+      partnerMappingConfigured: configuredPartnerId.length > 0,
+      noyaPartnerId: configuredPartnerId || null,
+      nodeEnv: appEnv.node.env,
+      vercel: Boolean(process.env.VERCEL),
+      vercelEnv: process.env.VERCEL_ENV || null,
+      hint:
+        noyaSecretExpected.length > 0
+          ? "L’API exige le même secret que NOYA_RECRUTEMENT_WEBHOOK_SECRET (header X-Webhook-Secret ou champs JSON webhookSecret / secret)."
+          : "Aucun NOYA_RECRUTEMENT_WEBHOOK_SECRET : les POST JSON sont acceptés sans secret (évitez en prod).",
+    });
+  });
+
+  app.post("/api/webhooks/noya-recrutement", async (req, res) => {
+    try {
+      const origin = String(req.headers.origin || "").trim();
+      if (origin && !noyaAllowedOrigins.has(origin)) {
+        return res.status(403).json({ success: false, error: "Origin non autorisée." });
+      }
+
+      if (!appEnv.database.url) {
+        return res.status(503).json({
+          success: false,
+          error: "Base de données non configurée : définissez DATABASE_URL (MongoDB) pour Prisma.",
+        });
+      }
+
+      const incoming =
+        req.body && typeof req.body === "object" && !Array.isArray(req.body)
+          ? ({ ...(req.body as Record<string, unknown>) } as Record<string, unknown>)
+          : {};
+      const payload: Record<string, unknown> = {};
+      for (const [rawKey, value] of Object.entries(incoming)) {
+        const normalizedKey = rawKey.trim().toLowerCase().replace(/[\s-]+/g, "_");
+        payload[normalizedKey] = value;
+      }
+
+      const providedSecret = extractPaddeProvidedSecret(req);
+      delete payload.webhooksecret;
+      delete payload.secret;
+      delete payload.webhook_secret;
+
+      if (noyaSecretExpected) {
+        if (!providedSecret || !secureSecretEquals(noyaSecretExpected, providedSecret)) {
+          return res.status(401).json({ success: false, error: "Webhook non autorisé." });
+        }
+      }
+
+      const firstName = normalizeText(
+        extractFirstFilled(payload, "prenom", "first_name", "firstname", "first")
+      );
+      const lastName = normalizeText(
+        extractFirstFilled(payload, "nom", "last_name", "lastname", "last")
+      );
+      const email = normalizeEmail(
+        extractFirstFilled(payload, "email_professionnel", "email", "email_pro", "business_email")
+      );
+      const phone = normalizeText(
+        extractFirstFilled(payload, "telephone", "phone", "tel", "whatsapp")
+      );
+      const parcoursRaw = normalizeLower(
+        extractFirstFilled(payload, "parcours", "type", "profil", "category")
+      );
+      const parcours = parcoursRaw === "investisseur" ? "investisseur" : "partenaire";
+      const companyName = normalizeText(
+        extractFirstFilled(payload, "entreprise", "societe", "company", "organization")
+      );
+      const note = normalizeText(
+        extractFirstFilled(payload, "proposition", "message", "notes", "description")
+      );
+
+      if (!firstName || !lastName || !email) {
+        return res.status(400).json({
+          success: false,
+          error: "Champs requis manquants (prenom, nom, email_professionnel).",
+        });
+      }
+
+      const createdAt = new Date().toISOString();
+      const leadId = randomUUID().replace(/-/g, "");
+      const configuredPartnerId = appEnv.webhooks.noyaRecrutementPartnerId.trim();
+      const configuredPartnerLabel = appEnv.webhooks.noyaRecrutementPartnerLabel.trim() || "Noya Partenaire";
+      const partnerId = configuredPartnerId || "noya-recrutement";
+      const partnerLabel =
+        parcours === "investisseur"
+          ? `${configuredPartnerLabel} · Investisseur`
+          : `${configuredPartnerLabel} · Partenaire`;
+
+      await prisma.dataDocument.create({
+        data: {
+          collectionPath: "leads",
+          docId: leadId,
+          data: {
+            id: leadId,
+            source: "noya-recrutement",
+            sourcePlatform: "noyaindustries.com/recrutement",
+            partnerId,
+            partnerName: partnerLabel,
+            firstName,
+            lastName,
+            email,
+            whatsapp: phone || "Non renseigné",
+            phone: phone || "Non renseigné",
+            companyName: companyName || "Candidat Noya",
+            status: "soumis",
+            urgency: "moyenne",
+            note:
+              note ||
+              `Soumission via formulaire Noya (${parcours}).`,
+            createdAt,
+          } as never,
+        },
+      });
+
+      const recipients = await prisma.userAccount.findMany({
+        where: { role: { in: ["commando", "admin"] } },
+        select: { uid: true },
+      });
+      const recipientIds = recipients.map((r) => r.uid).filter(Boolean);
+      const finalRecipients = recipientIds.length > 0 ? recipientIds : ["admin_general"];
+      const title = "Nouveau formulaire Noya partenaire";
+      const message = `${firstName} ${lastName} (${parcours}) via noyaindustries.com/recrutement${companyName ? ` — ${companyName}` : ""}${phone ? ` — ${phone}` : ""}`;
+
+      await Promise.all(
+        finalRecipients.map((recipientId) =>
+          prisma.dataDocument.create({
+            data: {
+              collectionPath: "notifications",
+              docId: randomUUID().replace(/-/g, ""),
+              data: {
+                userId: recipientId,
+                title,
+                message,
+                type: "order",
+                read: false,
+                createdAt,
+                metadata: {
+                  source: "noya-recrutement",
+                  leadId,
+                  parcours,
+                  email,
+                  phone: phone || null,
+                },
+              } as never,
+            },
+          })
+        )
+      );
+
+      void sendStaffNotifyEmail({
+        subject: "[Infinite Core] Nouveau formulaire Noya partenaire",
+        text: [
+          message,
+          "",
+          `Lead: ${leadId}`,
+          `Email: ${email}`,
+          phone ? `Téléphone: ${phone}` : "",
+          `Source: https://www.noyaindustries.com/recrutement`,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      }).catch((mailErr) => console.warn("[noya-recrutement] staff email:", mailErr));
+
+      return res.status(200).json({
+        success: true,
+        leadId,
+        notified: finalRecipients.length,
+      });
+    } catch (error) {
+      console.error("[noya-recrutement] webhook:", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
 
   /**
    * Diagnostic public (sans auth) : état de config côté API — utile quand le formulaire / Netlify « ne passe pas ».
