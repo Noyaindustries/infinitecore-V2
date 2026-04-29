@@ -14,6 +14,7 @@ import { buildFileUrl, sanitizeFolder } from "./_r2";
 import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } from "./storageUtils";
 import { parseAuthFromRequest, registerMongoApi, resolveAuthPayload } from "./mongoApi";
 import { sendStaffNotifyEmail } from "./src/server/staffNotifyEmail";
+import { sendLeadEmail } from "./src/server/sendLeadEmail";
 import { OrderSchema, PaddeAuditPayloadSchema } from "./src/lib/schemas";
 
 const ALLOWED_UPLOAD_MIME_TYPES = new Set([
@@ -1462,6 +1463,57 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       });
     } catch (error) {
       console.error("[noya-recrutement] webhook:", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
+  // Envoi e-mail depuis l’admin/commando (rattache les lead pages à des échanges mail).
+  app.post("/api/noya/recrutement/send-email", requireAuthenticatedUser, async (req: Request, res: Response) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifié." });
+      if (auth.role !== "admin" && auth.role !== "commando") {
+        return res.status(403).json({ success: false, error: "Accès refusé." });
+      }
+
+      const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? (req.body as Record<string, unknown>) : {};
+      const leadId = String(body.leadId || "").trim();
+      const subject = String(body.subject || "").trim();
+      const message = String(body.message || body.text || "").trim();
+      const toFromBody = String(body.to || "").trim();
+
+      if (!leadId) return res.status(400).json({ success: false, error: "leadId requis." });
+      if (!message) return res.status(400).json({ success: false, error: "message requis." });
+
+      const leadRow = await prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath: "leads", docId: leadId } },
+      });
+
+      if (!leadRow) return res.status(404).json({ success: false, error: "Lead introuvable." });
+      const leadData = readDataRowAsRecord(leadRow.data) as Record<string, unknown>;
+      const source = String(leadData.source || "");
+      if (source !== "noya-recrutement") {
+        return res.status(400).json({ success: false, error: "Lead hors scope Noya recrutement." });
+      }
+
+      const emailFromLead = String(leadData.email || "").trim().toLowerCase();
+      const emailTo = toFromBody || emailFromLead;
+
+      if (!emailTo) return res.status(400).json({ success: false, error: "Le lead ne contient pas d’email (ou champ `to` manquant)." });
+
+      const out = await sendLeadEmail({
+        to: emailTo,
+        subject: subject || "Noya Industries — suivi de votre demande",
+        text: message,
+      });
+
+      if (!out.sent) {
+        return res.status(503).json({ success: false, error: out.reason || "Impossible d’envoyer l’e-mail." });
+      }
+
+      return res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("[noya-recrutement] send-email:", error);
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });

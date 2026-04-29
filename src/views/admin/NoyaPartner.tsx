@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Handshake, ShieldCheck, X, Mail, Phone, Building2, FileText } from 'lucide-react';
 import { collection, limit, onSnapshot, orderBy, query, where } from '@/lib/mongoFirestore';
 import { db } from '@/lib/clientSdk';
+import { apiRequest } from '@/lib/apiClient';
+import toast from 'react-hot-toast';
 
 const NOYA_RECRUTEMENT_URL = 'https://www.noyaindustries.com/recrutement';
 const NOYA_RECRUTEMENT_SOURCE = 'noya-recrutement';
@@ -42,6 +44,9 @@ export default function AdminNoyaPartner() {
   const [rows, setRows] = useState<NoyaRecruitmentLead[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<NoyaRecruitmentLead | null>(null);
+  const [emailSubject, setEmailSubject] = useState<string>('');
+  const [emailMessage, setEmailMessage] = useState<string>('');
+  const [sendingEmail, setSendingEmail] = useState(false);
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -84,6 +89,18 @@ export default function AdminNoyaPartner() {
   };
 
   const closeModal = () => setSelected(null);
+
+  useEffect(() => {
+    if (!selected) return;
+    const name = `${selected.firstName || ''} ${selected.lastName || ''}`.trim();
+    const parcoursLabel = getParcoursLabel(selected);
+    setEmailSubject(`Noya Industries — suivi de votre demande (${parcoursLabel})`);
+    const company = selected.companyName ? String(selected.companyName).trim() : '';
+    const companyLine = company ? `\n\nEntreprise / structure : ${company}` : '';
+    setEmailMessage(
+      `Madame, Monsieur${name ? ` ${name}` : ''},\n\nNous vous confirmons la bonne réception de votre demande transmise via le formulaire Noya Industries (${parcoursLabel}).${companyLine}\n\nAprès examen de votre dossier, notre équipe vous recontactera sous 48 heures.\n\nAfin de faciliter la prise de rendez-vous et l’organisation du premier échange, nous vous remercions de bien vouloir répondre à ce courriel avec :\n- 2 à 3 créneaux de disponibilité,\n- vos coordonnées de contact (idéalement WhatsApp si vous en disposez).\n\nNous vous remercions par avance de votre collaboration.\n\nCordialement,\nÉquipe Noya Industries\nservices@noyaindustries.com`
+    );
+  }, [selected]);
 
   return (
     <div className="p-6 space-y-6">
@@ -273,6 +290,86 @@ export default function AdminNoyaPartner() {
                 </div>
                 <div className="text-sm text-text-secondary leading-relaxed whitespace-pre-wrap">
                   {selected.note || '—'}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-border-subtle bg-surface-primary/30 p-4 space-y-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-sm font-bold text-text-primary">
+                    <Mail size={16} />
+                    Envoyer un message par email
+                  </div>
+                  <div className="text-xs text-text-secondary">
+                    Vers : <span className="font-mono">{selected.email || '—'}</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold uppercase tracking-widest text-text-dim">
+                    Objet
+                  </label>
+                  <input
+                    value={emailSubject}
+                    onChange={(e) => setEmailSubject(e.target.value)}
+                    placeholder="Objet de l’email"
+                    className="w-full px-3 py-2 border border-border-subtle bg-surface-secondary rounded-xl text-sm text-text-primary outline-none focus:ring-2 focus:ring-noya-blue/20"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-semibold uppercase tracking-widest text-text-dim">
+                    Message
+                  </label>
+                  <textarea
+                    value={emailMessage}
+                    onChange={(e) => setEmailMessage(e.target.value)}
+                    rows={6}
+                    placeholder="Votre message..."
+                    className="w-full px-3 py-2 border border-border-subtle bg-surface-secondary rounded-xl text-sm text-text-primary outline-none focus:ring-2 focus:ring-noya-blue/20 resize-y"
+                  />
+                </div>
+
+                <div className="flex gap-3 pt-1">
+                  <button
+                    type="button"
+                    disabled={sendingEmail || !selected?.id}
+                    onClick={async () => {
+                      if (!selected) return;
+                      const to = String(selected.email || '').trim().toLowerCase();
+                      if (!to) {
+                        toast.error("Le lead n'a pas d'email pour l'envoi.");
+                        return;
+                      }
+                      if (!emailMessage.trim()) {
+                        toast.error('Veuillez saisir un message.');
+                        return;
+                      }
+                      setSendingEmail(true);
+                      try {
+                        await apiRequest<{ success: boolean; error?: string }>(
+                          '/api/noya/recrutement/send-email',
+                          {
+                            method: 'POST',
+                            body: JSON.stringify({
+                              leadId: selected.id,
+                              to,
+                              subject: emailSubject,
+                              message: emailMessage,
+                            }),
+                          }
+                        );
+                        toast.success('Email envoyé.');
+                      } catch (e) {
+                        const msg = e instanceof Error ? e.message : 'Erreur d’envoi.';
+                        toast.error(msg);
+                      } finally {
+                        setSendingEmail(false);
+                      }
+                    }}
+                    className="flex-1 px-4 py-2.5 bg-noya-blue text-noya-black rounded-xl font-black uppercase tracking-widest hover:scale-[1.01] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {sendingEmail ? 'Envoi...' : 'Envoyer'}
+                  </button>
                 </div>
               </div>
 
