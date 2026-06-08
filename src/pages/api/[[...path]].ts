@@ -5,12 +5,12 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import type { Express } from "express";
 import { agentSessionLog } from "@/debug/agentSessionLog";
-import { createExpressApplication } from "../../../server";
 
 let cachedExpressApp: Express | null = null;
 
 async function getExpressApp(): Promise<Express> {
   if (cachedExpressApp) return cachedExpressApp;
+  const { createExpressApplication } = await import("../../../server");
   const { app } = await createExpressApplication();
   cachedExpressApp = app as Express;
   return cachedExpressApp;
@@ -79,10 +79,9 @@ export default async function apiGateway(req: NextApiRequest, res: NextApiRespon
     if (!res.headersSent) {
       return res.status(503).json({
         success: false,
-        error:
-          message.includes("Variables d'environnement") || message.includes("Configuration")
-            ? "Configuration serveur invalide. Vérifiez les variables d'environnement Vercel."
-            : "API indisponible (erreur de démarrage). Réessayez dans quelques instants.",
+        error: "Configuration serveur invalide ou API indisponible.",
+        hint: "Vérifiez DATABASE_URL, NEXTAUTH_SECRET, PADDE_WEBHOOK_SECRET et CORS_ORIGIN sur Vercel.",
+        detail: process.env.VERCEL ? message.split("\n").slice(0, 8) : undefined,
       });
     }
     return;

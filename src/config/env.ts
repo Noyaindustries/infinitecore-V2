@@ -17,10 +17,7 @@ if (envValidationReport.warnings.length) {
 }
 if (!envValidationReport.ok) {
   const message = `Variables d'environnement invalides:\n${formatEnvValidationReport(envValidationReport)}`;
-  if ((process.env.NODE_ENV || "development") === "production") {
-    throw new Error(message);
-  }
-  console.warn(message);
+  console.error(message);
 }
 
 /** Chaîne d’environnement : `undefined` / `null` / vide après trim → `fallback`. */

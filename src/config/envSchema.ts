@@ -90,6 +90,7 @@ function secretErrors(name: string, value: string | undefined, required: boolean
     if (required) errors.push(`${name} est requis.`);
     return errors;
   }
+  if (name === "DATABASE_URL") return errors;
   if (value.length < 32) {
     errors.push(`${name} : minimum 32 caractères (actuel ${value.length}).`);
   }

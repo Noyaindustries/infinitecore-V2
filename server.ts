@@ -402,6 +402,14 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       nodeEnv: appEnv.node.env,
       localHttpDev: !resetAppBaseUrl().startsWith("https://"),
       e2eSkipLoginVerification: process.env.E2E_SKIP_LOGIN_VERIFICATION === "1",
+      config: {
+        databaseUrl: Boolean(appEnv.database.url),
+        jwtSecret: Boolean(process.env.NEXTAUTH_SECRET?.trim() || process.env.JWT_SECRET?.trim()),
+        paddeWebhookSecret: Boolean(appEnv.webhooks.paddeWebhookSecret),
+        saasBridgeApiKey: Boolean(process.env.SAAS_BRIDGE_API_KEY?.trim()),
+        corsOrigin: Boolean(appEnv.http.corsOriginRaw),
+        googleClientId: Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim()),
+      },
     });
   });
 
