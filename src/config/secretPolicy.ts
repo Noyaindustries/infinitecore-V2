@@ -85,7 +85,9 @@ export function validateProductionSecrets(input: {
     checks.push(validateSharedSecret("NOYA_RECRUTEMENT_WEBHOOK_SECRET", input.noyaWebhookSecret));
   }
 
-  checks.push(validateSharedSecret("SAAS_BRIDGE_API_KEY", input.saasBridgeApiKey, { required: true }));
+  if (input.saasBridgeApiKey.trim()) {
+    checks.push(validateSharedSecret("SAAS_BRIDGE_API_KEY", input.saasBridgeApiKey));
+  }
 
   if (input.stripeSecretKey.trim()) {
     checks.push(validateSharedSecret("STRIPE_WEBHOOK_SECRET", input.stripeWebhookSecret, { required: true }));

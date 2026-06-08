@@ -144,7 +144,11 @@ export function validateProcessEnv(
 
   if (isProduction) {
     errors.push(...secretErrors("PADDE_WEBHOOK_SECRET", env.PADDE_WEBHOOK_SECRET?.trim(), true));
-    errors.push(...secretErrors("SAAS_BRIDGE_API_KEY", env.SAAS_BRIDGE_API_KEY?.trim(), true));
+    if (!env.SAAS_BRIDGE_API_KEY?.trim()) {
+      warnings.push(
+        "SAAS_BRIDGE_API_KEY absent — les webhooks SaaS (/api/saas/webhooks/*) seront refusés en production."
+      );
+    }
   } else if (!jwtSecret) {
     warnings.push("NEXTAUTH_SECRET absent — secret de développement utilisé.");
   }

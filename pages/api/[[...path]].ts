@@ -67,6 +67,8 @@ export default async function apiGateway(req: NextApiRequest, res: NextApiRespon
   try {
     expressApp = await getExpressApp();
   } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    console.error("[api] createExpressApplication failed:", message);
     agentSessionLog({
       runId: "initial",
       hypothesisId: "H4",
@@ -74,10 +76,19 @@ export default async function apiGateway(req: NextApiRequest, res: NextApiRespon
       message: "vercel_getHandler_failed",
       data: {
         elapsedMs: Date.now() - coldStartT0,
-        err: e instanceof Error ? e.message : String(e),
+        err: message,
       },
     });
-    throw e;
+    if (!res.headersSent) {
+      return res.status(503).json({
+        success: false,
+        error:
+          message.includes("Variables d'environnement") || message.includes("Configuration")
+            ? "Configuration serveur invalide. Vérifiez les variables d'environnement Vercel."
+            : "API indisponible (erreur de démarrage). Réessayez dans quelques instants.",
+      });
+    }
+    return;
   }
   // #region agent log
   agentSessionLog({

@@ -308,10 +308,17 @@ function prismaAndDriverErrorText(error: unknown): string {
 /** Erreurs Prisma / driver Mongo fréquentes quand Atlas ou le réseau est injoignable. */
 function sendAuthPrismaError(res: Response, logLabel: string, error: unknown) {
   console.error(logLabel, error);
-  const msg = prismaAndDriverErrorText(error);
+  const msg = error instanceof Error ? error.message : String(error);
+  if (/NEXTAUTH_SECRET|JWT_SECRET|invalid/i.test(msg)) {
+    return res.status(503).json({
+      success: false,
+      error: "Configuration d'authentification invalide côté serveur.",
+    });
+  }
+  const combined = prismaAndDriverErrorText(error);
   const dbUnreachable =
     /Server selection timeout|Can't reach database server|ReplicaSetNoPrimary|P1001|P1017|P2010|MongoNetwork|ECONNREFUSED|fatal alert: InternalError|TLS handshake|certificate|timed out/i.test(
-      msg
+      combined
     );
   if (dbUnreachable) {
     return res.status(503).json({

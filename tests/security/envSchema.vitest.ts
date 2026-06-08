@@ -34,6 +34,21 @@ describe("validateProcessEnv", () => {
     expect(report.errors.some((e) => e.includes("NEXTAUTH_SECRET"))).toBe(true);
   });
 
+  it("avertit si SAAS_BRIDGE absent en production sans invalider la config", () => {
+    const report = validateProcessEnv(
+      {
+        NODE_ENV: "production",
+        DATABASE_URL: "mongodb://localhost:27017/test",
+        NEXTAUTH_SECRET: "a".repeat(32),
+        CORS_ORIGIN: "https://www.example.com",
+        PADDE_WEBHOOK_SECRET: "b".repeat(32),
+      },
+      { isProduction: true }
+    );
+    expect(report.ok).toBe(true);
+    expect(report.warnings.some((w) => w.includes("SAAS_BRIDGE_API_KEY"))).toBe(true);
+  });
+
   it("rejette CORS wildcard en production", () => {
     const report = validateProcessEnv(
       {

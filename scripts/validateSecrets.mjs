@@ -108,9 +108,9 @@ const errors = [];
 errors.push(...checkSecret("NEXTAUTH_SECRET", readEnvKey("NEXTAUTH_SECRET") || readEnvKey("JWT_SECRET"), { required: isProduction }));
 errors.push(...checkSecret("DATABASE_URL", readEnvKey("DATABASE_URL"), { required: isProduction }));
 errors.push(...checkSecret("PADDE_WEBHOOK_SECRET", readEnvKey("PADDE_WEBHOOK_SECRET"), { required: isProduction }));
-if (isProduction) {
-  errors.push(...checkSecret("SAAS_BRIDGE_API_KEY", readEnvKey("SAAS_BRIDGE_API_KEY"), { required: true }));
-}
+
+const saasBridge = readEnvKey("SAAS_BRIDGE_API_KEY");
+if (saasBridge) errors.push(...checkSecret("SAAS_BRIDGE_API_KEY", saasBridge));
 
 const noya = readEnvKey("NOYA_RECRUTEMENT_WEBHOOK_SECRET");
 if (noya) errors.push(...checkSecret("NOYA_RECRUTEMENT_WEBHOOK_SECRET", noya));
