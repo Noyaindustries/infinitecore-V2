@@ -23,7 +23,7 @@ export default defineConfig({
   webServer: {
     command:
       "cross-env NEXT_PUBLIC_USE_LEGACY_BEARER=1 E2E_SKIP_LOGIN_VERIFICATION=1 npm run dev",
-    url: baseURL,
+    url: `${baseURL}/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 180 * 1000,
   },

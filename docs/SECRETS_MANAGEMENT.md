@@ -27,6 +27,8 @@ Ce document décrit où vivent les secrets, comment les générer, les valider e
 
 Templates sans secrets : `.env.example`, `.env.vercel.example`, `.env.netlify.example`.
 
+Voir aussi : [`CSRF.md`](./CSRF.md), [`PENTESTING.md`](./PENTESTING.md).
+
 ---
 
 ## Génération

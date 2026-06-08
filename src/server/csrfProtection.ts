@@ -9,6 +9,18 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const SKIP_PATH_PREFIXES = ["/api/stripe/webhook", "/api/webhooks/", "/health"];
 
+/** Connexion / inscription : ne pas exiger CSRF (cookie auth obsolète encore envoyé par le navigateur). */
+const CSRF_SKIP_AUTH_PATHS = new Set([
+  "/api/auth/login",
+  "/api/auth/login/verify",
+  "/api/auth/google",
+  "/api/auth/register",
+  "/api/auth/register/verify",
+  "/api/auth/password-reset/request",
+  "/api/auth/password-reset/confirm",
+  "/api/auth/referral-signup-notify",
+]);
+
 function authUsesSecureCookies(): boolean {
   return appEnv.node.isProduction || appEnv.auth.nextAuthUrl.startsWith("https://");
 }
@@ -22,7 +34,9 @@ function requestPath(req: Request): string {
 }
 
 function shouldSkipCsrfPath(path: string): boolean {
-  return SKIP_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
+  if (SKIP_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))) return true;
+  if (CSRF_SKIP_AUTH_PATHS.has(path)) return true;
+  return false;
 }
 
 export function isCsrfProtectionEnabled(): boolean {
@@ -120,6 +134,18 @@ export function setCsrfCookie(res: Response, token?: string): string {
   return value;
 }
 
+/** Sessions créées avant le déploiement CSRF : émet le cookie au prochain GET authentifié. */
+export function ensureCsrfCookieForSession(req: Request, res: Response): void {
+  if (!isCsrfProtectionEnabled()) return;
+  if (!hasAuthCookie(req)) return;
+  const existing = parseCookieValue(
+    typeof req.headers.cookie === "string" ? req.headers.cookie : undefined,
+    CSRF_COOKIE_NAME
+  );
+  if (existing) return;
+  setCsrfCookie(res);
+}
+
 export function clearCsrfCookie(res: Response) {
   const domain = appEnv.node.isDevelopment ? undefined : appEnv.auth.cookieDomain;
   res.clearCookie(CSRF_COOKIE_NAME, {
@@ -174,4 +200,5 @@ export const __csrfTestUtils = {
   originAllowedForRequest,
   resolveTrustedOrigins,
   isCsrfProtectionEnabled,
+  shouldSkipCsrfPath,
 };

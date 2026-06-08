@@ -1418,6 +1418,16 @@ var CSRF_COOKIE_NAME = "ic_csrf";
 var CSRF_HEADER_NAME = "X-CSRF-Token";
 var MUTATING_METHODS = /* @__PURE__ */ new Set(["POST", "PUT", "PATCH", "DELETE"]);
 var SKIP_PATH_PREFIXES = ["/api/stripe/webhook", "/api/webhooks/", "/health"];
+var CSRF_SKIP_AUTH_PATHS = /* @__PURE__ */ new Set([
+  "/api/auth/login",
+  "/api/auth/login/verify",
+  "/api/auth/google",
+  "/api/auth/register",
+  "/api/auth/register/verify",
+  "/api/auth/password-reset/request",
+  "/api/auth/password-reset/confirm",
+  "/api/auth/referral-signup-notify"
+]);
 function authUsesSecureCookies2() {
   return appEnv.node.isProduction || appEnv.auth.nextAuthUrl.startsWith("https://");
 }
@@ -1428,7 +1438,9 @@ function requestPath(req) {
   return (req.path || req.url?.split("?")[0] || "").split("?")[0] || "";
 }
 function shouldSkipCsrfPath(path4) {
-  return SKIP_PATH_PREFIXES.some((prefix) => path4.startsWith(prefix));
+  if (SKIP_PATH_PREFIXES.some((prefix) => path4.startsWith(prefix))) return true;
+  if (CSRF_SKIP_AUTH_PATHS.has(path4)) return true;
+  return false;
 }
 function isCsrfProtectionEnabled() {
   if (process.env.CSRF_PROTECTION === "0") return false;
@@ -1513,6 +1525,16 @@ function setCsrfCookie(res, token) {
   const value = token || generateCsrfToken();
   res.cookie(CSRF_COOKIE_NAME, value, csrfCookieOptions());
   return value;
+}
+function ensureCsrfCookieForSession(req, res) {
+  if (!isCsrfProtectionEnabled()) return;
+  if (!hasAuthCookie(req)) return;
+  const existing = parseCookieValue(
+    typeof req.headers.cookie === "string" ? req.headers.cookie : void 0,
+    CSRF_COOKIE_NAME
+  );
+  if (existing) return;
+  setCsrfCookie(res);
 }
 function clearCsrfCookie(res) {
   const domain = appEnv.node.isDevelopment ? void 0 : appEnv.auth.cookieDomain;
@@ -2320,6 +2342,7 @@ function registerMongoApi(app2) {
         });
       }
       const profile = coerceRecord(profileDoc?.data);
+      ensureCsrfCookieForSession(req, res);
       return res.status(200).json({
         success: true,
         user: {

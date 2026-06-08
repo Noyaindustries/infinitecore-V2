@@ -9,6 +9,7 @@ Infinite Core utilise une session **cookie httpOnly** (`ic_auth_token`, `SameSit
 | POST cross-site avec cookie (classique CSRF) | `SameSite=Lax` — le navigateur n’envoie pas le cookie sur les POST tiers |
 | API cross-origin | CORS strict (`CORS_ORIGIN`), pas de wildcard |
 | Requêtes cookie authentifiées en **production** | Origin/Referer + jeton double-submit (`ic_csrf` / `X-CSRF-Token`) |
+| Connexion / inscription (`/api/auth/login`, `/api/auth/google`, etc.) | **Exclues** du CSRF (cookie auth obsolète encore envoyé par le navigateur) |
 | Intégrations serveur-serveur | Header `Authorization: Bearer` (hors scope CSRF cookie) |
 | Webhooks Stripe / PADDE | HMAC dédié, chemins exclus du middleware CSRF |
 

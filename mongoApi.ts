@@ -16,7 +16,7 @@ import {
   logAuditAuth,
   type AuditAuthAction,
 } from "./src/server/auditLog";
-import { clearCsrfCookie, setCsrfCookie } from "./src/server/csrfProtection";
+import { clearCsrfCookie, ensureCsrfCookieForSession, setCsrfCookie } from "./src/server/csrfProtection";
 
 export type AuthPayload = {
   uid: string;
@@ -962,6 +962,8 @@ export function registerMongoApi(app: Express) {
         });
       }
       const profile = coerceRecord(profileDoc?.data);
+
+      ensureCsrfCookieForSession(req, res);
 
       return res.status(200).json({
         success: true,

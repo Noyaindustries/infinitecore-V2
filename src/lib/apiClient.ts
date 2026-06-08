@@ -138,6 +138,13 @@ async function fetchAndParse<T>(url: string, init: RequestInit, fetchSignal: Abo
   if (!response.ok) {
     const errObj = obj as { error?: string; message?: string };
     const fromJson = errObj.error || errObj.message;
+    if (
+      response.status === 403 &&
+      typeof fromJson === "string" &&
+      /csrf|jeton csrf/i.test(fromJson)
+    ) {
+      throw new ApiHttpError(response.status, fromJson, { ...obj, csrfRetry: true });
+    }
     const snippet =
       !fromJson && text && !text.trimStart().startsWith("<")
         ? text.trim().slice(0, 240)
@@ -256,6 +263,25 @@ export async function apiRequest<T>(url: string, init: RequestInit = {}): Promis
   try {
     return await runAttempt(1);
   } catch (e) {
+    if (
+      e instanceof ApiHttpError &&
+      e.status === 403 &&
+      e.body.csrfRetry === true &&
+      method !== "GET" &&
+      method !== "HEAD"
+    ) {
+      try {
+        await fetchAndParse<{ success?: boolean }>(
+          apiUrl("/api/auth/me"),
+          { method: "GET", credentials: init.credentials ?? "include" },
+          new AbortController().signal
+        );
+        return await runAttempt(2);
+      } catch {
+        throw e;
+      }
+    }
+
     const msg = e instanceof Error ? e.message : String(e);
     if (!canRetry || !isTimeoutMessage(msg)) throw e;
 
