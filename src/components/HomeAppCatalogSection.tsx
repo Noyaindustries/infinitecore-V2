@@ -3,6 +3,7 @@ import { ArrowRight, ShoppingCart } from 'lucide-react';
 import { useAppCatalog } from '../hooks/useAppCatalog';
 import { useAuth } from './AuthProvider';
 import AppCatalogBoutiqueCard from './AppCatalogBoutiqueCard';
+import HomeSectionLabel from './home/HomeSectionLabel';
 
 const PREVIEW_COUNT = 3;
 
@@ -22,11 +23,11 @@ export default function HomeAppCatalogSection() {
     <section id="boutique" className="relative z-10 border-t border-white/5 py-16 md:py-20">
       <div className="container mx-auto max-w-[1200px] px-6">
         <div className="mb-10 text-center">
-          <span className="mb-4 inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] text-[#FFB332] before:mr-3 before:h-px before:w-6 before:bg-[#FFB332] after:ml-3 after:h-px after:w-6 after:bg-[#FFB332]">
+          <HomeSectionLabel accent="gold" centered className="inline-flex items-center gap-2">
             <ShoppingCart className="h-3.5 w-3.5" aria-hidden />
             Boutique applications
-          </span>
-          <h2 className="text-3xl font-black tracking-tight text-[#F2F4F8] md:text-[44px]">
+          </HomeSectionLabel>
+          <h2 className="home-section-title">
             Licences &amp; abonnements
           </h2>
           <p className="mx-auto mt-3 max-w-2xl text-sm leading-relaxed text-[#8D98AA] md:text-[15px]">
@@ -53,7 +54,7 @@ export default function HomeAppCatalogSection() {
         <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
           <Link
             to="/boutique"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#FFB332] px-6 py-3 text-sm font-bold text-[#06080D] shadow-[0_8px_24px_rgba(255,179,50,0.35)] transition hover:brightness-105"
+            className="home-btn-primary"
           >
             Voir toute la boutique
             <ArrowRight size={18} aria-hidden />
