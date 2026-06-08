@@ -239,7 +239,11 @@ function validateProcessEnv(env, options) {
   errors.push(...secretErrors("DATABASE_URL", parsed.data.DATABASE_URL, isProduction2));
   if (isProduction2) {
     errors.push(...secretErrors("PADDE_WEBHOOK_SECRET", env.PADDE_WEBHOOK_SECRET?.trim(), true));
-    errors.push(...secretErrors("SAAS_BRIDGE_API_KEY", env.SAAS_BRIDGE_API_KEY?.trim(), true));
+    if (!env.SAAS_BRIDGE_API_KEY?.trim()) {
+      warnings.push(
+        "SAAS_BRIDGE_API_KEY absent \u2014 les webhooks SaaS (/api/saas/webhooks/*) seront refus\xE9s en production."
+      );
+    }
   } else if (!jwtSecret) {
     warnings.push("NEXTAUTH_SECRET absent \u2014 secret de d\xE9veloppement utilis\xE9.");
   }
@@ -523,7 +527,9 @@ function validateProductionSecrets(input) {
   if (input.noyaWebhookSecret.trim()) {
     checks.push(validateSharedSecret("NOYA_RECRUTEMENT_WEBHOOK_SECRET", input.noyaWebhookSecret));
   }
-  checks.push(validateSharedSecret("SAAS_BRIDGE_API_KEY", input.saasBridgeApiKey, { required: true }));
+  if (input.saasBridgeApiKey.trim()) {
+    checks.push(validateSharedSecret("SAAS_BRIDGE_API_KEY", input.saasBridgeApiKey));
+  }
   if (input.stripeSecretKey.trim()) {
     checks.push(validateSharedSecret("STRIPE_WEBHOOK_SECRET", input.stripeWebhookSecret, { required: true }));
   }
@@ -1465,9 +1471,16 @@ function prismaAndDriverErrorText(error) {
 }
 function sendAuthPrismaError(res, logLabel, error) {
   console.error(logLabel, error);
-  const msg = prismaAndDriverErrorText(error);
+  const msg = error instanceof Error ? error.message : String(error);
+  if (/NEXTAUTH_SECRET|JWT_SECRET|invalid/i.test(msg)) {
+    return res.status(503).json({
+      success: false,
+      error: "Configuration d'authentification invalide c\xF4t\xE9 serveur."
+    });
+  }
+  const combined = prismaAndDriverErrorText(error);
   const dbUnreachable = /Server selection timeout|Can't reach database server|ReplicaSetNoPrimary|P1001|P1017|P2010|MongoNetwork|ECONNREFUSED|fatal alert: InternalError|TLS handshake|certificate|timed out/i.test(
-    msg
+    combined
   );
   if (dbUnreachable) {
     return res.status(503).json({

@@ -38,7 +38,7 @@ describe("validateProcessEnv", () => {
     const report = validateProcessEnv(
       {
         NODE_ENV: "production",
-        DATABASE_URL: "mongodb://localhost:27017/test",
+        DATABASE_URL: "mongodb+srv://user:password@cluster.mongodb.net/infinitecore?retryWrites=true",
         NEXTAUTH_SECRET: "a".repeat(32),
         CORS_ORIGIN: "https://www.example.com",
         PADDE_WEBHOOK_SECRET: "b".repeat(32),
