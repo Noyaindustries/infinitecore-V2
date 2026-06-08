@@ -13,6 +13,10 @@
     "start": "cross-env NODE_ENV=production node dist/startUnified.cjs",
     "start:api": "cross-env START_LISTEN=1 node dist/server.cjs",
     "verify:deploy": "node scripts/verifyDeploy.mjs",
+    "generate:nextauth-secret": "node scripts/generateNextAuthSecret.mjs",
+    "validate:nextauth-secret": "node --env-file=.env --env-file=.env.local scripts/generateNextAuthSecret.mjs --validate",
+    "validate:secrets": "node --env-file=.env --env-file=.env.local scripts/validateSecrets.mjs",
+    "validate:env": "tsx --env-file=.env --env-file=.env.local scripts/validateEnv.ts",
     "test:padde-webhook": "node scripts/testPaddeWebhook.mjs",
     "test:noya-recrutement-webhook": "node --env-file=.env.local scripts/testNoyaRecrutementWebhook.mjs",
     "diagnose:padde": "node scripts/diagnosePadde.mjs",
@@ -23,6 +27,7 @@
     "test:unit:watch": "vitest",
     "test:security": "vitest run tests/security && npm run test:e2e -- tests/e2e/api-security.spec.ts",
     "test:security:audit": "npm audit --audit-level=high",
+    "audit:fix": "npm audit fix",
     "test:licenses": "npm run test:unit -- tests/unit/licenses.vitest.ts",
     "test:stripe-checkout": "node --env-file=.env.local scripts/testStripeCheckout.mjs",
     "test:e2e": "playwright test",
@@ -56,6 +61,7 @@
     "date-fns": "^4.1.0",
     "express": "^5.2.1",
     "framer-motion": "^12.38.0",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^4.2.0",
     "jspdf-autotable": "^5.0.7",
@@ -87,11 +93,15 @@
     "@types/react-dom": "^19.0.4",
     "cross-env": "^7.0.3",
     "esbuild": "^0.27.4",
-    "postcss": "^8.5.3",
+    "postcss": "^8.5.15",
     "prisma": "^6.19.3",
     "tailwindcss": "^4.2.1",
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vitest": "^4.1.8"
+  },
+  "overrides": {
+    "postcss": "^8.5.15",
+    "uuid": "^11.1.1"
   }
 }

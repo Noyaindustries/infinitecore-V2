@@ -1,3 +1,5 @@
+import { createHmac } from "node:crypto";
+
 /**
  * Contournement pour tester le webhook PADDE-CI sans padde-ci.com ni navigateur admin.
  *
@@ -73,11 +75,18 @@ const payload = {
   date: new Date().toISOString(),
 };
 
+const body = JSON.stringify(payload);
 const headers = { "Content-Type": "application/json" };
-if (secret) headers["X-Webhook-Secret"] = secret;
+if (secret) {
+  const digest = createHmac("sha256", secret).update(body, "utf8").digest("hex");
+  headers["X-Webhook-Signature"] = `sha256=${digest}`;
+  if (process.env.WEBHOOK_ALLOW_PLAIN_SECRET === "1") {
+    headers["X-Webhook-Secret"] = secret;
+  }
+}
 
 console.log("POST", target);
-if (secret) console.log("(header X-Webhook-Secret présent)");
+if (secret) console.log("(header X-Webhook-Signature HMAC présent)");
 if (/example\.(com|net|org)\b/i.test(target)) {
   console.warn(
     "Attention : l’URL contient « example.com » — domaine de démo. Utilise ton URL réelle ou `http://localhost:3000` sans --url."
@@ -89,7 +98,7 @@ try {
   res = await fetch(target, {
     method: "POST",
     headers,
-    body: JSON.stringify(payload),
+    body,
   });
 } catch (err) {
   console.error("Échec réseau :", explainFetchError(err));

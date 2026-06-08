@@ -34,6 +34,16 @@ function isStoredCatalogLegacy(rawApps: unknown): boolean {
   });
 }
 
+/** Retire les entrées legacy (crm, finance, …) sans écraser le catalogue courant. */
+function stripLegacyCatalogEntries(rawApps: unknown): unknown[] {
+  if (!Array.isArray(rawApps)) return [];
+  return rawApps.filter((item) => {
+    if (!item || typeof item !== "object") return false;
+    const id = String((item as Record<string, unknown>).id || "").trim();
+    return !LEGACY_CATALOG_IDS.has(id);
+  });
+}
+
 async function persistCatalog(apps: AppCatalogEntry[]): Promise<AppCatalogEntry[]> {
   const merged = mergeCatalogWithDefaults(apps);
   const now = new Date().toISOString();
@@ -62,11 +72,11 @@ export async function loadAppCatalog(): Promise<AppCatalogEntry[]> {
   if (!row) return mergeCatalogWithDefaults(INFINITE_APP_CATALOG);
   const data = readDataRowAsRecord(row.data);
 
-  if (isStoredCatalogLegacy(data.apps)) {
-    return persistCatalog(INFINITE_APP_CATALOG);
-  }
+  const rawApps = isStoredCatalogLegacy(data.apps)
+    ? stripLegacyCatalogEntries(data.apps)
+    : data.apps;
 
-  const parsed = parseAppCatalogEntries(data.apps);
+  const parsed = parseAppCatalogEntries(rawApps);
   if (!parsed.length) return mergeCatalogWithDefaults(INFINITE_APP_CATALOG);
 
   const missingDefault = INFINITE_APP_CATALOG.some((a) => !parsed.some((c) => c.id === a.id));

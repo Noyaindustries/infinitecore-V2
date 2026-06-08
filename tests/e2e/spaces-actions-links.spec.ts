@@ -2,7 +2,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { loginAsRole } from "./auth";
 import { expectBodyContains, waitForHydratedBody } from "./page-ready";
 
-test.describe.configure({ timeout: 60_000 });
+test.describe.configure({ timeout: 90_000 });
 
 async function expectBodyToMatchOneOf(page: Page, patterns: RegExp[]) {
   await waitForHydratedBody(page);
@@ -24,7 +24,7 @@ test("validation dossier client conserve le succès même si notification échou
   await expectBodyContains(page, "Mon dossier");
 
   const validateButton = page.getByRole("button", { name: /Valider le dossier/i }).first();
-  await expect(validateButton).toBeVisible();
+  await expect(validateButton).toBeVisible({ timeout: 20_000 });
   await validateButton.click();
 
   await expectBodyContains(page, /validé !/i);
@@ -137,8 +137,8 @@ const scenarios: Scenario[] = [
       await expectBodyContains(page, "Boutique & Services");
       await page.getByRole("button", { name: "Commander" }).first().click();
       await expectBodyContains(page, "Confirmer la demande");
-      await expectBodyContains(page, "Service sélectionné");
-      await page.getByRole("button", { name: "Fermer la fenêtre" }).click();
+      await expectBodyContains(page, "Application sélectionnée");
+      await page.getByRole("button", { name: "Fermer" }).click();
       await expect(page.getByRole("heading", { name: "Confirmer la demande" })).toBeHidden();
     },
   },

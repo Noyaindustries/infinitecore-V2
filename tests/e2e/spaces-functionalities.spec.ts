@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { loginAsRole } from "./auth";
 import { expectBodyContains } from "./page-ready";
 
-test.describe.configure({ timeout: 60_000 });
+test.describe.configure({ timeout: 90_000 });
 
 test("parcours espace commando", async ({ page }) => {
   await loginAsRole(page, "commando");

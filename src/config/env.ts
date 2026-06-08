@@ -6,8 +6,22 @@
  * Ne pas importer ce module depuis du code **client** (bundle) : utiliser `publicEnv.ts`.
  */
 import { ensureEnvFilesLoaded } from "./loadEnvFiles";
+import { validateAuthSecret } from "./authSecret";
+import { formatEnvValidationReport, validateProcessEnv } from "./envSchema";
 
 ensureEnvFilesLoaded();
+
+const envValidationReport = validateProcessEnv(process.env);
+if (envValidationReport.warnings.length) {
+  console.warn(formatEnvValidationReport({ ok: true, errors: [], warnings: envValidationReport.warnings }));
+}
+if (!envValidationReport.ok) {
+  const message = `Variables d'environnement invalides:\n${formatEnvValidationReport(envValidationReport)}`;
+  if ((process.env.NODE_ENV || "development") === "production") {
+    throw new Error(message);
+  }
+  console.warn(message);
+}
 
 /** Chaîne d’environnement : `undefined` / `null` / vide après trim → `fallback`. */
 function str(key: string, fallback = ""): string {
@@ -39,7 +53,13 @@ export function databaseUrlForPrisma(): string {
 
 export function getJwtSecret(): string {
   const envSecret = str("NEXTAUTH_SECRET") || str("JWT_SECRET");
-  if (envSecret) return envSecret;
+  if (envSecret) {
+    const check = validateAuthSecret(envSecret);
+    if (currentNodeEnv() === "production" && !check.ok) {
+      throw new Error(`NEXTAUTH_SECRET invalide : ${check.errors.join(" ")}`);
+    }
+    return envSecret;
+  }
   if (currentNodeEnv() === "production") {
     throw new Error("NEXTAUTH_SECRET ou JWT_SECRET est requis en production.");
   }

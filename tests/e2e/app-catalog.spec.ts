@@ -29,8 +29,8 @@ test('la page détail ERP Multi-École affiche titre, galerie et formulaire RDV'
   await expect(page.locator('#rdv-phone-erp-multi-ecole')).toBeVisible();
 });
 
-test('l’accueil boutique liste les applications avec liens détail', async ({ page }) => {
-  await page.goto('/#boutique', { waitUntil: 'domcontentloaded' });
+test('la page boutique liste les applications avec liens détail', async ({ page }) => {
+  await page.goto('/boutique', { waitUntil: 'domcontentloaded' });
   await waitForHydratedBody(page);
 
   const detailLink = page.locator('a[href="/applications/erp-multi-ecole"]').first();

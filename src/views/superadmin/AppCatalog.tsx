@@ -6,8 +6,11 @@ import {
   INFINITE_APP_CATALOG,
   createEmptyAppCatalogEntry,
   formatFcfa,
+  hasLicensePricing,
+  hasSubscriptionPricing,
   isBuiltInAppId,
   mergeCatalogWithDefaults,
+  validateCatalogEntryPricing,
   type AppCatalogEntry,
   type AppLicensePricing,
   type AppSubscriptionPricing,
@@ -16,28 +19,32 @@ import { appCatalogService } from '../../services/appCatalogService';
 import AppCatalogCardImage from '../../components/AppCatalogCardImage';
 import AppCatalogEditorModal from '../../components/AppCatalogEditorModal';
 
-function ensureCheckoutPricing(app: AppCatalogEntry): AppCatalogEntry {
-  if (!app.onlineCheckout) return app;
-  const pricing = [...app.pricing];
-  if (!pricing.some((p) => p.type === 'license')) {
-    pricing.push({ type: 'license', price: 100_000, durationDays: 0, label: 'Licence à vie (auto-hébergée)' });
-  }
-  if (!pricing.some((p) => p.type === 'subscription')) {
-    pricing.push({
-      type: 'subscription',
-      price: 10_000,
-      billingCycle: 'month',
-      label: 'Abonnement mensuel (SaaS Infinite Core)',
-    });
-  }
-  return { ...app, pricing };
-}
-
 type EditorState = {
   mode: 'create' | 'edit';
   draft: AppCatalogEntry;
   originalId?: string;
 };
+
+function prepareAppsForSave(list: AppCatalogEntry[]): AppCatalogEntry[] {
+  return list.map((a) => ({
+    ...a,
+    features: (a.features ?? []).filter((f) => f.title.trim()),
+  }));
+}
+
+function validateAppsList(list: AppCatalogEntry[]): string | null {
+  const invalid = list.find((a) => !a.id.trim() || !a.title.trim());
+  if (invalid) return 'Chaque application doit avoir un identifiant et un titre.';
+  const emptyFeature = list.find((a) => (a.features ?? []).some((f) => !f.title.trim()));
+  if (emptyFeature) {
+    return `« ${emptyFeature.title} » : chaque fonctionnalité doit avoir un titre.`;
+  }
+  const ids = list.map((a) => a.id);
+  if (new Set(ids).size !== ids.length) {
+    return 'Deux applications ont le même identifiant (slug).';
+  }
+  return list.map(validateCatalogEntryPricing).find(Boolean) ?? null;
+}
 
 export default function SuperAdminAppCatalog() {
   const [apps, setApps] = useState<AppCatalogEntry[]>(INFINITE_APP_CATALOG);
@@ -60,37 +67,29 @@ export default function SuperAdminAppCatalog() {
     };
   }, []);
 
-  const handleSave = async () => {
-    const invalid = apps.find((a) => !a.id.trim() || !a.title.trim());
-    if (invalid) {
-      toast.error('Chaque application doit avoir un identifiant et un titre.');
-      return;
-    }
-    const emptyFeature = apps.find((a) => (a.features ?? []).some((f) => !f.title.trim()));
-    if (emptyFeature) {
-      toast.error(`« ${emptyFeature.title} » : chaque fonctionnalité doit avoir un titre.`);
-      return;
-    }
-    const ids = apps.map((a) => a.id);
-    if (new Set(ids).size !== ids.length) {
-      toast.error('Deux applications ont le même identifiant (slug).');
-      return;
+  const persistApps = async (list: AppCatalogEntry[]): Promise<boolean> => {
+    const validationError = validateAppsList(list);
+    if (validationError) {
+      toast.error(validationError);
+      return false;
     }
     setSaving(true);
     try {
-      const toSave = apps.map(ensureCheckoutPricing).map((a) => ({
-        ...a,
-        features: (a.features ?? []).filter((f) => f.title.trim()),
-      }));
-      const saved = await appCatalogService.saveCatalog(toSave);
+      const saved = await appCatalogService.saveCatalog(prepareAppsForSave(list));
       setApps(saved);
-      toast.success('Catalogue applications enregistré.');
+      toast.success('Catalogue enregistré en base.');
+      return true;
     } catch (error) {
       console.error(error);
       toast.error(error instanceof Error ? error.message : 'Erreur lors de la sauvegarde.');
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSave = async () => {
+    await persistApps(apps);
   };
 
   const handleReset = () => {
@@ -108,23 +107,28 @@ export default function SuperAdminAppCatalog() {
     setEditor({ mode: 'edit', draft: { ...app }, originalId: app.id });
   };
 
-  const handleEditorSubmit = () => {
+  const handleEditorSubmit = async () => {
     if (!editor) return;
     const title = editor.draft.title.trim();
     if (!title || title === 'Nouvelle application') {
       toast.error('Donnez un titre à l’application.');
       return;
     }
-    const entry = ensureCheckoutPricing(editor.draft);
+    const entry = editor.draft;
+    const pricingError = validateCatalogEntryPricing(entry);
+    if (pricingError) {
+      toast.error(pricingError);
+      return;
+    }
 
     if (editor.mode === 'create') {
       if (apps.some((a) => a.id === entry.id)) {
         toast.error('Cet identifiant existe déjà — modifiez le titre.');
         return;
       }
-      setApps((prev) => [...prev, entry]);
+      const nextApps = [...apps, entry];
       setEditor(null);
-      toast.success('Application créée — cliquez sur Enregistrer pour publier.');
+      await persistApps(nextApps);
       return;
     }
 
@@ -133,9 +137,9 @@ export default function SuperAdminAppCatalog() {
       toast.error('Cet identifiant est déjà utilisé par une autre application.');
       return;
     }
-    setApps((prev) => prev.map((a) => (a.id === originalId ? entry : a)));
+    const nextApps = apps.map((a) => (a.id === originalId ? entry : a));
     setEditor(null);
-    toast.success('Modifications appliquées — cliquez sur Enregistrer pour publier.');
+    await persistApps(nextApps);
   };
 
   const handleRemoveApp = (id: string) => {
@@ -168,7 +172,7 @@ export default function SuperAdminAppCatalog() {
           </div>
           <h1 className="text-2xl font-bold text-text-primary">Catalogue applications</h1>
           <p className="mt-1 text-sm text-text-secondary">
-            Création et édition via le même formulaire flottant — puis enregistrez le catalogue.
+            Les tarifs et contenus sont enregistrés en base dès que vous cliquez sur Appliquer dans le formulaire.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -239,12 +243,16 @@ export default function SuperAdminAppCatalog() {
                       Module : {app.moduleKey}
                       {featureCount > 0 && ` · ${featureCount} fonctionnalité${featureCount > 1 ? 's' : ''}`}
                     </p>
-                    {license && (
-                      <p className="mt-1 text-xs text-text-muted">
-                        Licence : {formatFcfa(license.price)}
-                        {subscription ? ` · Abo : ${formatFcfa(subscription.price)}/mois` : ''}
-                      </p>
-                    )}
+                    <p className="mt-1 text-xs text-text-muted">
+                      {[
+                        hasLicensePricing(app) && license
+                          ? `Licence : ${formatFcfa(license.price)}`
+                          : 'Licence : —',
+                        hasSubscriptionPricing(app) && subscription
+                          ? `Abo : ${formatFcfa(subscription.price)}/mois`
+                          : 'Abo : —',
+                      ].join(' · ')}
+                    </p>
                     <Link
                       to={`/applications/${app.id}`}
                       target="_blank"

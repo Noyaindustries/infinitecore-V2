@@ -2,6 +2,11 @@ import type { Express, Request, Response } from "express";
 import type { PrismaClient } from "@prisma/client";
 import { randomUUID } from "crypto";
 import type { QueryFilter, QueryOrder } from "./mongo/dataQueryTypes";
+import {
+  assertSafeDocumentPayload,
+  containsMongoOperatorKeys,
+  isSafeCollectionPathInput,
+} from "./mongo/noSqlInjectionGuard";
 import { deleteSplitDoc, getSplitDoc, listSplitDocs, upsertSplitDoc } from "@/server/dataStores";
 
 export type { QueryFilter, QueryOrder } from "./mongo/dataQueryTypes";
@@ -54,12 +59,20 @@ type RegisterDataRoutesDeps = {
 
 export function parseDataQueryInput(body: unknown) {
   const raw = (body ?? {}) as Record<string, unknown>;
+  if (containsMongoOperatorKeys(raw)) {
+    return { invalid: true as const };
+  }
+  const collectionPathRaw = String(raw.collectionPath || "");
+  if (collectionPathRaw.trim() && !isSafeCollectionPathInput(collectionPathRaw)) {
+    return { invalid: true as const };
+  }
   const max = Number(raw.limit);
   const offsetRaw = Number(raw.offset);
   const limit = Number.isFinite(max) && max > 0 ? Math.min(max, 1000) : 100;
   const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.min(offsetRaw, 100_000) : 0;
   return {
-    collectionPathRaw: String(raw.collectionPath || ""),
+    invalid: false as const,
+    collectionPathRaw,
     filtersRaw: raw.filters,
     ordersRaw: raw.orders,
     limit,
@@ -117,6 +130,9 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       if (!auth) return;
 
       const parsed = parseDataQueryInput(req.body);
+      if (parsed.invalid) {
+        return res.status(400).json({ success: false, error: "Paramètres de requête invalides." });
+      }
       const collectionPath = deps.normalizeCollectionPath(parsed.collectionPathRaw);
       const filters = deps.sanitizeFilters(parsed.filtersRaw);
       const orders = deps.sanitizeOrders(parsed.ordersRaw);
@@ -244,9 +260,17 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
     try {
       const auth = await deps.requireAuth(req, res);
       if (!auth) return;
-      const collectionPath = deps.normalizeCollectionPath(String(req.body?.collectionPath || ""));
+      const collectionPathRaw = String(req.body?.collectionPath || "");
+      if (!isSafeCollectionPathInput(collectionPathRaw) || containsMongoOperatorKeys(req.body)) {
+        return res.status(400).json({ success: false, error: "collectionPath ou docId invalides." });
+      }
+      const collectionPath = deps.normalizeCollectionPath(collectionPathRaw);
       const merge = Boolean(req.body?.merge);
       const incoming = deps.coerceRecord(req.body?.data);
+      const payloadCheck = assertSafeDocumentPayload(incoming);
+      if (payloadCheck.ok === false) {
+        return res.status(400).json({ success: false, error: payloadCheck.error });
+      }
       const docId = String(req.body?.docId || "").trim() || randomUUID().replace(/-/g, "");
       if (!collectionPath || !deps.isSafeCollectionPath(collectionPath) || !deps.isSafeDocId(docId)) {
         return res.status(400).json({ success: false, error: "collectionPath ou docId invalides." });
@@ -275,9 +299,17 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
     try {
       const auth = await deps.requireAuth(req, res);
       if (!auth) return;
-      const collectionPath = deps.normalizeCollectionPath(String(req.body?.collectionPath || ""));
+      const collectionPathRaw = String(req.body?.collectionPath || "");
+      if (!isSafeCollectionPathInput(collectionPathRaw) || containsMongoOperatorKeys(req.body)) {
+        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
+      }
+      const collectionPath = deps.normalizeCollectionPath(collectionPathRaw);
       const docId = String(req.body?.docId || "").trim();
       const updates = deps.coerceRecord(req.body?.data);
+      const payloadCheck = assertSafeDocumentPayload(updates);
+      if (payloadCheck.ok === false) {
+        return res.status(400).json({ success: false, error: payloadCheck.error });
+      }
       const deleteKeys = Array.isArray(req.body?.deleteKeys) ? (req.body.deleteKeys as string[]) : [];
       if (
         !collectionPath ||

@@ -1,4 +1,6 @@
+import { MongoClient } from "mongodb";
 import { appEnv } from "../src/config/env";
+import { upsertSplitDoc } from "../src/server/dataStores";
 import { prisma } from "../prismaClient";
 import bcrypt from "bcryptjs";
 
@@ -97,6 +99,32 @@ async function seedUsers(password: string) {
   }
 }
 
+/** Supprime les étapes dossier du client test (collections scindées + legacy `data_documents`). */
+async function resetClientDossierStepsForE2e() {
+  const uri = appEnv.database.url;
+  if (uri) {
+    const client = new MongoClient(uri);
+    try {
+      await client.connect();
+      const col = client.db().collection("data_dossier_steps");
+      await col.deleteMany({ "data.clientId": "usr_client_test" });
+    } finally {
+      await client.close();
+    }
+  }
+
+  const existingDossierSteps = await prisma.dataDocument.findMany({
+    where: { collectionPath: "dossier_steps" },
+    select: { id: true, data: true },
+  });
+  for (const row of existingDossierSteps) {
+    const clientId = (row.data as { clientId?: string } | null)?.clientId;
+    if (clientId === "usr_client_test") {
+      await prisma.dataDocument.delete({ where: { id: row.id } });
+    }
+  }
+}
+
 async function seedBusinessData() {
   await upsertDataDocument("companies", "comp_test_001", {
     id: "comp_test_001",
@@ -146,7 +174,9 @@ async function seedBusinessData() {
     createdAt: nowIso(),
   });
 
-  await upsertDataDocument("dossier_steps", "dossier_step_test_audit", {
+  await resetClientDossierStepsForE2e();
+
+  const dossierStepAudit = {
     id: "dossier_step_test_audit",
     clientId: "usr_client_test",
     stepType: "audit",
@@ -160,7 +190,10 @@ async function seedBusinessData() {
     uploadedByName: "Cyril Commando",
     status: "soumis",
     note: "Document de test pour validation client",
-  });
+  };
+
+  await upsertSplitDoc("dossier_steps", "dossier_step_test_audit", dossierStepAudit, false);
+  await upsertDataDocument("dossier_steps", "dossier_step_test_audit", dossierStepAudit);
 
   await upsertDataDocument("leads", "lead_test_001", {
     id: "lead_test_001",

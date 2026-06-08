@@ -4,6 +4,8 @@ import {
   INFINITE_APP_CATALOG,
   mergeCatalogWithDefaults,
   parseAppCatalogEntries,
+  setLicensePricingEnabled,
+  setSubscriptionPricingEnabled,
   slugifyAppId,
 } from '../../src/data/appCatalog';
 
@@ -24,6 +26,42 @@ describe('mergeCatalogWithDefaults', () => {
     const merged = mergeCatalogWithDefaults([]);
     expect(merged).toHaveLength(INFINITE_APP_CATALOG.length);
     expect(merged.map((a) => a.id)).toEqual(INFINITE_APP_CATALOG.map((a) => a.id));
+  });
+
+  it('conserve uniquement la licence sans réinjecter l’abonnement par défaut', () => {
+    const merged = mergeCatalogWithDefaults([
+      {
+        id: 'erp-multi-ecole',
+        moduleKey: 'erp-multi-ecole',
+        title: 'ERP Multi-École',
+        desc: 'Desc custom',
+        deliveryLabel: 'Sur devis',
+        pricing: [{ type: 'license', price: 2_500_000, durationDays: 0 }],
+        onlineCheckout: true,
+        features: [],
+      },
+    ]);
+    const app = merged.find((a) => a.id === 'erp-multi-ecole');
+    expect(app?.pricing).toHaveLength(1);
+    expect(app?.pricing[0]?.type).toBe('license');
+    if (app?.pricing[0]?.type === 'license') {
+      expect(app.pricing[0].price).toBe(2_500_000);
+    }
+  });
+
+  it('conserve un tableau pricing vide (sur devis)', () => {
+    const merged = mergeCatalogWithDefaults([
+      {
+        id: 'erp-multi-ecole',
+        moduleKey: 'erp-multi-ecole',
+        title: 'ERP Multi-École',
+        desc: 'Sur devis',
+        deliveryLabel: 'Sur devis',
+        pricing: [],
+        onlineCheckout: false,
+      },
+    ]);
+    expect(merged.find((a) => a.id === 'erp-multi-ecole')?.pricing).toEqual([]);
   });
 
   it('écrase le prix sans écraser les features explicites vides', () => {
@@ -153,6 +191,27 @@ describe('licence à vie', () => {
     if (license?.type === 'license') {
       expect(license.durationDays).toBe(0);
       expect(formatLicenseValidityLabel(license)).toBe('À vie — hébergement client');
+    }
+  });
+});
+
+describe('tarifs licence / abonnement', () => {
+  const base = INFINITE_APP_CATALOG[0];
+
+  it('désactive la licence sans toucher à l’abonnement', () => {
+    const next = setLicensePricingEnabled(base, false);
+    expect(next.pricing.some((p) => p.type === 'license')).toBe(false);
+    expect(next.pricing.some((p) => p.type === 'subscription')).toBe(true);
+  });
+
+  it('conserve le prix licence existant quand on réactive', () => {
+    const withoutLicense = setLicensePricingEnabled(base, false);
+    const custom = setLicensePricingEnabled(withoutLicense, true, 2_500_000);
+    expect(custom.pricing).toHaveLength(2);
+    const license = custom.pricing.find((p) => p.type === 'license');
+    expect(license?.type).toBe('license');
+    if (license?.type === 'license') {
+      expect(license.price).toBe(2_500_000);
     }
   });
 });

@@ -126,6 +126,46 @@ function normalizeEntryPricing(pricing: AppPricing[]): AppPricing[] {
   return pricing.map((p) => (p.type === 'license' ? normalizeLicensePricing(p) : p));
 }
 
+export const DEFAULT_CATALOG_LICENSE_PRICE = 100_000;
+export const DEFAULT_CATALOG_SUBSCRIPTION_PRICE = 10_000;
+
+export function hasLicensePricing(entry: Pick<AppCatalogEntry, 'pricing'>): boolean {
+  return entry.pricing.some((p) => p.type === 'license');
+}
+
+export function hasSubscriptionPricing(entry: Pick<AppCatalogEntry, 'pricing'>): boolean {
+  return entry.pricing.some((p) => p.type === 'subscription');
+}
+
+export function setLicensePricingEnabled(
+  entry: AppCatalogEntry,
+  enabled: boolean,
+  price = DEFAULT_CATALOG_LICENSE_PRICE
+): AppCatalogEntry {
+  const without = entry.pricing.filter((p) => p.type !== 'license');
+  if (!enabled) return { ...entry, pricing: without };
+  const existing = entry.pricing.find((p): p is AppLicensePricing => p.type === 'license');
+  return { ...entry, pricing: [...without, existing ?? lifetimeLicense(price)] };
+}
+
+export function setSubscriptionPricingEnabled(
+  entry: AppCatalogEntry,
+  enabled: boolean,
+  price = DEFAULT_CATALOG_SUBSCRIPTION_PRICE
+): AppCatalogEntry {
+  const without = entry.pricing.filter((p) => p.type !== 'subscription');
+  if (!enabled) return { ...entry, pricing: without };
+  const existing = entry.pricing.find((p): p is AppSubscriptionPricing => p.type === 'subscription');
+  return { ...entry, pricing: [...without, existing ?? monthly(price)] };
+}
+
+export function validateCatalogEntryPricing(entry: AppCatalogEntry): string | null {
+  if (entry.onlineCheckout && entry.pricing.length === 0) {
+    return `« ${entry.title} » : cochez au moins un tarif (licence ou abonnement).`;
+  }
+  return null;
+}
+
 export function formatLicenseValidityLabel(_pricing: AppLicensePricing): string {
   return 'À vie — hébergement client';
 }
@@ -312,7 +352,7 @@ function mergeStoredWithDefault(def: AppCatalogEntry, found?: AppCatalogEntry): 
     ...found,
     moduleKey: found.moduleKey || def.moduleKey,
     imageUrl: found.imageUrl?.trim() ? found.imageUrl : def.imageUrl,
-    pricing: normalizeEntryPricing(found.pricing?.length ? found.pricing : def.pricing),
+    pricing: normalizeEntryPricing(Array.isArray(found.pricing) ? found.pricing : def.pricing),
     advantages: found.advantages !== undefined ? found.advantages : def.advantages,
     features: found.features !== undefined ? found.features : def.features,
     galleryImages: found.galleryImages?.length ? found.galleryImages : def.galleryImages,

@@ -66,8 +66,7 @@ function agentSessionLog(payload) {
 }
 
 // server.ts
-var import_multer = __toESM(require("multer"), 1);
-var import_crypto5 = require("crypto");
+var import_crypto6 = require("crypto");
 var import_client_s32 = require("@aws-sdk/client-s3");
 var import_s3_request_presigner2 = require("@aws-sdk/s3-request-presigner");
 var import_stripe = __toESM(require("stripe"), 1);
@@ -106,8 +105,182 @@ function ensureEnvFilesLoaded() {
   }
 }
 
+// src/config/authSecret.ts
+var WEAK_SECRETS = /* @__PURE__ */ new Set([
+  "",
+  "change-me",
+  "change-me-in-production",
+  "dev-secret-change-me",
+  "remplace-par-une-cle-longue-et-aleatoire",
+  "g\xE9n\xE8re-une-cha\xEEne-longue-et-al\xE9atoire",
+  "genere-une-chaine-longue-et-aleatoire"
+]);
+var NEXTAUTH_SECRET_MIN_LENGTH = 32;
+function validateAuthSecret(raw) {
+  const secret = String(raw ?? "").trim();
+  const errors = [];
+  if (!secret) {
+    errors.push("NEXTAUTH_SECRET (ou JWT_SECRET) est vide.");
+  } else if (secret.length < NEXTAUTH_SECRET_MIN_LENGTH) {
+    errors.push(
+      `Le secret doit contenir au moins ${NEXTAUTH_SECRET_MIN_LENGTH} caract\xE8res (actuel : ${secret.length}).`
+    );
+  }
+  const normalized = secret.toLowerCase();
+  if (WEAK_SECRETS.has(normalized)) {
+    errors.push("Le secret est une valeur d\u2019exemple \u2014 g\xE9n\xE9rez une cl\xE9 al\xE9atoire unique.");
+  }
+  return { ok: errors.length === 0, secret, errors };
+}
+
+// src/config/envSchema.ts
+var import_zod = require("zod");
+var WEAK_SECRETS2 = /* @__PURE__ */ new Set([
+  "",
+  "change-me",
+  "change-me-in-production",
+  "dev-secret-change-me",
+  "remplace-par-une-cle-longue-et-aleatoire",
+  "g\xE9n\xE8re-une-cha\xEEne-longue-et-aleatoire",
+  "genere-une-chaine-longue-et-aleatoire"
+]);
+var optionalUrl = import_zod.z.string().trim().optional().transform((v) => v || void 0).refine((v) => v === void 0 || /^https?:\/\//i.test(v), { message: "URL HTTP(S) invalide." });
+var optionalBool = import_zod.z.union([import_zod.z.string(), import_zod.z.boolean()]).optional().transform((v) => {
+  if (v === void 0) return void 0;
+  if (typeof v === "boolean") return v;
+  const t = v.trim().toLowerCase();
+  if (t === "true" || t === "1") return true;
+  if (t === "false" || t === "0") return false;
+  return void 0;
+});
+var optionalPositiveInt = (min, max) => import_zod.z.union([import_zod.z.string(), import_zod.z.number()]).optional().transform((v) => {
+  if (v === void 0 || v === "") return void 0;
+  const n = typeof v === "number" ? v : Number.parseInt(String(v), 10);
+  if (!Number.isFinite(n)) return NaN;
+  return n;
+}).refine((n) => n === void 0 || n >= min && n <= max, {
+  message: `Entier requis entre ${min} et ${max}.`
+});
+var processEnvSchema = import_zod.z.object({
+  NODE_ENV: import_zod.z.enum(["development", "production", "test"]).optional(),
+  DATABASE_URL: import_zod.z.string().trim().optional(),
+  NEXTAUTH_SECRET: import_zod.z.string().trim().optional(),
+  JWT_SECRET: import_zod.z.string().trim().optional(),
+  NEXTAUTH_URL: optionalUrl,
+  APP_BASE_URL: optionalUrl,
+  API_PUBLIC_URL: optionalUrl,
+  CORS_ORIGIN: import_zod.z.string().optional(),
+  PORT: optionalPositiveInt(1, 65535),
+  HOST: import_zod.z.string().trim().optional(),
+  DATA_QUERY_FETCH_CAP: optionalPositiveInt(100, 2e4),
+  SMTP_PORT: optionalPositiveInt(1, 65535),
+  SMTP_SECURE: optionalBool,
+  MONGODB_SERVER_SELECTION_TIMEOUT_MS: optionalPositiveInt(1e3, 12e4),
+  WEBHOOK_ALLOW_PLAIN_SECRET: optionalBool,
+  LOG_LEVEL: import_zod.z.enum(["error", "warn", "info", "debug"]).optional(),
+  RATE_LIMIT_AUTH_MAX: optionalPositiveInt(1, 1e4),
+  RATE_LIMIT_AUTH_WINDOW_MS: optionalPositiveInt(1e3, 36e5),
+  RATE_LIMIT_UPLOAD_MAX: optionalPositiveInt(1, 1e4),
+  RATE_LIMIT_UPLOAD_WINDOW_MS: optionalPositiveInt(1e3, 36e5),
+  RATE_LIMIT_WEBHOOK_MAX: optionalPositiveInt(1, 1e4),
+  RATE_LIMIT_WEBHOOK_WINDOW_MS: optionalPositiveInt(1e3, 36e5),
+  RATE_LIMIT_PUBLIC_FORM_MAX: optionalPositiveInt(1, 1e4),
+  RATE_LIMIT_PUBLIC_FORM_WINDOW_MS: optionalPositiveInt(1e3, 36e5),
+  RATE_LIMIT_CHECKOUT_MAX: optionalPositiveInt(1, 1e4),
+  RATE_LIMIT_CHECKOUT_WINDOW_MS: optionalPositiveInt(1e3, 36e5),
+  RATE_LIMIT_DATA_MAX: optionalPositiveInt(1, 1e4),
+  RATE_LIMIT_DATA_WINDOW_MS: optionalPositiveInt(1e3, 36e5)
+}).passthrough();
+function secretErrors(name, value, required) {
+  const errors = [];
+  if (!value) {
+    if (required) errors.push(`${name} est requis.`);
+    return errors;
+  }
+  if (value.length < 32) {
+    errors.push(`${name} : minimum 32 caract\xE8res (actuel ${value.length}).`);
+  }
+  if (WEAK_SECRETS2.has(value.toLowerCase())) {
+    errors.push(`${name} : valeur d'exemple interdite.`);
+  }
+  return errors;
+}
+function corsErrors(raw, isProduction2) {
+  const errors = [];
+  const origins = String(raw || "").split(/[,;\n\r]+/).flatMap((chunk) => chunk.trim().split(/\s+/).map((s) => s.trim()).filter(Boolean)).filter((part) => /^https?:\/\//i.test(part)).map((part) => part.replace(/\/$/, ""));
+  if (origins.some((o) => o.includes("*"))) {
+    errors.push("CORS_ORIGIN ne doit pas contenir de wildcard (*).");
+  }
+  if (isProduction2) {
+    if (origins.length === 0) errors.push("CORS_ORIGIN : au moins une origine en production.");
+    const hasPublicHttps = origins.some(
+      (o) => o.startsWith("https://") && !/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(o)
+    );
+    if (!hasPublicHttps) {
+      errors.push("CORS_ORIGIN : au moins une origine HTTPS publique en production.");
+    }
+  }
+  return errors;
+}
+function validateProcessEnv(env, options) {
+  const isProduction2 = options?.isProduction ?? (env.NODE_ENV || "development") === "production";
+  const errors = [];
+  const warnings = [];
+  const parsed = processEnvSchema.safeParse(env);
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      const path4 = issue.path.join(".") || "env";
+      errors.push(`${path4} : ${issue.message}`);
+    }
+    return { ok: false, errors, warnings };
+  }
+  const jwtSecret = parsed.data.NEXTAUTH_SECRET || parsed.data.JWT_SECRET;
+  errors.push(...secretErrors("NEXTAUTH_SECRET", jwtSecret, isProduction2));
+  errors.push(...secretErrors("DATABASE_URL", parsed.data.DATABASE_URL, isProduction2));
+  if (isProduction2) {
+    errors.push(...secretErrors("PADDE_WEBHOOK_SECRET", env.PADDE_WEBHOOK_SECRET?.trim(), true));
+    errors.push(...secretErrors("SAAS_BRIDGE_API_KEY", env.SAAS_BRIDGE_API_KEY?.trim(), true));
+  } else if (!jwtSecret) {
+    warnings.push("NEXTAUTH_SECRET absent \u2014 secret de d\xE9veloppement utilis\xE9.");
+  }
+  const stripeKey = env.STRIPE_SECRET_KEY?.trim();
+  if (stripeKey && isProduction2) {
+    errors.push(...secretErrors("STRIPE_WEBHOOK_SECRET", env.STRIPE_WEBHOOK_SECRET?.trim(), true));
+  }
+  const noyaSecret = env.NOYA_RECRUTEMENT_WEBHOOK_SECRET?.trim();
+  if (noyaSecret) {
+    errors.push(...secretErrors("NOYA_RECRUTEMENT_WEBHOOK_SECRET", noyaSecret, false));
+  }
+  errors.push(...corsErrors(parsed.data.CORS_ORIGIN, isProduction2));
+  return { ok: errors.length === 0, errors, warnings };
+}
+function formatEnvValidationReport(report) {
+  const lines = [];
+  if (report.errors.length) {
+    lines.push("Erreurs :");
+    for (const err of report.errors) lines.push(`  - ${err}`);
+  }
+  if (report.warnings.length) {
+    lines.push("Avertissements :");
+    for (const warn of report.warnings) lines.push(`  - ${warn}`);
+  }
+  return lines.join("\n");
+}
+
 // src/config/env.ts
 ensureEnvFilesLoaded();
+var envValidationReport = validateProcessEnv(process.env);
+if (envValidationReport.warnings.length) {
+  console.warn(formatEnvValidationReport({ ok: true, errors: [], warnings: envValidationReport.warnings }));
+}
+if (!envValidationReport.ok) {
+  const message = `Variables d'environnement invalides:
+${formatEnvValidationReport(envValidationReport)}`;
+  if ((process.env.NODE_ENV || "development") === "production") {
+    throw new Error(message);
+  }
+  console.warn(message);
+}
 function str(key, fallback = "") {
   const v = process.env[key];
   if (v === void 0 || v === null) return fallback;
@@ -130,7 +303,13 @@ function databaseUrlForPrisma() {
 }
 function getJwtSecret() {
   const envSecret = str("NEXTAUTH_SECRET") || str("JWT_SECRET");
-  if (envSecret) return envSecret;
+  if (envSecret) {
+    const check = validateAuthSecret(envSecret);
+    if (currentNodeEnv() === "production" && !check.ok) {
+      throw new Error(`NEXTAUTH_SECRET invalide : ${check.errors.join(" ")}`);
+    }
+    return envSecret;
+  }
   if (currentNodeEnv() === "production") {
     throw new Error("NEXTAUTH_SECRET ou JWT_SECRET est requis en production.");
   }
@@ -261,6 +440,174 @@ var appEnv = {
   }
 };
 
+// src/config/corsPolicy.ts
+var LOCALHOST_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+function buildStrictCorsOrigins(raw) {
+  const origins = parseCorsOrigins(raw);
+  const errors = [];
+  if (origins.some((o) => o.includes("*"))) {
+    errors.push("CORS_ORIGIN ne doit pas contenir de wildcard (*).");
+  }
+  for (const origin of origins) {
+    if (!/^https?:\/\//i.test(origin)) {
+      errors.push(`Origine CORS invalide : \xAB ${origin} \xBB (sch\xE9ma http/https requis).`);
+    }
+  }
+  return { ok: errors.length === 0, origins, errors };
+}
+function assertProductionCorsPolicy(report, isProduction2) {
+  if (!isProduction2) return report;
+  const errors = [...report.errors];
+  if (report.origins.length === 0) {
+    errors.push("CORS_ORIGIN doit lister au moins une origine en production.");
+  }
+  const hasPublicHttps = report.origins.some(
+    (o) => o.startsWith("https://") && !LOCALHOST_RE.test(o)
+  );
+  if (!hasPublicHttps) {
+    errors.push(
+      "CORS_ORIGIN doit inclure au moins une origine HTTPS publique en production (ex. https://www.infinitecore.net)."
+    );
+  }
+  return { ok: errors.length === 0, origins: report.origins, errors };
+}
+function formatCorsPolicyErrors(report) {
+  return report.errors.map((e) => `- ${e}`).join("\n");
+}
+
+// src/config/secretPolicy.ts
+var SHARED_SECRET_MIN_LENGTH = 32;
+var WEAK_SHARED_SECRETS = /* @__PURE__ */ new Set([
+  "",
+  "change-me",
+  "change-me-in-production",
+  "dev-secret-change-me",
+  "remplace-par-une-cle-longue-et-aleatoire",
+  "g\xE9n\xE8re-une-cha\xEEne-longue-et-al\xE9atoire",
+  "genere-une-chaine-longue-et-aleatoire"
+]);
+function validateSharedSecret(name, raw, options = {}) {
+  const secret = String(raw ?? "").trim();
+  const errors = [];
+  if (!secret) {
+    if (options.required) errors.push(`${name} est requis.`);
+    return { name, ok: errors.length === 0, errors };
+  }
+  if (secret.length < SHARED_SECRET_MIN_LENGTH) {
+    errors.push(
+      `${name} doit contenir au moins ${SHARED_SECRET_MIN_LENGTH} caract\xE8res (actuel : ${secret.length}).`
+    );
+  }
+  if (WEAK_SHARED_SECRETS.has(secret.toLowerCase())) {
+    errors.push(`${name} est une valeur d\u2019exemple \u2014 g\xE9n\xE9rez une cl\xE9 al\xE9atoire unique.`);
+  }
+  return { name, ok: errors.length === 0, errors };
+}
+function validateProductionSecrets(input) {
+  if (!input.isProduction) {
+    return { ok: true, checks: [] };
+  }
+  const checks = [];
+  if (!input.databaseUrl.trim()) {
+    checks.push({ name: "DATABASE_URL", ok: false, errors: ["DATABASE_URL est requis en production."] });
+  } else {
+    checks.push({ name: "DATABASE_URL", ok: true, errors: [] });
+  }
+  const auth = validateAuthSecret(input.jwtSecret);
+  checks.push({
+    name: "NEXTAUTH_SECRET",
+    ok: auth.ok,
+    errors: auth.errors.map((e) => `NEXTAUTH_SECRET : ${e}`)
+  });
+  checks.push(validateSharedSecret("PADDE_WEBHOOK_SECRET", input.paddeWebhookSecret, { required: true }));
+  if (input.noyaWebhookSecret.trim()) {
+    checks.push(validateSharedSecret("NOYA_RECRUTEMENT_WEBHOOK_SECRET", input.noyaWebhookSecret));
+  }
+  checks.push(validateSharedSecret("SAAS_BRIDGE_API_KEY", input.saasBridgeApiKey, { required: true }));
+  if (input.stripeSecretKey.trim()) {
+    checks.push(validateSharedSecret("STRIPE_WEBHOOK_SECRET", input.stripeWebhookSecret, { required: true }));
+  }
+  const ok = checks.every((c) => c.ok);
+  return { ok, checks };
+}
+function formatProductionSecretsErrors(report) {
+  const lines = report.checks.flatMap((c) => c.errors.map((e) => `- ${e}`));
+  return lines.join("\n");
+}
+
+// src/server/webhookHmac.ts
+var import_crypto = require("crypto");
+var WEBHOOK_SIGNATURE_HEADER = "x-webhook-signature";
+function secureSecretEquals(expected, provided) {
+  const expectedBuf = Buffer.from(expected);
+  const providedBuf = Buffer.from(provided);
+  if (expectedBuf.length !== providedBuf.length) return false;
+  return (0, import_crypto.timingSafeEqual)(expectedBuf, providedBuf);
+}
+function computeWebhookHmacSha256(secret, rawBody) {
+  const payload = typeof rawBody === "string" ? rawBody : rawBody.toString("utf8");
+  return (0, import_crypto.createHmac)("sha256", secret).update(payload, "utf8").digest("hex");
+}
+function parseWebhookSignatureHeader(value) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return null;
+  const prefixed = trimmed.match(/^sha256=([a-f0-9]+)$/i) ?? trimmed.match(/^v1=([a-f0-9]+)$/i);
+  if (prefixed) return prefixed[1].toLowerCase();
+  if (/^[a-f0-9]{64}$/i.test(trimmed)) return trimmed.toLowerCase();
+  return null;
+}
+function verifyWebhookHmac(secret, rawBody, signatureHeader) {
+  const expected = computeWebhookHmacSha256(secret, rawBody);
+  const provided = parseWebhookSignatureHeader(signatureHeader);
+  if (!provided) return false;
+  const a = Buffer.from(expected, "hex");
+  const b = Buffer.from(provided, "hex");
+  if (a.length !== b.length) return false;
+  return (0, import_crypto.timingSafeEqual)(a, b);
+}
+function readWebhookPlainSecret(req) {
+  const headerSecret = String(req.headers["x-webhook-secret"] ?? "").trim();
+  if (headerSecret) return headerSecret;
+  if (req.body && typeof req.body === "object" && !Array.isArray(req.body)) {
+    const b = req.body;
+    const bodySecret = String(b.webhookSecret ?? b.secret ?? "").trim();
+    if (bodySecret) return bodySecret;
+  }
+  const qRaw = req.query?.secret;
+  return (Array.isArray(qRaw) ? String(qRaw[0] ?? "") : String(qRaw ?? "")).trim();
+}
+function verifyInboundWebhookAuth(input) {
+  const secretExpected = input.secretExpected.trim();
+  if (!secretExpected) return { ok: true, mode: "none" };
+  const signatureHeader = String(
+    input.req.headers[WEBHOOK_SIGNATURE_HEADER] ?? input.req.headers["X-Webhook-Signature"] ?? ""
+  );
+  const rawBody = input.rawBody ?? (typeof input.req.body === "string" ? Buffer.from(input.req.body, "utf8") : input.req.body !== void 0 ? Buffer.from(JSON.stringify(input.req.body), "utf8") : void 0);
+  if (rawBody && verifyWebhookHmac(secretExpected, rawBody, signatureHeader)) {
+    return { ok: true, mode: "hmac" };
+  }
+  const plainAllowed = !input.isProduction || input.allowPlainSecret;
+  const plainSecret = readWebhookPlainSecret(input.req);
+  if (plainAllowed && plainSecret && secureSecretEquals(secretExpected, plainSecret)) {
+    return { ok: true, mode: "plain" };
+  }
+  if (input.isProduction && !input.allowPlainSecret) {
+    return {
+      ok: false,
+      reason: "Signature HMAC requise (header X-Webhook-Signature: sha256=\u2026 du corps brut JSON)."
+    };
+  }
+  return { ok: false, reason: "Webhook non autoris\xE9." };
+}
+function bodyWithoutWebhookSecrets(body) {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return body;
+  const o = { ...body };
+  delete o.webhookSecret;
+  delete o.secret;
+  delete o.webhook_secret;
+  return o;
+}
+
 // prismaClient.ts
 var import_client = require("@prisma/client");
 var globalForPrisma = globalThis;
@@ -353,7 +700,7 @@ function mimeFromStorageKey(keyOrPath) {
 // mongoApi.ts
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
-var import_crypto2 = require("crypto");
+var import_crypto3 = require("crypto");
 
 // src/server/smtpTransport.ts
 var import_nodemailer = __toESM(require("nodemailer"), 1);
@@ -432,7 +779,38 @@ async function sendStaffNotifyEmail(input) {
 }
 
 // src/api/dataRoutes.ts
-var import_crypto = require("crypto");
+var import_crypto2 = require("crypto");
+
+// src/api/mongo/noSqlInjectionGuard.ts
+var MONGO_OPERATOR_KEY = /^\$/;
+var MAX_SCAN_DEPTH = 10;
+function containsMongoOperatorKeys(value, depth = 0) {
+  if (depth > MAX_SCAN_DEPTH) return true;
+  if (value === null || typeof value !== "object") return false;
+  if (Array.isArray(value)) {
+    return value.some((item) => containsMongoOperatorKeys(item, depth + 1));
+  }
+  for (const [key, nested] of Object.entries(value)) {
+    if (MONGO_OPERATOR_KEY.test(key)) return true;
+    if (containsMongoOperatorKeys(nested, depth + 1)) return true;
+  }
+  return false;
+}
+function isSafeCollectionPathInput(path4) {
+  const raw = String(path4 || "");
+  if (!raw.trim() || raw.includes("\0") || raw.includes("$")) return false;
+  const segments = raw.split("/");
+  return segments.every((segment) => {
+    const s = segment.trim();
+    return s.length > 0 && !s.startsWith(".") && !s.includes("$");
+  });
+}
+function assertSafeDocumentPayload(value) {
+  if (containsMongoOperatorKeys(value)) {
+    return { ok: false, error: "Payload document invalide (op\xE9rateurs interdits)." };
+  }
+  return { ok: true };
+}
 
 // src/server/dataStores.ts
 var import_mongodb = require("mongodb");
@@ -506,12 +884,20 @@ async function deleteSplitDoc(collectionPath, docId) {
 // src/api/dataRoutes.ts
 function parseDataQueryInput(body) {
   const raw = body ?? {};
+  if (containsMongoOperatorKeys(raw)) {
+    return { invalid: true };
+  }
+  const collectionPathRaw = String(raw.collectionPath || "");
+  if (collectionPathRaw.trim() && !isSafeCollectionPathInput(collectionPathRaw)) {
+    return { invalid: true };
+  }
   const max = Number(raw.limit);
   const offsetRaw = Number(raw.offset);
   const limit = Number.isFinite(max) && max > 0 ? Math.min(max, 1e3) : 100;
   const offset = Number.isFinite(offsetRaw) && offsetRaw > 0 ? Math.min(offsetRaw, 1e5) : 0;
   return {
-    collectionPathRaw: String(raw.collectionPath || ""),
+    invalid: false,
+    collectionPathRaw,
     filtersRaw: raw.filters,
     ordersRaw: raw.orders,
     limit,
@@ -530,6 +916,9 @@ function registerDataRoutes(app2, deps) {
       const auth = await deps.requireAuth(req, res);
       if (!auth) return;
       const parsed = parseDataQueryInput(req.body);
+      if (parsed.invalid) {
+        return res.status(400).json({ success: false, error: "Param\xE8tres de requ\xEAte invalides." });
+      }
       const collectionPath = deps.normalizeCollectionPath(parsed.collectionPathRaw);
       const filters = deps.sanitizeFilters(parsed.filtersRaw);
       const orders = deps.sanitizeOrders(parsed.ordersRaw);
@@ -635,10 +1024,18 @@ function registerDataRoutes(app2, deps) {
     try {
       const auth = await deps.requireAuth(req, res);
       if (!auth) return;
-      const collectionPath = deps.normalizeCollectionPath(String(req.body?.collectionPath || ""));
+      const collectionPathRaw = String(req.body?.collectionPath || "");
+      if (!isSafeCollectionPathInput(collectionPathRaw) || containsMongoOperatorKeys(req.body)) {
+        return res.status(400).json({ success: false, error: "collectionPath ou docId invalides." });
+      }
+      const collectionPath = deps.normalizeCollectionPath(collectionPathRaw);
       const merge = Boolean(req.body?.merge);
       const incoming = deps.coerceRecord(req.body?.data);
-      const docId = String(req.body?.docId || "").trim() || (0, import_crypto.randomUUID)().replace(/-/g, "");
+      const payloadCheck = assertSafeDocumentPayload(incoming);
+      if (payloadCheck.ok === false) {
+        return res.status(400).json({ success: false, error: payloadCheck.error });
+      }
+      const docId = String(req.body?.docId || "").trim() || (0, import_crypto2.randomUUID)().replace(/-/g, "");
       if (!collectionPath || !deps.isSafeCollectionPath(collectionPath) || !deps.isSafeDocId(docId)) {
         return res.status(400).json({ success: false, error: "collectionPath ou docId invalides." });
       }
@@ -662,9 +1059,17 @@ function registerDataRoutes(app2, deps) {
     try {
       const auth = await deps.requireAuth(req, res);
       if (!auth) return;
-      const collectionPath = deps.normalizeCollectionPath(String(req.body?.collectionPath || ""));
+      const collectionPathRaw = String(req.body?.collectionPath || "");
+      if (!isSafeCollectionPathInput(collectionPathRaw) || containsMongoOperatorKeys(req.body)) {
+        return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
+      }
+      const collectionPath = deps.normalizeCollectionPath(collectionPathRaw);
       const docId = String(req.body?.docId || "").trim();
       const updates = deps.coerceRecord(req.body?.data);
+      const payloadCheck = assertSafeDocumentPayload(updates);
+      if (payloadCheck.ok === false) {
+        return res.status(400).json({ success: false, error: payloadCheck.error });
+      }
       const deleteKeys = Array.isArray(req.body?.deleteKeys) ? req.body.deleteKeys : [];
       if (!collectionPath || !docId || !deps.isSafeCollectionPath(collectionPath) || !deps.isSafeDocId(docId) || !deleteKeys.every((key) => deps.isSafeFieldName(String(key)))) {
         return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
@@ -756,62 +1161,62 @@ function sanitizeOrders(raw) {
 }
 
 // src/lib/schemas.ts
-var import_zod = require("zod");
-var UserProfileSchema = import_zod.z.object({
-  firstName: import_zod.z.string().min(1, "Pr\xE9nom requis").max(80),
-  lastName: import_zod.z.string().min(1, "Nom requis").max(80),
-  displayName: import_zod.z.string().optional(),
-  phone: import_zod.z.string().optional(),
-  companyName: import_zod.z.string().optional(),
-  photoURL: import_zod.z.string().url().optional().or(import_zod.z.literal(""))
+var import_zod2 = require("zod");
+var UserProfileSchema = import_zod2.z.object({
+  firstName: import_zod2.z.string().min(1, "Pr\xE9nom requis").max(80),
+  lastName: import_zod2.z.string().min(1, "Nom requis").max(80),
+  displayName: import_zod2.z.string().optional(),
+  phone: import_zod2.z.string().optional(),
+  companyName: import_zod2.z.string().optional(),
+  photoURL: import_zod2.z.string().url().optional().or(import_zod2.z.literal(""))
 });
-var billingCycleSchema = import_zod.z.preprocess(
+var billingCycleSchema = import_zod2.z.preprocess(
   (val) => {
     const v = String(val ?? "").trim().toLowerCase();
     if (["mensuel", "monthly", "month", "mois"].includes(v)) return "month";
     if (["annuel", "yearly", "annual", "year", "an"].includes(v)) return "year";
     return val;
   },
-  import_zod.z.enum(["month", "year"])
+  import_zod2.z.enum(["month", "year"])
 );
-var OrderSchema = import_zod.z.object({
-  serviceId: import_zod.z.string().min(1),
-  serviceName: import_zod.z.string().min(1),
-  amount: import_zod.z.number().positive(),
+var OrderSchema = import_zod2.z.object({
+  serviceId: import_zod2.z.string().min(1),
+  serviceName: import_zod2.z.string().min(1),
+  amount: import_zod2.z.number().positive(),
   billingCycle: billingCycleSchema,
-  moduleKey: import_zod.z.string().optional(),
-  note: import_zod.z.string().optional()
+  moduleKey: import_zod2.z.string().optional(),
+  note: import_zod2.z.string().optional()
 });
-var LicenseCheckoutSchema = import_zod.z.object({
-  appId: import_zod.z.string().min(1),
-  appName: import_zod.z.string().min(1),
-  moduleKey: import_zod.z.string().min(1),
-  amount: import_zod.z.number().positive(),
+var LicenseCheckoutSchema = import_zod2.z.object({
+  appId: import_zod2.z.string().min(1),
+  appName: import_zod2.z.string().min(1),
+  moduleKey: import_zod2.z.string().min(1),
+  amount: import_zod2.z.number().positive(),
   /** 0 = licence à vie ; > 0 = durée limitée en jours. */
-  licenseDurationDays: import_zod.z.number().int().min(0).optional(),
-  note: import_zod.z.string().optional()
+  licenseDurationDays: import_zod2.z.number().int().min(0).optional(),
+  note: import_zod2.z.string().optional()
 });
-var PaddeAuditPayloadSchema = import_zod.z.record(import_zod.z.string(), import_zod.z.unknown()).and(
-  import_zod.z.object({
-    email: import_zod.z.string().email().optional().or(import_zod.z.literal("")),
-    whatsapp: import_zod.z.string().optional(),
-    type: import_zod.z.string().optional()
+var PaddeAuditPayloadSchema = import_zod2.z.record(import_zod2.z.string(), import_zod2.z.unknown()).and(
+  import_zod2.z.object({
+    email: import_zod2.z.string().email().optional().or(import_zod2.z.literal("")),
+    whatsapp: import_zod2.z.string().optional(),
+    type: import_zod2.z.string().optional()
   })
 );
-var AuthRegisterSchema = import_zod.z.object({
-  email: import_zod.z.string().email("Email invalide"),
-  password: import_zod.z.string().min(8, "Le mot de passe doit faire au moins 8 caract\xE8res"),
-  firstName: import_zod.z.string().min(1),
-  lastName: import_zod.z.string().min(1),
-  companyId: import_zod.z.string().optional(),
-  companyName: import_zod.z.string().optional(),
-  companyDescription: import_zod.z.string().optional(),
-  industry: import_zod.z.string().optional(),
-  size: import_zod.z.string().optional(),
-  phone: import_zod.z.string().optional(),
-  referredBy: import_zod.z.string().optional(),
-  referredByPartnerId: import_zod.z.string().optional(),
-  referredByPartnerName: import_zod.z.string().optional()
+var AuthRegisterSchema = import_zod2.z.object({
+  email: import_zod2.z.string().email("Email invalide"),
+  password: import_zod2.z.string().min(8, "Le mot de passe doit faire au moins 8 caract\xE8res"),
+  firstName: import_zod2.z.string().min(1),
+  lastName: import_zod2.z.string().min(1),
+  companyId: import_zod2.z.string().optional(),
+  companyName: import_zod2.z.string().optional(),
+  companyDescription: import_zod2.z.string().optional(),
+  industry: import_zod2.z.string().optional(),
+  size: import_zod2.z.string().optional(),
+  phone: import_zod2.z.string().optional(),
+  referredBy: import_zod2.z.string().optional(),
+  referredByPartnerId: import_zod2.z.string().optional(),
+  referredByPartnerName: import_zod2.z.string().optional()
 });
 
 // mongoApi.ts
@@ -1073,7 +1478,7 @@ function sendAuthPrismaError(res, logLabel, error) {
   return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
 }
 function sha256Hex(input) {
-  return (0, import_crypto2.createHash)("sha256").update(input).digest("hex");
+  return (0, import_crypto3.createHash)("sha256").update(input).digest("hex");
 }
 function normalizeIp(raw) {
   return raw.trim().replace(/^::ffff:/, "") || "unknown";
@@ -1668,7 +2073,7 @@ function registerMongoApi(app2) {
         await registerAuthFailure(authKey);
         return res.status(409).json({ success: false, error: "Cet email existe d\xE9j\xE0." });
       }
-      const challengeId = (0, import_crypto2.randomUUID)().replace(/-/g, "");
+      const challengeId = (0, import_crypto3.randomUUID)().replace(/-/g, "");
       const verificationCode = generateNumericCode(6);
       const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
       const passwordHash = await import_bcryptjs.default.hash(password, 10);
@@ -1776,7 +2181,7 @@ function registerMongoApi(app2) {
       if (existing) {
         return res.status(409).json({ success: false, error: "Cet email existe d\xE9j\xE0." });
       }
-      const uid = `usr_${(0, import_crypto2.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
+      const uid = `usr_${(0, import_crypto3.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
       const account = await prisma.userAccount.create({
         data: {
           uid,
@@ -1915,7 +2320,7 @@ function registerMongoApi(app2) {
         finalRecipients.map(
           (recipientId) => upsertDataDocument(
             "notifications",
-            (0, import_crypto2.randomUUID)().replace(/-/g, ""),
+            (0, import_crypto3.randomUUID)().replace(/-/g, ""),
             {
               userId: recipientId,
               title: "Nouveau formulaire parrainage",
@@ -1951,7 +2356,7 @@ Code parrainage : ${referralCode}`
         });
         const alreadyExists = Boolean(existingDedup);
         if (!alreadyExists) {
-          const leadId = (0, import_crypto2.randomUUID)().replace(/-/g, "");
+          const leadId = (0, import_crypto3.randomUUID)().replace(/-/g, "");
           const leadNoteParts = [
             `Inscription via lien de parrainage (${referralCode}).`,
             companyDescription ? `Description: ${companyDescription}` : ""
@@ -2072,7 +2477,7 @@ Code parrainage : ${referralCode}`
         await clearAuthFailures(authKey);
         return respondWithAuthenticatedLogin(res, account);
       }
-      const challengeId = (0, import_crypto2.randomUUID)().replace(/-/g, "");
+      const challengeId = (0, import_crypto3.randomUUID)().replace(/-/g, "");
       const verificationCode = loginVerificationCodeForEmail(email);
       const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
       await upsertDataDocument(
@@ -2157,7 +2562,7 @@ Code parrainage : ${referralCode}`
       let notified = 0;
       await Promise.all(
         teamIds.map(async (uid) => {
-          const notifId = (0, import_crypto2.randomUUID)().replace(/-/g, "");
+          const notifId = (0, import_crypto3.randomUUID)().replace(/-/g, "");
           await upsertDataDocument(
             "notifications",
             notifId,
@@ -2413,7 +2818,7 @@ Code parrainage : ${referralCode}`
       const isNew = !account;
       if (!account) {
         const [firstName = "", ...last] = displayName.split(" ");
-        const uid = `usr_${(0, import_crypto2.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
+        const uid = `usr_${(0, import_crypto3.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
         let companyId = null;
         if (companyName) {
           companyId = `comp_${Date.now()}`;
@@ -2480,7 +2885,7 @@ Code parrainage : ${referralCode}`
           isNew
         });
       }
-      const challengeId = (0, import_crypto2.randomUUID)().replace(/-/g, "");
+      const challengeId = (0, import_crypto3.randomUUID)().replace(/-/g, "");
       const verificationCode = generateNumericCode(6);
       const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
       await upsertDataDocument(
@@ -2610,7 +3015,7 @@ Code parrainage : ${referralCode}`
       const requestedRole = String(req.body?.role || "client").trim().toLowerCase();
       const role = VALID_ROLES.has(requestedRole) ? requestedRole : "client";
       if (!email || !isValidEmail(email)) return res.status(400).json({ success: false, error: "Email requis." });
-      const generatedPassword = password || (0, import_crypto2.randomUUID)().replace(/-/g, "").slice(0, 16);
+      const generatedPassword = password || (0, import_crypto3.randomUUID)().replace(/-/g, "").slice(0, 16);
       if (password && !isStrongPassword(password)) {
         return res.status(400).json({
           success: false,
@@ -2621,7 +3026,7 @@ Code parrainage : ${referralCode}`
       if (existing) {
         return res.status(409).json({ success: false, error: "Cet email est d\xE9j\xE0 utilis\xE9." });
       }
-      const uid = `usr_${(0, import_crypto2.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
+      const uid = `usr_${(0, import_crypto3.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
       const passwordHash = await import_bcryptjs.default.hash(generatedPassword, 10);
       const account = await prisma.userAccount.create({
         data: {
@@ -2634,7 +3039,7 @@ Code parrainage : ${referralCode}`
         }
       });
       await ensureUserDocumentFromAccount(account);
-      const resetToken = (0, import_crypto2.randomBytes)(32).toString("hex");
+      const resetToken = (0, import_crypto3.randomBytes)(32).toString("hex");
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       const expiresAtIso = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
       await upsertDataDocument(
@@ -2695,7 +3100,7 @@ Code parrainage : ${referralCode}`
           message: "Si ce compte existe, les instructions de r\xE9initialisation ont \xE9t\xE9 enregistr\xE9es."
         });
       }
-      const resetToken = (0, import_crypto2.randomBytes)(32).toString("hex");
+      const resetToken = (0, import_crypto3.randomBytes)(32).toString("hex");
       const resetDocId = account.uid;
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       const expiresAtIso = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
@@ -3158,7 +3563,7 @@ function mergeStoredWithDefault(def, found) {
     ...found,
     moduleKey: found.moduleKey || def.moduleKey,
     imageUrl: found.imageUrl?.trim() ? found.imageUrl : def.imageUrl,
-    pricing: normalizeEntryPricing(found.pricing?.length ? found.pricing : def.pricing),
+    pricing: normalizeEntryPricing(Array.isArray(found.pricing) ? found.pricing : def.pricing),
     advantages: found.advantages !== void 0 ? found.advantages : def.advantages,
     features: found.features !== void 0 ? found.features : def.features,
     galleryImages: found.galleryImages?.length ? found.galleryImages : def.galleryImages
@@ -3297,6 +3702,14 @@ function isStoredCatalogLegacy(rawApps) {
     return LEGACY_CATALOG_IDS.has(id);
   });
 }
+function stripLegacyCatalogEntries(rawApps) {
+  if (!Array.isArray(rawApps)) return [];
+  return rawApps.filter((item) => {
+    if (!item || typeof item !== "object") return false;
+    const id = String(item.id || "").trim();
+    return !LEGACY_CATALOG_IDS.has(id);
+  });
+}
 async function persistCatalog(apps) {
   const merged = mergeCatalogWithDefaults(apps);
   const now = (/* @__PURE__ */ new Date()).toISOString();
@@ -3323,10 +3736,8 @@ async function loadAppCatalog() {
   });
   if (!row) return mergeCatalogWithDefaults(INFINITE_APP_CATALOG);
   const data = readDataRowAsRecord(row.data);
-  if (isStoredCatalogLegacy(data.apps)) {
-    return persistCatalog(INFINITE_APP_CATALOG);
-  }
-  const parsed = parseAppCatalogEntries(data.apps);
+  const rawApps = isStoredCatalogLegacy(data.apps) ? stripLegacyCatalogEntries(data.apps) : data.apps;
+  const parsed = parseAppCatalogEntries(rawApps);
   if (!parsed.length) return mergeCatalogWithDefaults(INFINITE_APP_CATALOG);
   const missingDefault = INFINITE_APP_CATALOG.some((a) => !parsed.some((c) => c.id === a.id));
   if (missingDefault) {
@@ -3372,7 +3783,7 @@ function parseAppointmentBody(body) {
 }
 
 // src/server/licenseActivation.ts
-var import_crypto4 = require("crypto");
+var import_crypto5 = require("crypto");
 
 // src/lib/licenses.ts
 function licenseDocId(userId, appId) {
@@ -3480,7 +3891,7 @@ function initialSaasStateForSubscription(catalogApp, userId, appId) {
 }
 
 // src/server/saasAppBridge.ts
-var import_crypto3 = require("crypto");
+var import_crypto4 = require("crypto");
 function bridgeApiKey() {
   return String(process.env.SAAS_BRIDGE_API_KEY || "").trim();
 }
@@ -3488,11 +3899,12 @@ function secureEquals(expected, provided) {
   const a = Buffer.from(expected);
   const b = Buffer.from(provided);
   if (a.length !== b.length) return false;
-  return (0, import_crypto3.timingSafeEqual)(a, b);
+  return (0, import_crypto4.timingSafeEqual)(a, b);
 }
 function verifySaasBridgeAuth(headerValue) {
   const expected = bridgeApiKey();
-  if (!expected) return true;
+  const isProduction2 = (process.env.NODE_ENV || "development") === "production";
+  if (!expected) return !isProduction2;
   const provided = String(headerValue || "").trim();
   if (!provided) return false;
   return secureEquals(expected, provided);
@@ -3659,7 +4071,7 @@ async function resolveClientChatProfile(userId) {
 async function postWelcomeDeliveryMessage(input) {
   const { clientName, clientEmail } = await resolveClientChatProfile(input.userId);
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const msgId = (0, import_crypto4.randomUUID)();
+  const msgId = (0, import_crypto5.randomUUID)();
   const text = buildWelcomeMessage(input.licenseType, input.guide);
   const preview = text.split("\n")[0]?.slice(0, 120) || "Votre application est pr\xEAte";
   const existingChat = await prisma.dataDocument.findUnique({
@@ -3743,7 +4155,7 @@ async function activateLicenseFromCheckoutSession(meta) {
     installGuideUrl: null
   };
   const activationNotice = buildActivationNotification(meta.licenseType, meta.appName);
-  const notifId = (0, import_crypto4.randomUUID)();
+  const notifId = (0, import_crypto5.randomUUID)();
   await prisma.dataDocument.create({
     data: {
       collectionPath: "notifications",
@@ -3887,7 +4299,7 @@ async function provisionSaasLicense(input) {
     },
     data: { data }
   });
-  const notifId = (0, import_crypto4.randomUUID)();
+  const notifId = (0, import_crypto5.randomUUID)();
   await prisma.dataDocument.create({
     data: {
       collectionPath: "notifications",
@@ -3950,7 +4362,84 @@ function verifySaasAccessToken(token) {
   }
 }
 
-// server.ts
+// src/server/multerUpload.ts
+var import_multer = __toESM(require("multer"), 1);
+
+// src/server/logger.ts
+var LEVEL_RANK = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3
+};
+function currentNodeEnv2() {
+  return process.env.NODE_ENV || "development";
+}
+function resolveMinLevel() {
+  const raw = String(process.env.LOG_LEVEL || "").trim().toLowerCase();
+  if (raw === "error" || raw === "warn" || raw === "info" || raw === "debug") return raw;
+  return currentNodeEnv2() === "production" ? "info" : "debug";
+}
+var minLevel = resolveMinLevel();
+function shouldLog(level) {
+  return LEVEL_RANK[level] <= LEVEL_RANK[minLevel];
+}
+function serializeError(error) {
+  if (!error) return void 0;
+  if (error instanceof Error) {
+    return { errorName: error.name, errorMessage: error.message, stack: error.stack };
+  }
+  return { errorValue: String(error) };
+}
+function write(level, message, context) {
+  if (!shouldLog(level)) return;
+  const entry = {
+    ts: (/* @__PURE__ */ new Date()).toISOString(),
+    level,
+    msg: message,
+    service: "infinitecore-api",
+    env: currentNodeEnv2(),
+    ...context
+  };
+  const line = JSON.stringify(entry);
+  if (level === "error") console.error(line);
+  else if (level === "warn") console.warn(line);
+  else console.log(line);
+}
+function createLogger(bindings = {}) {
+  const withBindings = (context) => {
+    if (!bindings || !Object.keys(bindings).length) return context;
+    if (!context) return { ...bindings };
+    return { ...bindings, ...context };
+  };
+  return {
+    error(message, context) {
+      write("error", message, withBindings(context));
+    },
+    warn(message, context) {
+      write("warn", message, withBindings(context));
+    },
+    info(message, context) {
+      write("info", message, withBindings(context));
+    },
+    debug(message, context) {
+      write("debug", message, withBindings(context));
+    },
+    child(extra) {
+      return createLogger({ ...bindings, ...extra });
+    }
+  };
+}
+var logger = createLogger();
+function logHttpRequest(input) {
+  const level = input.statusCode >= 500 ? "error" : input.statusCode >= 400 ? "warn" : "info";
+  write(level, "http_request", input);
+}
+function logServerError(message, error, context) {
+  write("error", message, { ...context, ...serializeError(error) });
+}
+
+// src/server/multerUpload.ts
 var ALLOWED_UPLOAD_MIME_TYPES = /* @__PURE__ */ new Set([
   "application/pdf",
   "application/msword",
@@ -3963,9 +4452,9 @@ var ALLOWED_UPLOAD_MIME_TYPES = /* @__PURE__ */ new Set([
   "text/plain",
   "text/csv",
   "application/zip",
-  "application/x-zip-compressed",
-  "application/octet-stream"
+  "application/x-zip-compressed"
 ]);
+var FALLBACK_MIME_FOR_EXTENSION = "application/octet-stream";
 var ALLOWED_UPLOAD_EXTENSIONS = /* @__PURE__ */ new Set([
   ".pdf",
   ".doc",
@@ -3980,12 +4469,382 @@ var ALLOWED_UPLOAD_EXTENSIONS = /* @__PURE__ */ new Set([
   ".csv",
   ".zip"
 ]);
+var MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+var upload = (0, import_multer.default)({
+  storage: import_multer.default.memoryStorage(),
+  limits: {
+    fileSize: MAX_UPLOAD_BYTES,
+    files: 1,
+    fields: 8,
+    parts: 12,
+    fieldNameSize: 120,
+    fieldSize: 4 * 1024
+  },
+  fileFilter(_req, file, callback) {
+    if (!isAllowedUploadMeta(file.originalname, file.mimetype)) {
+      return callback(new Error("UPLOAD_TYPE_NOT_ALLOWED"));
+    }
+    callback(null, true);
+  }
+});
+function isAllowedUploadMeta(originalName, mimetype) {
+  const ext = pathExtname(originalName);
+  if (!ALLOWED_UPLOAD_EXTENSIONS.has(ext)) return false;
+  const mime = (mimetype || "").toLowerCase();
+  if (ALLOWED_UPLOAD_MIME_TYPES.has(mime)) return true;
+  return mime === FALLBACK_MIME_FOR_EXTENSION;
+}
+function isAllowedUpload(file) {
+  return isAllowedUploadMeta(file.originalname || "", file.mimetype || "");
+}
+function pathExtname(name) {
+  const dot = name.lastIndexOf(".");
+  if (dot < 0) return "";
+  return name.slice(dot).toLowerCase();
+}
+var uploadSingleWithHandling = (req, res, next) => {
+  upload.single("file")(req, res, (error) => {
+    if (!error) return next();
+    if (error instanceof import_multer.default.MulterError) {
+      if (error.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({
+          success: false,
+          error: "Fichier trop volumineux (max 50 Mo)."
+        });
+      }
+      if (error.code === "LIMIT_FILE_COUNT" || error.code === "LIMIT_UNEXPECTED_FILE") {
+        return res.status(400).json({
+          success: false,
+          error: "Un seul fichier est autoris\xE9 par requ\xEAte."
+        });
+      }
+      return res.status(400).json({
+        success: false,
+        error: "Requ\xEAte d'upload invalide."
+      });
+    }
+    if (error instanceof Error && error.message === "UPLOAD_TYPE_NOT_ALLOWED") {
+      return res.status(415).json({
+        success: false,
+        error: "Type de fichier non autoris\xE9. Formats accept\xE9s : PDF, Office, JPG/PNG/WEBP, TXT/CSV, ZIP."
+      });
+    }
+    logServerError("upload_middleware_error", error);
+    return res.status(400).json({ success: false, error: "Requ\xEAte d'upload invalide." });
+  });
+};
+
+// src/server/rateLimit.ts
+var buckets = /* @__PURE__ */ new Map();
+function clientIp(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded.split(",")[0].trim();
+  }
+  return req.socket.remoteAddress || "unknown";
+}
+function createRateLimiter(options) {
+  const windowMs = Math.max(1e3, options.windowMs);
+  const max = Math.max(1, options.max);
+  const message = options.message || "Trop de requ\xEAtes. R\xE9essayez plus tard.";
+  const scope = options.scope || "default";
+  return (req, res, next) => {
+    const baseKey = options.keyFn ? options.keyFn(req) : clientIp(req);
+    const key = `${scope}:${baseKey}`;
+    const now = Date.now();
+    let bucket2 = buckets.get(key);
+    if (!bucket2 || now >= bucket2.resetAt) {
+      bucket2 = { count: 0, resetAt: now + windowMs };
+      buckets.set(key, bucket2);
+    }
+    bucket2.count += 1;
+    const remaining = Math.max(0, max - bucket2.count);
+    res.setHeader("X-RateLimit-Limit", String(max));
+    res.setHeader("X-RateLimit-Remaining", String(remaining));
+    res.setHeader("X-RateLimit-Reset", String(Math.ceil(bucket2.resetAt / 1e3)));
+    if (bucket2.count > max) {
+      return res.status(429).json({ success: false, error: message });
+    }
+    return next();
+  };
+}
+var AUTH_WINDOW_MS = Number(process.env.RATE_LIMIT_AUTH_WINDOW_MS) || 15 * 60 * 1e3;
+var AUTH_MAX = Number(process.env.RATE_LIMIT_AUTH_MAX) || 40;
+var UPLOAD_WINDOW_MS = Number(process.env.RATE_LIMIT_UPLOAD_WINDOW_MS) || 15 * 60 * 1e3;
+var UPLOAD_MAX = Number(process.env.RATE_LIMIT_UPLOAD_MAX) || 30;
+var WEBHOOK_WINDOW_MS = Number(process.env.RATE_LIMIT_WEBHOOK_WINDOW_MS) || 60 * 1e3;
+var WEBHOOK_MAX = Number(process.env.RATE_LIMIT_WEBHOOK_MAX) || 120;
+var PUBLIC_FORM_WINDOW_MS = Number(process.env.RATE_LIMIT_PUBLIC_FORM_WINDOW_MS) || 15 * 60 * 1e3;
+var PUBLIC_FORM_MAX = Number(process.env.RATE_LIMIT_PUBLIC_FORM_MAX) || 20;
+var CHECKOUT_WINDOW_MS = Number(process.env.RATE_LIMIT_CHECKOUT_WINDOW_MS) || 15 * 60 * 1e3;
+var CHECKOUT_MAX = Number(process.env.RATE_LIMIT_CHECKOUT_MAX) || 25;
+var DATA_WINDOW_MS = Number(process.env.RATE_LIMIT_DATA_WINDOW_MS) || 60 * 1e3;
+var DATA_MAX = Number(process.env.RATE_LIMIT_DATA_MAX) || 180;
+var authRateLimiter = createRateLimiter({
+  scope: "auth",
+  windowMs: AUTH_WINDOW_MS,
+  max: AUTH_MAX,
+  message: "Trop de tentatives d'authentification. R\xE9essayez plus tard."
+});
+var uploadRateLimiter = createRateLimiter({
+  scope: "upload",
+  windowMs: UPLOAD_WINDOW_MS,
+  max: UPLOAD_MAX,
+  message: "Trop d'uploads. R\xE9essayez plus tard."
+});
+var webhookRateLimiter = createRateLimiter({
+  scope: "webhook",
+  windowMs: WEBHOOK_WINDOW_MS,
+  max: WEBHOOK_MAX,
+  message: "Limite de webhooks atteinte pour cette adresse."
+});
+var publicFormRateLimiter = createRateLimiter({
+  scope: "public-form",
+  windowMs: PUBLIC_FORM_WINDOW_MS,
+  max: PUBLIC_FORM_MAX,
+  message: "Trop de soumissions. R\xE9essayez plus tard."
+});
+var checkoutRateLimiter = createRateLimiter({
+  scope: "checkout",
+  windowMs: CHECKOUT_WINDOW_MS,
+  max: CHECKOUT_MAX,
+  message: "Trop de demandes de paiement. R\xE9essayez plus tard."
+});
+var dataApiRateLimiter = createRateLimiter({
+  scope: "data",
+  windowMs: DATA_WINDOW_MS,
+  max: DATA_MAX,
+  message: "Trop de requ\xEAtes de donn\xE9es. R\xE9essayez plus tard."
+});
+function applySensitiveRateLimits(app2) {
+  app2.use("/api/auth", authRateLimiter);
+  app2.use("/api/files/upload", uploadRateLimiter);
+  app2.use("/api/webhooks", webhookRateLimiter);
+  app2.use("/api/apps/appointment", publicFormRateLimiter);
+  app2.use("/api/stripe/checkout", checkoutRateLimiter);
+  app2.use("/api/data", dataApiRateLimiter);
+}
+
+// src/server/errorHandler.ts
+function formatClientErrorMessage(err) {
+  const status = err?.status;
+  if (status === 413) return "Payload trop volumineux.";
+  if (status === 429) return "Trop de requ\xEAtes. R\xE9essayez plus tard.";
+  if (status === 400) return "Requ\xEAte invalide.";
+  return "Erreur interne du serveur.";
+}
+function resolveErrorStatus(err) {
+  const status = err?.status;
+  if (typeof status === "number" && status >= 400 && status < 600) return status;
+  return 500;
+}
+function registerErrorHandlers(app2) {
+  app2.use((_req, res) => {
+    res.status(404).json({ success: false, error: "Ressource introuvable." });
+  });
+  app2.use((err, _req, res, _next) => {
+    const status = resolveErrorStatus(err);
+    logServerError("express_unhandled_error", err, { statusCode: status });
+    res.status(status).json({
+      success: false,
+      error: formatClientErrorMessage(err)
+    });
+  });
+}
+
+// src/server/securityHeaders.ts
+var import_helmet = __toESM(require("helmet"), 1);
+function isProduction() {
+  return (process.env.NODE_ENV || "development") === "production";
+}
+function applySecurityHeaders(app2) {
+  app2.use(
+    (0, import_helmet.default)({
+      contentSecurityPolicy: false,
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+      hsts: isProduction() ? { maxAge: 31536e3, includeSubDomains: true, preload: false } : false
+    })
+  );
+  app2.use((_req, res, next) => {
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
+    res.setHeader("X-DNS-Prefetch-Control", "off");
+    if (!res.getHeader("X-Content-Type-Options")) {
+      res.setHeader("X-Content-Type-Options", "nosniff");
+    }
+    next();
+  });
+}
+var nextSecurityHeaders = [
+  { key: "X-Content-Type-Options", value: "nosniff" },
+  { key: "X-Frame-Options", value: "DENY" },
+  { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+  { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
+  { key: "X-DNS-Prefetch-Control", value: "off" },
+  ...process.env.NODE_ENV === "production" ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }] : []
+];
+
+// src/server/catalogCheckoutPricing.ts
+function findSubscriptionPricing(app2, billingCycle) {
+  return app2.pricing.find(
+    (p) => p.type === "subscription" && p.billingCycle === billingCycle
+  );
+}
+function findLicensePricing(app2, durationDays) {
+  return app2.pricing.find(
+    (p) => p.type === "license" && p.durationDays === durationDays
+  );
+}
+function resolveCatalogSubscriptionCheckout(catalog, serviceId, billingCycle) {
+  const app2 = catalog.find((a) => a.id === serviceId);
+  if (!app2) return { ok: false, error: "Application introuvable." };
+  if (!app2.onlineCheckout) {
+    return { ok: false, error: "Le checkout en ligne est d\xE9sactiv\xE9 pour cette application." };
+  }
+  if (isExternalSaasBilling(app2)) {
+    return { ok: false, error: "Cet abonnement est factur\xE9 sur le site de l'application." };
+  }
+  const pricing = findSubscriptionPricing(app2, billingCycle);
+  if (!pricing || pricing.price <= 0) {
+    return { ok: false, error: "Tarif abonnement introuvable pour ce cycle de facturation." };
+  }
+  return {
+    ok: true,
+    unitAmount: Math.round(pricing.price),
+    serviceName: app2.title,
+    moduleKey: app2.moduleKey,
+    billingCycle,
+    app: app2
+  };
+}
+function resolveCatalogLicenseCheckout(catalog, appId, requestedDurationDays) {
+  const app2 = catalog.find((a) => a.id === appId);
+  if (!app2) return { ok: false, error: "Application introuvable." };
+  if (!app2.onlineCheckout) {
+    return { ok: false, error: "Le checkout en ligne est d\xE9sactiv\xE9 pour cette application." };
+  }
+  const licenseEntries = app2.pricing.filter((p) => p.type === "license");
+  if (!licenseEntries.length) {
+    return { ok: false, error: "Aucun tarif licence configur\xE9 pour cette application." };
+  }
+  const durationDays = requestedDurationDays !== void 0 && requestedDurationDays >= 0 ? requestedDurationDays : licenseEntries[0].durationDays;
+  const pricing = findLicensePricing(app2, durationDays) ?? licenseEntries[0];
+  if (!pricing || pricing.price <= 0) {
+    return { ok: false, error: "Tarif licence introuvable." };
+  }
+  return {
+    ok: true,
+    unitAmount: Math.round(pricing.price),
+    appName: app2.title,
+    moduleKey: app2.moduleKey,
+    licenseDurationDays: pricing.durationDays,
+    app: app2
+  };
+}
+
+// src/server/fileRegistry.ts
+var FILE_REGISTRY_COLLECTION = "__file_registry";
+var STAFF_ROLES = /* @__PURE__ */ new Set(["admin", "commando"]);
+function isStaffFileRole(role) {
+  return STAFF_ROLES.has(String(role || "").toLowerCase());
+}
+function findCatalogAppByPackagePublicId(catalog, publicId) {
+  const normalized = publicId.trim();
+  if (!normalized) return void 0;
+  return catalog.find((app2) => app2.licensePackagePublicId?.trim() === normalized);
+}
+async function registerUploadedFile(publicId, ownerUid, folder, db = prisma) {
+  const docId = publicId.trim();
+  if (!docId || !ownerUid) return;
+  await db.dataDocument.upsert({
+    where: {
+      collectionPath_docId: { collectionPath: FILE_REGISTRY_COLLECTION, docId }
+    },
+    create: {
+      collectionPath: FILE_REGISTRY_COLLECTION,
+      docId,
+      data: {
+        publicId: docId,
+        ownerUid,
+        folder: folder.trim() || "misc",
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    },
+    update: {
+      data: {
+        publicId: docId,
+        ownerUid,
+        folder: folder.trim() || "misc",
+        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    }
+  });
+}
+async function removeFileRegistryEntry(publicId, db = prisma) {
+  const docId = publicId.trim();
+  if (!docId) return;
+  await db.dataDocument.deleteMany({
+    where: { collectionPath: FILE_REGISTRY_COLLECTION, docId }
+  });
+}
+async function userHasActiveLicenseForApp(uid, appId, db) {
+  const row = await db.dataDocument.findUnique({
+    where: {
+      collectionPath_docId: {
+        collectionPath: LICENSES_COLLECTION_PATH,
+        docId: licenseDocId(uid, appId)
+      }
+    }
+  });
+  if (!row) return false;
+  const license = row.data || {};
+  return isLicenseActive(license);
+}
+async function assertFileAccess(auth, publicId, options) {
+  const normalized = publicId.trim();
+  if (!normalized) {
+    return { ok: false, error: "publicId invalide.", status: 404 };
+  }
+  if (isStaffFileRole(auth.role)) {
+    return { ok: true };
+  }
+  const licensedApp = findCatalogAppByPackagePublicId(options.catalog, normalized);
+  if (licensedApp) {
+    const db2 = options.db ?? prisma;
+    if (await userHasActiveLicenseForApp(auth.uid, licensedApp.id, db2)) {
+      return { ok: true };
+    }
+  }
+  const db = options.db ?? prisma;
+  const row = await db.dataDocument.findUnique({
+    where: {
+      collectionPath_docId: { collectionPath: FILE_REGISTRY_COLLECTION, docId: normalized }
+    }
+  });
+  if (!row) {
+    return { ok: false, error: "Fichier introuvable ou acc\xE8s refus\xE9.", status: 404 };
+  }
+  const data = row.data && typeof row.data === "object" ? row.data : {};
+  const ownerUid = String(data.ownerUid || "").trim();
+  if (ownerUid && ownerUid === auth.uid) {
+    return { ok: true };
+  }
+  return { ok: false, error: "Acc\xE8s refus\xE9.", status: 403 };
+}
+
+// server.ts
 var DB_FILE_COLLECTION_PATH = "__file_blobs";
 var DB_FILE_PUBLIC_ID_PREFIX = "dbf/";
 var MAX_DB_FALLBACK_BYTES = 8 * 1024 * 1024;
 var ORDERS_COLLECTION_PATH = "orders";
 var USERS_COLLECTION_PATH2 = "users";
 var NOTIFICATIONS_COLLECTION_PATH = "notifications";
+function normalizeBillingCycle(raw) {
+  const v = String(raw || "").trim().toLowerCase();
+  if (["mensuel", "monthly", "month", "mois"].includes(v)) return "month";
+  if (["annuel", "yearly", "annual", "year", "an"].includes(v)) return "year";
+  return null;
+}
 function subscriptionStatusFromStripe(raw) {
   const status = String(raw || "").trim().toLowerCase();
   if (["active", "trialing", "past_due", "incomplete", "incomplete_expired", "unpaid"].includes(status)) {
@@ -4004,12 +4863,6 @@ function isDbStoredPublicId(publicId) {
 function dbDocIdFromPublicId(publicId) {
   return publicId.slice(DB_FILE_PUBLIC_ID_PREFIX.length);
 }
-function isAllowedUpload(file) {
-  const ext = import_path2.default.extname(file.originalname || "").toLowerCase();
-  if (!ALLOWED_UPLOAD_EXTENSIONS.has(ext)) return false;
-  if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimetype || "")) return false;
-  return true;
-}
 function contentDispositionForDownload(storageKey, originalName, mimetype) {
   const safeName = originalName.replace(/"/g, "");
   const key = storageKey.toLowerCase();
@@ -4017,11 +4870,42 @@ function contentDispositionForDownload(storageKey, originalName, mimetype) {
   const asAttachment = key.endsWith(".zip") || type.includes("zip");
   return `${asAttachment ? "attachment" : "inline"}; filename="${safeName}"`;
 }
-function secureSecretEquals(expected, provided) {
-  const expectedBuf = Buffer.from(expected);
-  const providedBuf = Buffer.from(provided);
-  if (expectedBuf.length !== providedBuf.length) return false;
-  return (0, import_crypto5.timingSafeEqual)(expectedBuf, providedBuf);
+function assertSecureStartup() {
+  const corsReport = assertProductionCorsPolicy(
+    buildStrictCorsOrigins(appEnv.http.corsOriginRaw),
+    appEnv.node.isProduction
+  );
+  if (!corsReport.ok) {
+    throw new Error(`Configuration CORS invalide:
+${formatCorsPolicyErrors(corsReport)}`);
+  }
+  const secretsReport = validateProductionSecrets({
+    isProduction: appEnv.node.isProduction,
+    databaseUrl: appEnv.database.url,
+    jwtSecret: appEnv.auth.getJwtSecret(),
+    paddeWebhookSecret: appEnv.webhooks.paddeWebhookSecret,
+    noyaWebhookSecret: appEnv.webhooks.noyaRecrutementWebhookSecret,
+    saasBridgeApiKey: String(process.env.SAAS_BRIDGE_API_KEY || ""),
+    stripeSecretKey: appEnv.stripe.secretKey,
+    stripeWebhookSecret: appEnv.stripe.webhookSecret
+  });
+  if (!secretsReport.ok) {
+    throw new Error(`Configuration secrets invalide:
+${formatProductionSecretsErrors(secretsReport)}`);
+  }
+}
+function rejectUnauthorizedWebhook(req, res, secretExpected, allowPlainSecret) {
+  if (!secretExpected.trim()) return false;
+  const auth = verifyInboundWebhookAuth({
+    secretExpected,
+    req,
+    rawBody: req.rawBody,
+    isProduction: appEnv.node.isProduction,
+    allowPlainSecret
+  });
+  if (auth.ok) return false;
+  res.status(401).json({ success: false, error: auth.reason || "Webhook non autoris\xE9." });
+  return true;
 }
 async function readAuthenticatedUser(req) {
   const auth = parseAuthFromRequest(req);
@@ -4032,11 +4916,15 @@ async function requireAuthenticatedUser(req, res, next) {
   try {
     const auth = await readAuthenticatedUser(req);
     if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+    req.authUser = auth;
     return next();
   } catch (error) {
     console.error("[auth] middleware user:", error);
     return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
   }
+}
+function requestAuthUser(req) {
+  return req.authUser ?? null;
 }
 async function requirePaddeAuditViewer(req, res, next) {
   try {
@@ -4077,13 +4965,16 @@ function paddeClientNameFromPayload(payload) {
   );
 }
 async function createExpressApplication() {
+  assertSecureStartup();
   const app2 = (0, import_express.default)();
   const port = appEnv.http.port;
-  const corsOrigins = parseCorsOrigins(appEnv.http.corsOriginRaw);
+  const corsReport = buildStrictCorsOrigins(appEnv.http.corsOriginRaw);
+  const corsOrigins = corsReport.origins;
   const paddeAllowedOrigins = /* @__PURE__ */ new Set(["https://padde-ci.com", "https://www.padde-ci.com"]);
   const noyaAllowedOrigins = /* @__PURE__ */ new Set(["https://noyaindustries.com", "https://www.noyaindustries.com"]);
   const paddeWebhookSecret = appEnv.webhooks.paddeWebhookSecret;
   const noyaWebhookSecret = appEnv.webhooks.noyaRecrutementWebhookSecret;
+  const allowPlainWebhookSecret = appEnv.node.isDevelopment || process.env.WEBHOOK_ALLOW_PLAIN_SECRET === "1";
   const stripeSecretKey = appEnv.stripe.secretKey;
   const stripeWebhookSecret = appEnv.stripe.webhookSecret;
   const r2AccountId = appEnv.r2.accountId;
@@ -4152,6 +5043,7 @@ async function createExpressApplication() {
     });
     return customerId;
   };
+  applySecurityHeaders(app2);
   app2.use(
     (0, import_cors.default)({
       origin(origin, callback) {
@@ -4169,22 +5061,23 @@ async function createExpressApplication() {
       methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT", "HEAD"],
       // Inclure X-Webhook-Secret : sans lui, les POST cross-origin depuis padde-ci.com
       // vers /api/webhooks/padde-ci/direct échouent au préflight (navigateur).
-      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-Webhook-Secret"],
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "X-Webhook-Secret",
+        "X-Webhook-Signature"
+      ],
       credentials: true
     })
   );
-  app2.use((_, res, next) => {
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-    res.setHeader("X-Frame-Options", "DENY");
-    next();
-  });
   app2.use(
     import_express.default.json({
       limit: "1mb",
       strict: true,
       verify: (req, _res, buf) => {
-        if ((req.url || "").startsWith("/api/stripe/webhook")) {
+        const path4 = req.url || "";
+        if (path4.startsWith("/api/stripe/webhook") || path4.startsWith("/api/webhooks/")) {
           req.rawBody = Buffer.from(buf);
         }
       }
@@ -4197,7 +5090,7 @@ async function createExpressApplication() {
     })
   );
   app2.use((req, res, next) => {
-    const requestId = (0, import_crypto5.randomUUID)();
+    const requestId = (0, import_crypto6.randomUUID)();
     req.headers["x-request-id"] = requestId;
     res.setHeader("X-Request-Id", requestId);
     next();
@@ -4207,6 +5100,14 @@ async function createExpressApplication() {
     const routePath = (req.path || req.url?.split("?")[0] || "").slice(0, 160);
     const requestId = String(req.headers["x-request-id"] || "unknown");
     res.on("finish", () => {
+      const durationMs = Date.now() - start;
+      logHttpRequest({
+        method: req.method || "GET",
+        path: routePath,
+        statusCode: res.statusCode,
+        durationMs,
+        requestId
+      });
       agentSessionLog({
         hypothesisId: "H5",
         location: "server.ts:request_timing",
@@ -4215,13 +5116,14 @@ async function createExpressApplication() {
           method: req.method,
           path: routePath,
           status: res.statusCode,
-          durationMs: Date.now() - start,
+          durationMs,
           requestId
         }
       });
     });
     next();
   });
+  applySensitiveRateLimits(app2);
   app2.get("/health", (_req, res) => {
     res.status(200).json({
       ok: true,
@@ -4232,21 +5134,7 @@ async function createExpressApplication() {
   });
   app2.get("/api/apps/catalog", async (_req, res) => {
     try {
-      let stored = await loadAppCatalog();
-      const legacyIds = /* @__PURE__ */ new Set([
-        "crm",
-        "finance",
-        "rh",
-        "projects",
-        "academy",
-        "comms",
-        "store",
-        "pack-croissance",
-        "pack-elite"
-      ]);
-      if (stored.some((a) => legacyIds.has(a.id))) {
-        stored = await saveAppCatalog(INFINITE_APP_CATALOG);
-      }
+      const stored = await loadAppCatalog();
       const apps = mergeCatalogWithDefaults(stored);
       return res.status(200).json({ success: true, apps });
     } catch (error) {
@@ -4291,7 +5179,7 @@ async function createExpressApplication() {
         message
       } = parsed.data;
       const createdAt = (/* @__PURE__ */ new Date()).toISOString();
-      const leadId = (0, import_crypto5.randomUUID)().replace(/-/g, "");
+      const leadId = (0, import_crypto6.randomUUID)().replace(/-/g, "");
       const noteParts = [
         `Demande RDV \u2014 ${appTitle || appId}`,
         preferredDate ? `Date souhait\xE9e : ${preferredDate}` : "",
@@ -4337,7 +5225,7 @@ async function createExpressApplication() {
           (uid) => prisma.dataDocument.create({
             data: {
               collectionPath: NOTIFICATIONS_COLLECTION_PATH,
-              docId: (0, import_crypto5.randomUUID)().replace(/-/g, ""),
+              docId: (0, import_crypto6.randomUUID)().replace(/-/g, ""),
               data: {
                 userId: uid,
                 title,
@@ -4376,12 +5264,18 @@ async function createExpressApplication() {
       if (!validated.success) {
         return res.status(400).json({ success: false, error: "Param\xE8tres abonnement invalides.", details: validated.error.format() });
       }
-      const { serviceId, serviceName, note = "", amount, billingCycle, moduleKey: moduleKeyInput } = validated.data;
+      const { serviceId, note = "", billingCycle } = validated.data;
+      const billing = normalizeBillingCycle(billingCycle);
+      if (!billing) {
+        return res.status(400).json({ success: false, error: "Cycle de facturation invalide." });
+      }
       const catalog = await loadAppCatalog();
-      const catalogApp = catalog.find((a) => a.id === serviceId);
-      const moduleKey = moduleKeyInput || catalogApp?.moduleKey || serviceId;
-      const unitAmount = Math.round(amount);
-      const orderId = `CMD-${(0, import_crypto5.randomUUID)().split("-")[0].toUpperCase()}`;
+      const priced = resolveCatalogSubscriptionCheckout(catalog, serviceId, billing);
+      if (!priced.ok) {
+        return res.status(400).json({ success: false, error: priced.error });
+      }
+      const { unitAmount, serviceName, moduleKey } = priced;
+      const orderId = `CMD-${(0, import_crypto6.randomUUID)().split("-")[0].toUpperCase()}`;
       const customerId = await resolveStripeCustomerId({ uid: auth.uid, email: auth.email });
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
@@ -4396,7 +5290,7 @@ async function createExpressApplication() {
           appId: serviceId,
           appName: serviceName,
           moduleKey,
-          billingCycle,
+          billingCycle: billing,
           licenseType: "subscription"
         },
         subscription_data: {
@@ -4415,7 +5309,7 @@ async function createExpressApplication() {
             price_data: {
               currency: "xof",
               unit_amount: unitAmount,
-              recurring: { interval: billingCycle },
+              recurring: { interval: billing },
               product_data: {
                 name: `${serviceName} \u2014 Abonnement SaaS`,
                 description: "Abonnement mensuel \u2014 application en ligne h\xE9berg\xE9e par Infinite Core (SaaS multi-tenant).",
@@ -4441,7 +5335,7 @@ async function createExpressApplication() {
             moduleKey,
             orderType: "abonnement",
             isSubscription: true,
-            billingCycle,
+            billingCycle: billing,
             amount: unitAmount,
             currency: "XOF",
             note: note || null,
@@ -4462,7 +5356,7 @@ async function createExpressApplication() {
             moduleKey,
             orderType: "abonnement",
             isSubscription: true,
-            billingCycle,
+            billingCycle: billing,
             amount: unitAmount,
             currency: "XOF",
             note: note || null,
@@ -4502,10 +5396,14 @@ async function createExpressApplication() {
           details: validated.error.format()
         });
       }
-      const { appId, appName, moduleKey, amount, licenseDurationDays, note = "" } = validated.data;
-      const unitAmount = Math.round(amount);
-      const durationDays = licenseDurationDays !== void 0 && licenseDurationDays >= 0 ? licenseDurationDays : 0;
-      const orderId = `CMD-${(0, import_crypto5.randomUUID)().split("-")[0].toUpperCase()}`;
+      const { appId, licenseDurationDays, note = "" } = validated.data;
+      const catalog = await loadAppCatalog();
+      const priced = resolveCatalogLicenseCheckout(catalog, appId, licenseDurationDays);
+      if (!priced.ok) {
+        return res.status(400).json({ success: false, error: priced.error });
+      }
+      const { unitAmount, appName, moduleKey, licenseDurationDays: durationDays } = priced;
+      const orderId = `CMD-${(0, import_crypto6.randomUUID)().split("-")[0].toUpperCase()}`;
       const customerId = await resolveStripeCustomerId({ uid: auth.uid, email: auth.email });
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
@@ -4642,7 +5540,7 @@ async function createExpressApplication() {
       let created = 0;
       await Promise.all(
         teamIds.map(async (uid) => {
-          const notifId = (0, import_crypto5.randomUUID)();
+          const notifId = (0, import_crypto6.randomUUID)();
           await prisma.dataDocument.create({
             data: {
               collectionPath: NOTIFICATIONS_COLLECTION_PATH,
@@ -5040,33 +5938,10 @@ async function createExpressApplication() {
       secretAccessKey: r2SecretAccessKey
     }
   }) : null;
-  const upload = (0, import_multer.default)({
-    storage: import_multer.default.memoryStorage(),
-    limits: { fileSize: 50 * 1024 * 1024 }
-    // 50MB
-  });
-  const uploadSingleWithHandling = (req, res, next) => {
-    upload.single("file")(req, res, (error) => {
-      if (!error) return next();
-      if (error instanceof import_multer.default.MulterError) {
-        if (error.code === "LIMIT_FILE_SIZE") {
-          return res.status(413).json({
-            success: false,
-            error: "Fichier trop volumineux (max 50MB)."
-          });
-        }
-        return res.status(400).json({
-          success: false,
-          error: `Upload invalide: ${error.message}`
-        });
-      }
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error("[upload] middleware:", msg);
-      return res.status(400).json({ success: false, error: "Requ\xEAte d'upload invalide." });
-    });
-  };
   app2.post("/api/files/upload", requireAuthenticatedUser, uploadSingleWithHandling, async (req, res) => {
     try {
+      const auth = requestAuthUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
       if (!req.file) {
         return res.status(400).json({ success: false, error: "Aucun fichier re\xE7u." });
       }
@@ -5079,7 +5954,7 @@ async function createExpressApplication() {
       const folderRaw = typeof req.body?.folder === "string" ? req.body.folder : "misc";
       const folder = sanitizeFolder(folderRaw);
       const safeOriginal = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const objectKey = `${folder}/${Date.now()}-${(0, import_crypto5.randomUUID)()}-${safeOriginal}`;
+      const objectKey = `${folder}/${Date.now()}-${(0, import_crypto6.randomUUID)()}-${safeOriginal}`;
       if (canUseR2 && s3) {
         await s3.send(
           new import_client_s32.PutObjectCommand({
@@ -5091,6 +5966,7 @@ async function createExpressApplication() {
           })
         );
         const fileUrl2 = r2PublicBaseUrl ? `${r2PublicBaseUrl.replace(/\/$/, "")}/${objectKey}` : buildFileUrl(objectKey);
+        await registerUploadedFile(objectKey, auth.uid, folder);
         return res.status(200).json({
           success: true,
           url: fileUrl2,
@@ -5119,7 +5995,8 @@ async function createExpressApplication() {
               contentBase64: req.file.buffer.toString("base64"),
               originalName: req.file.originalname,
               mimetype: req.file.mimetype || "application/octet-stream",
-              size: req.file.size
+              size: req.file.size,
+              ownerUid: auth.uid
             }
           },
           update: {
@@ -5127,10 +6004,12 @@ async function createExpressApplication() {
               contentBase64: req.file.buffer.toString("base64"),
               originalName: req.file.originalname,
               mimetype: req.file.mimetype || "application/octet-stream",
-              size: req.file.size
+              size: req.file.size,
+              ownerUid: auth.uid
             }
           }
         });
+        await registerUploadedFile(dbPublicId, auth.uid, folder);
         return res.status(200).json({
           success: true,
           url: buildFileUrl(dbPublicId),
@@ -5146,6 +6025,7 @@ async function createExpressApplication() {
       }
       await import_fs.promises.mkdir(import_path2.default.dirname(absPath), { recursive: true });
       await import_fs.promises.writeFile(absPath, req.file.buffer);
+      await registerUploadedFile(objectKey, auth.uid, folder);
       const fileUrl = buildFileUrl(objectKey);
       return res.status(200).json({
         success: true,
@@ -5157,15 +6037,21 @@ async function createExpressApplication() {
       });
     } catch (error) {
       console.error("Erreur upload API:", error);
-      const msg = error instanceof Error && !appEnv.node.isProduction ? `Erreur interne du serveur. ${error.message}` : "Erreur interne du serveur.";
-      return res.status(500).json({ success: false, error: msg });
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
   app2.delete("/api/files", requireAuthenticatedUser, async (req, res) => {
     try {
+      const auth = requestAuthUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
       const safePath = normalizePublicIdQuery(String(req.query.publicId || ""));
       if (!safePath) {
         return res.status(400).json({ success: false, error: "publicId manquant." });
+      }
+      const catalog = await loadAppCatalog();
+      const access = await assertFileAccess(auth, safePath, { catalog });
+      if (!access.ok) {
+        return res.status(access.status).json({ success: false, error: access.error });
       }
       if (isDbStoredPublicId(safePath)) {
         const docId = dbDocIdFromPublicId(safePath);
@@ -5175,6 +6061,7 @@ async function createExpressApplication() {
         await prisma.dataDocument.deleteMany({
           where: { collectionPath: DB_FILE_COLLECTION_PATH, docId }
         });
+        await removeFileRegistryEntry(safePath);
         return res.status(200).json({ success: true });
       }
       if (canUseR2 && s3) {
@@ -5184,6 +6071,7 @@ async function createExpressApplication() {
             Key: safePath
           })
         );
+        await removeFileRegistryEntry(safePath);
         return res.status(200).json({ success: true });
       }
       if (!canUseLocalDiskFallback) {
@@ -5199,6 +6087,7 @@ async function createExpressApplication() {
         const code = e && typeof e === "object" && "code" in e ? e.code : "";
         if (code !== "ENOENT") throw e;
       }
+      await removeFileRegistryEntry(safePath);
       return res.status(200).json({ success: true });
     } catch (error) {
       console.error("Erreur suppression API:", error);
@@ -5207,9 +6096,16 @@ async function createExpressApplication() {
   });
   app2.get("/api/files/download", requireAuthenticatedUser, async (req, res) => {
     try {
+      const auth = requestAuthUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
       const safePath = normalizePublicIdQuery(String(req.query.publicId || ""));
       if (!safePath) {
         return res.status(400).json({ success: false, error: "publicId manquant." });
+      }
+      const catalog = await loadAppCatalog();
+      const access = await assertFileAccess(auth, safePath, { catalog });
+      if (!access.ok) {
+        return res.status(access.status).json({ success: false, error: access.error });
       }
       if (isDbStoredPublicId(safePath)) {
         const docId = dbDocIdFromPublicId(safePath);
@@ -5292,7 +6188,7 @@ async function createExpressApplication() {
       console.warn("[padde-ci] payload invalide (Zod):", validated.error.format());
     }
     const payload = data && typeof data === "object" ? data : {};
-    const auditId = options.existingAuditId?.trim() || `PADDE-${(0, import_crypto5.randomUUID)().replace(/-/g, "")}`;
+    const auditId = options.existingAuditId?.trim() || `PADDE-${(0, import_crypto6.randomUUID)().replace(/-/g, "")}`;
     const auditType = String(payload.type_audit || payload.type || payload.auditType || "Audit PADDE-CI").trim();
     const lowerKeyPayload = {};
     for (const [key, value] of Object.entries(payload)) {
@@ -5473,7 +6369,7 @@ async function createExpressApplication() {
           (recipientId) => prisma.dataDocument.create({
             data: {
               collectionPath: "notifications",
-              docId: (0, import_crypto5.randomUUID)().replace(/-/g, ""),
+              docId: (0, import_crypto6.randomUUID)().replace(/-/g, ""),
               data: {
                 userId: recipientId,
                 title: "Nouveau flux PADDE-CI",
@@ -5512,28 +6408,17 @@ async function createExpressApplication() {
     }
     return { auditId };
   };
-  const extractPaddeProvidedSecret = (req) => {
-    const headerSecret = String(req.headers["x-webhook-secret"] || "").trim();
-    if (headerSecret) return headerSecret;
-    if (req.body && typeof req.body === "object" && !Array.isArray(req.body)) {
-      const b = req.body;
-      const bodySecret = String(b.webhookSecret ?? b.secret ?? "").trim();
-      if (bodySecret) return bodySecret;
-    }
-    const qRaw = req.query?.secret;
-    const qSecret = (Array.isArray(qRaw) ? String(qRaw[0] ?? "") : String(qRaw ?? "")).trim();
-    if (qSecret) return qSecret;
-    return "";
-  };
-  const bodyWithoutWebhookSecrets = (body) => {
-    if (!body || typeof body !== "object" || Array.isArray(body)) return body;
-    const o = { ...body };
-    delete o.webhookSecret;
-    delete o.secret;
-    return o;
-  };
   const paddeSecretExpected = paddeWebhookSecret.trim();
   const noyaSecretExpected = noyaWebhookSecret.trim();
+  const webhookAuthHint = (secretConfigured) => {
+    if (!secretConfigured) {
+      return "Aucun secret webhook : les POST JSON sont accept\xE9s sans authentification (\xE9vitez en prod).";
+    }
+    if (appEnv.node.isProduction && !allowPlainWebhookSecret) {
+      return "En production : header X-Webhook-Signature: sha256=<HMAC-SHA256 du corps JSON brut> avec le secret configur\xE9.";
+    }
+    return "Auth accept\xE9e : X-Webhook-Signature (HMAC-SHA256) ou X-Webhook-Secret legacy (dev / WEBHOOK_ALLOW_PLAIN_SECRET=1).";
+  };
   const normalizeLower = (value) => String(value || "").trim().toLowerCase();
   const normalizeText = (value) => String(value || "").trim();
   const normalizeEmail = (value) => {
@@ -5556,12 +6441,13 @@ async function createExpressApplication() {
       ok: true,
       databaseConfigured: Boolean(appEnv.database.url),
       webhookSecretConfigured: noyaSecretExpected.length > 0,
+      webhookHmacRequired: noyaSecretExpected.length > 0 && appEnv.node.isProduction && !allowPlainWebhookSecret,
       partnerMappingConfigured: configuredPartnerId.length > 0,
       noyaPartnerId: configuredPartnerId || null,
       nodeEnv: appEnv.node.env,
       vercel: Boolean(process.env.VERCEL),
       vercelEnv: process.env.VERCEL_ENV || null,
-      hint: noyaSecretExpected.length > 0 ? "L\u2019API exige le m\xEAme secret que NOYA_RECRUTEMENT_WEBHOOK_SECRET (header X-Webhook-Secret ou champs JSON webhookSecret / secret)." : "Aucun NOYA_RECRUTEMENT_WEBHOOK_SECRET : les POST JSON sont accept\xE9s sans secret (\xE9vitez en prod)."
+      hint: webhookAuthHint(noyaSecretExpected.length > 0)
     });
   });
   app2.post("/api/webhooks/noya-recrutement", async (req, res) => {
@@ -5582,14 +6468,18 @@ async function createExpressApplication() {
         const normalizedKey = rawKey.trim().toLowerCase().replace(/[\s-]+/g, "_");
         payload[normalizedKey] = value;
       }
-      const providedSecret = extractPaddeProvidedSecret(req);
+      const providedSecret = verifyInboundWebhookAuth({
+        secretExpected: noyaSecretExpected,
+        req,
+        rawBody: req.rawBody,
+        isProduction: appEnv.node.isProduction,
+        allowPlainSecret: allowPlainWebhookSecret
+      });
       delete payload.webhooksecret;
       delete payload.secret;
       delete payload.webhook_secret;
-      if (noyaSecretExpected) {
-        if (!providedSecret || !secureSecretEquals(noyaSecretExpected, providedSecret)) {
-          return res.status(401).json({ success: false, error: "Webhook non autoris\xE9." });
-        }
+      if (noyaSecretExpected && !providedSecret.ok) {
+        return res.status(401).json({ success: false, error: providedSecret.reason || "Webhook non autoris\xE9." });
       }
       const firstName = normalizeText(
         extractFirstFilled(payload, "prenom", "first_name", "firstname", "first")
@@ -5620,7 +6510,7 @@ async function createExpressApplication() {
         });
       }
       const createdAt = (/* @__PURE__ */ new Date()).toISOString();
-      const leadId = (0, import_crypto5.randomUUID)().replace(/-/g, "");
+      const leadId = (0, import_crypto6.randomUUID)().replace(/-/g, "");
       const configuredPartnerId = appEnv.webhooks.noyaRecrutementPartnerId.trim();
       const configuredPartnerLabel = appEnv.webhooks.noyaRecrutementPartnerLabel.trim() || "Noya Partenaire";
       const partnerId = configuredPartnerId || "noya-recrutement";
@@ -5662,7 +6552,7 @@ async function createExpressApplication() {
           (recipientId) => prisma.dataDocument.create({
             data: {
               collectionPath: "notifications",
-              docId: (0, import_crypto5.randomUUID)().replace(/-/g, ""),
+              docId: (0, import_crypto6.randomUUID)().replace(/-/g, ""),
               data: {
                 userId: recipientId,
                 title,
@@ -5749,21 +6639,17 @@ async function createExpressApplication() {
       ok: true,
       databaseConfigured: Boolean(appEnv.database.url),
       webhookSecretConfigured: paddeSecretExpected.length > 0,
+      webhookHmacRequired: paddeSecretExpected.length > 0 && appEnv.node.isProduction && !allowPlainWebhookSecret,
       nodeEnv: appEnv.node.env,
       vercel: Boolean(process.env.VERCEL),
       /** Sur Vercel : production | preview | development — les variables peuvent différer par environnement. */
       vercelEnv: process.env.VERCEL_ENV || null,
-      hint: paddeSecretExpected.length > 0 ? "L\u2019API exige le m\xEAme secret que PADDE_WEBHOOK_SECRET (header X-Webhook-Secret ou champs JSON webhookSecret / secret)." : "Aucun PADDE_WEBHOOK_SECRET : les POST JSON sont accept\xE9s sans secret (\xE9vitez en prod)."
+      hint: webhookAuthHint(paddeSecretExpected.length > 0)
     });
   });
   app2.post("/api/webhooks/padde-ci", async (req, res) => {
     try {
-      if (paddeSecretExpected) {
-        const provided = extractPaddeProvidedSecret(req);
-        if (!provided || !secureSecretEquals(paddeSecretExpected, provided)) {
-          return res.status(401).json({ success: false, error: "Webhook non autoris\xE9." });
-        }
-      }
+      if (rejectUnauthorizedWebhook(req, res, paddeSecretExpected, allowPlainWebhookSecret)) return;
       if (!appEnv.database.url) {
         return res.status(503).json({
           success: false,
@@ -5784,14 +6670,9 @@ async function createExpressApplication() {
         return res.status(403).json({ success: false, error: "Origin non autoris\xE9e." });
       }
       const bodyPayload = req.body && typeof req.body === "object" ? { ...req.body } : {};
-      const providedSecret = extractPaddeProvidedSecret(req);
       delete bodyPayload.webhookSecret;
       delete bodyPayload.secret;
-      if (paddeSecretExpected) {
-        if (!providedSecret || !secureSecretEquals(paddeSecretExpected, providedSecret)) {
-          return res.status(401).json({ success: false, error: "Webhook non autoris\xE9." });
-        }
-      }
+      if (rejectUnauthorizedWebhook(req, res, paddeSecretExpected, allowPlainWebhookSecret)) return;
       if (!appEnv.database.url) {
         return res.status(503).json({
           success: false,
@@ -5911,12 +6792,13 @@ async function createExpressApplication() {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
+  registerErrorHandlers(app2);
   return { app: app2, port };
 }
 async function startServer() {
   const { app: app2, port } = await createExpressApplication();
   app2.listen(port, "0.0.0.0", () => {
-    console.log(`[infinitecore-api] http://0.0.0.0:${port}`);
+    logger.info("api_listening", { port, host: "0.0.0.0" });
   });
 }
 if (process.env.START_LISTEN === "1") {

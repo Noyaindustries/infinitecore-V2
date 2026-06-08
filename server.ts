@@ -3,16 +3,29 @@ import cors from "cors";
 import path from "path";
 import { createReadStream, promises as fs } from "fs";
 import { agentSessionLog } from "@/debug/agentSessionLog";
-import multer from "multer";
-import { randomUUID, timingSafeEqual } from "crypto";
+import { randomUUID } from "crypto";
 import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import Stripe from "stripe";
-import { appEnv, parseCorsOrigins, resetAppBaseUrl } from "@/config/env";
+import { appEnv, resetAppBaseUrl } from "@/config/env";
+import {
+  assertProductionCorsPolicy,
+  buildStrictCorsOrigins,
+  formatCorsPolicyErrors,
+} from "@/config/corsPolicy";
+import {
+  formatProductionSecretsErrors,
+  validateProductionSecrets,
+} from "@/config/secretPolicy";
+import {
+  bodyWithoutWebhookSecrets,
+  secureSecretEquals,
+  verifyInboundWebhookAuth,
+} from "@/server/webhookHmac";
 import { prisma } from "./prismaClient";
 import { buildFileUrl, sanitizeFolder } from "./_r2";
 import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } from "./storageUtils";
-import { parseAuthFromRequest, registerMongoApi, resolveAuthPayload } from "./mongoApi";
+import { parseAuthFromRequest, registerMongoApi, resolveAuthPayload, type AuthPayload } from "./mongoApi";
 import { sendStaffNotifyEmail } from "./src/server/staffNotifyEmail";
 import { sendLeadEmail } from "./src/server/sendLeadEmail";
 import { LicenseCheckoutSchema, OrderSchema, PaddeAuditPayloadSchema } from "./src/lib/schemas";
@@ -36,37 +49,21 @@ import { licenseDocId, isLicenseActive, type AppLicense } from "./src/lib/licens
 import { isExternalSaasBilling } from "./src/lib/saasBilling";
 import { resolveSaasTenantId } from "./src/lib/saasAccess";
 import { signSaasAccessToken, verifySaasAccessToken } from "./src/server/saasAccessToken";
+import { isAllowedUpload, uploadSingleWithHandling } from "./src/server/multerUpload";
+import { applySensitiveRateLimits } from "./src/server/rateLimit";
+import { registerErrorHandlers } from "./src/server/errorHandler";
+import { applySecurityHeaders } from "./src/server/securityHeaders";
+import { logHttpRequest, logger } from "./src/server/logger";
+import {
+  resolveCatalogLicenseCheckout,
+  resolveCatalogSubscriptionCheckout,
+} from "./src/server/catalogCheckoutPricing";
+import {
+  assertFileAccess,
+  registerUploadedFile,
+  removeFileRegistryEntry,
+} from "./src/server/fileRegistry";
 
-const ALLOWED_UPLOAD_MIME_TYPES = new Set([
-  "application/pdf",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "text/plain",
-  "text/csv",
-  "application/zip",
-  "application/x-zip-compressed",
-  "application/octet-stream",
-]);
-
-const ALLOWED_UPLOAD_EXTENSIONS = new Set([
-  ".pdf",
-  ".doc",
-  ".docx",
-  ".xls",
-  ".xlsx",
-  ".jpg",
-  ".jpeg",
-  ".png",
-  ".webp",
-  ".txt",
-  ".csv",
-  ".zip",
-]);
 const DB_FILE_COLLECTION_PATH = "__file_blobs";
 const DB_FILE_PUBLIC_ID_PREFIX = "dbf/";
 const MAX_DB_FALLBACK_BYTES = 8 * 1024 * 1024; // 8 MB (reste sous la limite Mongo ~16 MB après base64)
@@ -105,13 +102,6 @@ function dbDocIdFromPublicId(publicId: string) {
   return publicId.slice(DB_FILE_PUBLIC_ID_PREFIX.length);
 }
 
-function isAllowedUpload(file: Express.Multer.File) {
-  const ext = path.extname(file.originalname || "").toLowerCase();
-  if (!ALLOWED_UPLOAD_EXTENSIONS.has(ext)) return false;
-  if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimetype || "")) return false;
-  return true;
-}
-
 function contentDispositionForDownload(storageKey: string, originalName: string, mimetype: string): string {
   const safeName = originalName.replace(/"/g, "");
   const key = storageKey.toLowerCase();
@@ -120,11 +110,47 @@ function contentDispositionForDownload(storageKey: string, originalName: string,
   return `${asAttachment ? "attachment" : "inline"}; filename="${safeName}"`;
 }
 
-function secureSecretEquals(expected: string, provided: string) {
-  const expectedBuf = Buffer.from(expected);
-  const providedBuf = Buffer.from(provided);
-  if (expectedBuf.length !== providedBuf.length) return false;
-  return timingSafeEqual(expectedBuf, providedBuf);
+function assertSecureStartup(): void {
+  const corsReport = assertProductionCorsPolicy(
+    buildStrictCorsOrigins(appEnv.http.corsOriginRaw),
+    appEnv.node.isProduction
+  );
+  if (!corsReport.ok) {
+    throw new Error(`Configuration CORS invalide:\n${formatCorsPolicyErrors(corsReport)}`);
+  }
+
+  const secretsReport = validateProductionSecrets({
+    isProduction: appEnv.node.isProduction,
+    databaseUrl: appEnv.database.url,
+    jwtSecret: appEnv.auth.getJwtSecret(),
+    paddeWebhookSecret: appEnv.webhooks.paddeWebhookSecret,
+    noyaWebhookSecret: appEnv.webhooks.noyaRecrutementWebhookSecret,
+    saasBridgeApiKey: String(process.env.SAAS_BRIDGE_API_KEY || ""),
+    stripeSecretKey: appEnv.stripe.secretKey,
+    stripeWebhookSecret: appEnv.stripe.webhookSecret,
+  });
+  if (!secretsReport.ok) {
+    throw new Error(`Configuration secrets invalide:\n${formatProductionSecretsErrors(secretsReport)}`);
+  }
+}
+
+function rejectUnauthorizedWebhook(
+  req: Request,
+  res: Response,
+  secretExpected: string,
+  allowPlainSecret: boolean
+): boolean {
+  if (!secretExpected.trim()) return false;
+  const auth = verifyInboundWebhookAuth({
+    secretExpected,
+    req,
+    rawBody: (req as Request & { rawBody?: Buffer }).rawBody,
+    isProduction: appEnv.node.isProduction,
+    allowPlainSecret,
+  });
+  if (auth.ok) return false;
+  res.status(401).json({ success: false, error: auth.reason || "Webhook non autorisé." });
+  return true;
 }
 
 async function readAuthenticatedUser(req: Request) {
@@ -137,11 +163,16 @@ async function requireAuthenticatedUser(req: Request, res: Response, next: NextF
   try {
     const auth = await readAuthenticatedUser(req);
     if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+    (req as Request & { authUser: AuthPayload }).authUser = auth;
     return next();
   } catch (error) {
     console.error("[auth] middleware user:", error);
     return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
   }
+}
+
+function requestAuthUser(req: Request): AuthPayload | null {
+  return (req as Request & { authUser?: AuthPayload }).authUser ?? null;
 }
 
 /** Liste audits PADDE-CI : même accès que la page /admin et /superadmin (admin + commando). */
@@ -187,13 +218,18 @@ function paddeClientNameFromPayload(payload: Record<string, unknown> | null | un
 
 /** Application Express (routes `/api/*`, `/health`) sans `listen` — utilisée par `startServer` et par le dev unifié Next+API. */
 export async function createExpressApplication(): Promise<{ app: Express; port: number }> {
+  assertSecureStartup();
+
   const app = express();
   const port = appEnv.http.port;
-  const corsOrigins = parseCorsOrigins(appEnv.http.corsOriginRaw);
+  const corsReport = buildStrictCorsOrigins(appEnv.http.corsOriginRaw);
+  const corsOrigins = corsReport.origins;
   const paddeAllowedOrigins = new Set(["https://padde-ci.com", "https://www.padde-ci.com"]);
   const noyaAllowedOrigins = new Set(["https://noyaindustries.com", "https://www.noyaindustries.com"]);
   const paddeWebhookSecret = appEnv.webhooks.paddeWebhookSecret;
   const noyaWebhookSecret = appEnv.webhooks.noyaRecrutementWebhookSecret;
+  const allowPlainWebhookSecret =
+    appEnv.node.isDevelopment || process.env.WEBHOOK_ALLOW_PLAIN_SECRET === "1";
   const stripeSecretKey = appEnv.stripe.secretKey;
   const stripeWebhookSecret = appEnv.stripe.webhookSecret;
   const r2AccountId = appEnv.r2.accountId;
@@ -270,6 +306,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     return customerId;
   };
 
+  applySecurityHeaders(app);
   app.use(
     cors({
       origin(origin, callback) {
@@ -289,22 +326,24 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS", "PUT", "HEAD"],
       // Inclure X-Webhook-Secret : sans lui, les POST cross-origin depuis padde-ci.com
       // vers /api/webhooks/padde-ci/direct échouent au préflight (navigateur).
-      allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With", "X-Webhook-Secret"],
+      allowedHeaders: [
+        "Content-Type",
+        "Authorization",
+        "X-Requested-With",
+        "X-Webhook-Secret",
+        "X-Webhook-Signature",
+      ],
       credentials: true,
     })
   );
-  app.use((_, res, next) => {
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
-    res.setHeader("X-Frame-Options", "DENY");
-    next();
-  });
+
   app.use(
     express.json({
       limit: "1mb",
       strict: true,
       verify: (req, _res, buf) => {
-        if ((req.url || "").startsWith("/api/stripe/webhook")) {
+        const path = req.url || "";
+        if (path.startsWith("/api/stripe/webhook") || path.startsWith("/api/webhooks/")) {
           (req as Request & { rawBody?: Buffer }).rawBody = Buffer.from(buf);
         }
       },
@@ -329,6 +368,14 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     const routePath = (req.path || req.url?.split("?")[0] || "").slice(0, 160);
     const requestId = String(req.headers["x-request-id"] || "unknown");
     res.on("finish", () => {
+      const durationMs = Date.now() - start;
+      logHttpRequest({
+        method: req.method || "GET",
+        path: routePath,
+        statusCode: res.statusCode,
+        durationMs,
+        requestId,
+      });
       // #region agent log
       agentSessionLog({
         hypothesisId: "H5",
@@ -338,7 +385,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           method: req.method,
           path: routePath,
           status: res.statusCode,
-          durationMs: Date.now() - start,
+          durationMs,
           requestId,
         },
       });
@@ -346,6 +393,8 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     });
     next();
   });
+
+  applySensitiveRateLimits(app);
 
   app.get("/health", (_req, res) => {
     res.status(200).json({
@@ -358,21 +407,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
 
   app.get("/api/apps/catalog", async (_req, res) => {
     try {
-      let stored = await loadAppCatalog();
-      const legacyIds = new Set([
-        "crm",
-        "finance",
-        "rh",
-        "projects",
-        "academy",
-        "comms",
-        "store",
-        "pack-croissance",
-        "pack-elite",
-      ]);
-      if (stored.some((a) => legacyIds.has(a.id))) {
-        stored = await saveAppCatalog(INFINITE_APP_CATALOG);
-      }
+      const stored = await loadAppCatalog();
       const apps = mergeCatalogWithDefaults(stored);
       return res.status(200).json({ success: true, apps });
     } catch (error) {
@@ -516,12 +551,17 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       if (!validated.success) {
         return res.status(400).json({ success: false, error: "Paramètres abonnement invalides.", details: validated.error.format() });
       }
-      const { serviceId, serviceName, note = "", amount, billingCycle, moduleKey: moduleKeyInput } = validated.data;
+      const { serviceId, note = "", billingCycle } = validated.data;
+      const billing = normalizeBillingCycle(billingCycle);
+      if (!billing) {
+        return res.status(400).json({ success: false, error: "Cycle de facturation invalide." });
+      }
       const catalog = await loadAppCatalog();
-      const catalogApp = catalog.find((a) => a.id === serviceId);
-      const moduleKey = moduleKeyInput || catalogApp?.moduleKey || serviceId;
-
-      const unitAmount = Math.round(amount);
+      const priced = resolveCatalogSubscriptionCheckout(catalog, serviceId, billing);
+      if (!priced.ok) {
+        return res.status(400).json({ success: false, error: priced.error });
+      }
+      const { unitAmount, serviceName, moduleKey } = priced;
       const orderId = `CMD-${randomUUID().split("-")[0].toUpperCase()}`;
       const customerId = await resolveStripeCustomerId({ uid: auth.uid, email: auth.email });
 
@@ -538,7 +578,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           appId: serviceId,
           appName: serviceName,
           moduleKey,
-          billingCycle,
+          billingCycle: billing,
           licenseType: "subscription",
         },
         subscription_data: {
@@ -557,7 +597,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
             price_data: {
               currency: "xof",
               unit_amount: unitAmount,
-              recurring: { interval: billingCycle },
+              recurring: { interval: billing },
               product_data: {
                 name: `${serviceName} — Abonnement SaaS`,
                 description: "Abonnement mensuel — application en ligne hébergée par Infinite Core (SaaS multi-tenant).",
@@ -584,7 +624,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
             moduleKey,
             orderType: "abonnement",
             isSubscription: true,
-            billingCycle,
+            billingCycle: billing,
             amount: unitAmount,
             currency: "XOF",
             note: note || null,
@@ -605,7 +645,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
             moduleKey,
             orderType: "abonnement",
             isSubscription: true,
-            billingCycle,
+            billingCycle: billing,
             amount: unitAmount,
             currency: "XOF",
             note: note || null,
@@ -649,10 +689,13 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         });
       }
 
-      const { appId, appName, moduleKey, amount, licenseDurationDays, note = "" } = validated.data;
-      const unitAmount = Math.round(amount);
-      const durationDays =
-        licenseDurationDays !== undefined && licenseDurationDays >= 0 ? licenseDurationDays : 0;
+      const { appId, licenseDurationDays, note = "" } = validated.data;
+      const catalog = await loadAppCatalog();
+      const priced = resolveCatalogLicenseCheckout(catalog, appId, licenseDurationDays);
+      if (!priced.ok) {
+        return res.status(400).json({ success: false, error: priced.error });
+      }
+      const { unitAmount, appName, moduleKey, licenseDurationDays: durationDays } = priced;
       const orderId = `CMD-${randomUUID().split("-")[0].toUpperCase()}`;
       const customerId = await resolveStripeCustomerId({ uid: auth.uid, email: auth.email });
 
@@ -1253,33 +1296,11 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     })
     : null;
 
-  const upload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
-  });
-  const uploadSingleWithHandling: express.RequestHandler = (req, res, next) => {
-    upload.single("file")(req, res, (error: unknown) => {
-      if (!error) return next();
-      if (error instanceof multer.MulterError) {
-        if (error.code === "LIMIT_FILE_SIZE") {
-          return res.status(413).json({
-            success: false,
-            error: "Fichier trop volumineux (max 50MB).",
-          });
-        }
-        return res.status(400).json({
-          success: false,
-          error: `Upload invalide: ${error.message}`,
-        });
-      }
-      const msg = error instanceof Error ? error.message : String(error);
-      console.error("[upload] middleware:", msg);
-      return res.status(400).json({ success: false, error: "Requête d'upload invalide." });
-    });
-  };
-
   app.post("/api/files/upload", requireAuthenticatedUser, uploadSingleWithHandling, async (req, res) => {
     try {
+      const auth = requestAuthUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+
       if (!req.file) {
         return res.status(400).json({ success: false, error: "Aucun fichier reçu." });
       }
@@ -1308,7 +1329,9 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
 
         const fileUrl = r2PublicBaseUrl
           ? `${r2PublicBaseUrl.replace(/\/$/, "")}/${objectKey}`
-          : buildFileUrl(objectKey);
+          : buildFileUrl(objectKey        );
+
+        await registerUploadedFile(objectKey, auth.uid, folder);
 
         return res.status(200).json({
           success: true,
@@ -1342,6 +1365,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
               originalName: req.file.originalname,
               mimetype: req.file.mimetype || "application/octet-stream",
               size: req.file.size,
+              ownerUid: auth.uid,
             } as never,
           },
           update: {
@@ -1350,9 +1374,11 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
               originalName: req.file.originalname,
               mimetype: req.file.mimetype || "application/octet-stream",
               size: req.file.size,
+              ownerUid: auth.uid,
             } as never,
           },
         });
+        await registerUploadedFile(dbPublicId, auth.uid, folder);
         return res.status(200).json({
           success: true,
           url: buildFileUrl(dbPublicId),
@@ -1370,6 +1396,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       }
       await fs.mkdir(path.dirname(absPath), { recursive: true });
       await fs.writeFile(absPath, req.file.buffer);
+      await registerUploadedFile(objectKey, auth.uid, folder);
 
       const fileUrl = buildFileUrl(objectKey);
       return res.status(200).json({
@@ -1382,20 +1409,26 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       });
     } catch (error) {
       console.error("Erreur upload API:", error);
-      const msg =
-        error instanceof Error && !appEnv.node.isProduction
-          ? `Erreur interne du serveur. ${error.message}`
-          : "Erreur interne du serveur.";
-      return res.status(500).json({ success: false, error: msg });
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
 
   app.delete("/api/files", requireAuthenticatedUser, async (req, res) => {
     try {
+      const auth = requestAuthUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+
       const safePath = normalizePublicIdQuery(String(req.query.publicId || ""));
       if (!safePath) {
         return res.status(400).json({ success: false, error: "publicId manquant." });
       }
+
+      const catalog = await loadAppCatalog();
+      const access = await assertFileAccess(auth, safePath, { catalog });
+      if (!access.ok) {
+        return res.status(access.status).json({ success: false, error: access.error });
+      }
+
       if (isDbStoredPublicId(safePath)) {
         const docId = dbDocIdFromPublicId(safePath);
         if (!docId) {
@@ -1404,6 +1437,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         await prisma.dataDocument.deleteMany({
           where: { collectionPath: DB_FILE_COLLECTION_PATH, docId },
         });
+        await removeFileRegistryEntry(safePath);
         return res.status(200).json({ success: true });
       }
 
@@ -1414,6 +1448,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
             Key: safePath,
           })
         );
+        await removeFileRegistryEntry(safePath);
         return res.status(200).json({ success: true });
       }
       if (!canUseLocalDiskFallback) {
@@ -1430,6 +1465,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         const code = e && typeof e === "object" && "code" in e ? (e as NodeJS.ErrnoException).code : "";
         if (code !== "ENOENT") throw e;
       }
+      await removeFileRegistryEntry(safePath);
       return res.status(200).json({ success: true });
     } catch (error) {
       console.error("Erreur suppression API:", error);
@@ -1439,10 +1475,20 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
 
   app.get("/api/files/download", requireAuthenticatedUser, async (req, res) => {
     try {
+      const auth = requestAuthUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+
       const safePath = normalizePublicIdQuery(String(req.query.publicId || ""));
       if (!safePath) {
         return res.status(400).json({ success: false, error: "publicId manquant." });
       }
+
+      const catalog = await loadAppCatalog();
+      const access = await assertFileAccess(auth, safePath, { catalog });
+      if (!access.ok) {
+        return res.status(access.status).json({ success: false, error: access.error });
+      }
+
       if (isDbStoredPublicId(safePath)) {
         const docId = dbDocIdFromPublicId(safePath);
         if (!docId) {
@@ -1792,31 +1838,19 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     return { auditId };
   };
 
-  /** Secret fourni par l’appelant : header (recommandé), puis corps JSON `webhookSecret` / `secret`, puis `?secret=`. */
-  const extractPaddeProvidedSecret = (req: Request): string => {
-    const headerSecret = String(req.headers["x-webhook-secret"] || "").trim();
-    if (headerSecret) return headerSecret;
-    if (req.body && typeof req.body === "object" && !Array.isArray(req.body)) {
-      const b = req.body as Record<string, unknown>;
-      const bodySecret = String(b.webhookSecret ?? b.secret ?? "").trim();
-      if (bodySecret) return bodySecret;
-    }
-    const qRaw = req.query?.secret;
-    const qSecret = (Array.isArray(qRaw) ? String(qRaw[0] ?? "") : String(qRaw ?? "")).trim();
-    if (qSecret) return qSecret;
-    return "";
-  };
-
-  const bodyWithoutWebhookSecrets = (body: unknown): unknown => {
-    if (!body || typeof body !== "object" || Array.isArray(body)) return body;
-    const o = { ...(body as Record<string, unknown>) };
-    delete o.webhookSecret;
-    delete o.secret;
-    return o;
-  };
-
+  /** Secret fourni par l’appelant (legacy) — préférer X-Webhook-Signature HMAC. */
   const paddeSecretExpected = paddeWebhookSecret.trim();
   const noyaSecretExpected = noyaWebhookSecret.trim();
+
+  const webhookAuthHint = (secretConfigured: boolean) => {
+    if (!secretConfigured) {
+      return "Aucun secret webhook : les POST JSON sont acceptés sans authentification (évitez en prod).";
+    }
+    if (appEnv.node.isProduction && !allowPlainWebhookSecret) {
+      return "En production : header X-Webhook-Signature: sha256=<HMAC-SHA256 du corps JSON brut> avec le secret configuré.";
+    }
+    return "Auth acceptée : X-Webhook-Signature (HMAC-SHA256) ou X-Webhook-Secret legacy (dev / WEBHOOK_ALLOW_PLAIN_SECRET=1).";
+  };
 
   const normalizeLower = (value: unknown) => String(value || "").trim().toLowerCase();
   const normalizeText = (value: unknown) => String(value || "").trim();
@@ -1841,15 +1875,13 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       ok: true,
       databaseConfigured: Boolean(appEnv.database.url),
       webhookSecretConfigured: noyaSecretExpected.length > 0,
+      webhookHmacRequired: noyaSecretExpected.length > 0 && appEnv.node.isProduction && !allowPlainWebhookSecret,
       partnerMappingConfigured: configuredPartnerId.length > 0,
       noyaPartnerId: configuredPartnerId || null,
       nodeEnv: appEnv.node.env,
       vercel: Boolean(process.env.VERCEL),
       vercelEnv: process.env.VERCEL_ENV || null,
-      hint:
-        noyaSecretExpected.length > 0
-          ? "L’API exige le même secret que NOYA_RECRUTEMENT_WEBHOOK_SECRET (header X-Webhook-Secret ou champs JSON webhookSecret / secret)."
-          : "Aucun NOYA_RECRUTEMENT_WEBHOOK_SECRET : les POST JSON sont acceptés sans secret (évitez en prod).",
+      hint: webhookAuthHint(noyaSecretExpected.length > 0),
     });
   });
 
@@ -1877,15 +1909,19 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         payload[normalizedKey] = value;
       }
 
-      const providedSecret = extractPaddeProvidedSecret(req);
+      const providedSecret = verifyInboundWebhookAuth({
+        secretExpected: noyaSecretExpected,
+        req,
+        rawBody: (req as Request & { rawBody?: Buffer }).rawBody,
+        isProduction: appEnv.node.isProduction,
+        allowPlainSecret: allowPlainWebhookSecret,
+      });
       delete payload.webhooksecret;
       delete payload.secret;
       delete payload.webhook_secret;
 
-      if (noyaSecretExpected) {
-        if (!providedSecret || !secureSecretEquals(noyaSecretExpected, providedSecret)) {
-          return res.status(401).json({ success: false, error: "Webhook non autorisé." });
-        }
+      if (noyaSecretExpected && !providedSecret.ok) {
+        return res.status(401).json({ success: false, error: providedSecret.reason || "Webhook non autorisé." });
       }
 
       const firstName = normalizeText(
@@ -2076,26 +2112,19 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       ok: true,
       databaseConfigured: Boolean(appEnv.database.url),
       webhookSecretConfigured: paddeSecretExpected.length > 0,
+      webhookHmacRequired: paddeSecretExpected.length > 0 && appEnv.node.isProduction && !allowPlainWebhookSecret,
       nodeEnv: appEnv.node.env,
       vercel: Boolean(process.env.VERCEL),
       /** Sur Vercel : production | preview | development — les variables peuvent différer par environnement. */
       vercelEnv: process.env.VERCEL_ENV || null,
-      hint:
-        paddeSecretExpected.length > 0
-          ? "L’API exige le même secret que PADDE_WEBHOOK_SECRET (header X-Webhook-Secret ou champs JSON webhookSecret / secret)."
-          : "Aucun PADDE_WEBHOOK_SECRET : les POST JSON sont acceptés sans secret (évitez en prod).",
+      hint: webhookAuthHint(paddeSecretExpected.length > 0),
     });
   });
 
   // Webhook PADDE-CI standard — appel serveur-à-serveur (header secret recommandé).
   app.post("/api/webhooks/padde-ci", async (req, res) => {
     try {
-      if (paddeSecretExpected) {
-        const provided = extractPaddeProvidedSecret(req);
-        if (!provided || !secureSecretEquals(paddeSecretExpected, provided)) {
-          return res.status(401).json({ success: false, error: "Webhook non autorisé." });
-        }
-      }
+      if (rejectUnauthorizedWebhook(req, res, paddeSecretExpected, allowPlainWebhookSecret)) return;
       if (!appEnv.database.url) {
         return res.status(503).json({
           success: false,
@@ -2120,15 +2149,10 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
 
       const bodyPayload =
         req.body && typeof req.body === "object" ? ({ ...(req.body as Record<string, unknown>) } as Record<string, unknown>) : {};
-      const providedSecret = extractPaddeProvidedSecret(req);
       delete bodyPayload.webhookSecret;
       delete bodyPayload.secret;
 
-      if (paddeSecretExpected) {
-        if (!providedSecret || !secureSecretEquals(paddeSecretExpected, providedSecret)) {
-          return res.status(401).json({ success: false, error: "Webhook non autorisé." });
-        }
-      }
+      if (rejectUnauthorizedWebhook(req, res, paddeSecretExpected, allowPlainWebhookSecret)) return;
       if (!appEnv.database.url) {
         return res.status(503).json({
           success: false,
@@ -2294,13 +2318,15 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
 
   // L’UI est servie par Next.js (`next dev` / `next start`) sauf en dev unifié (`scripts/devUnified.ts`).
 
+  registerErrorHandlers(app);
+
   return { app, port };
 }
 
 async function startServer() {
   const { app, port } = await createExpressApplication();
   app.listen(port, "0.0.0.0", () => {
-    console.log(`[infinitecore-api] http://0.0.0.0:${port}`);
+    logger.info("api_listening", { port, host: "0.0.0.0" });
   });
 }
 

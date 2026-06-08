@@ -22,7 +22,8 @@ function secureEquals(expected: string, provided: string): boolean {
 
 export function verifySaasBridgeAuth(headerValue: string | undefined): boolean {
   const expected = bridgeApiKey();
-  if (!expected) return true;
+  const isProduction = (process.env.NODE_ENV || "development") === "production";
+  if (!expected) return !isProduction;
   const provided = String(headerValue || "").trim();
   if (!provided) return false;
   return secureEquals(expected, provided);

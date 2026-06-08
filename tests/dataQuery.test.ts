@@ -14,11 +14,13 @@ const parsed = parseDataQueryInput({
   offset: 20,
 });
 
+assert.equal(parsed.invalid, false);
 assert.equal(parsed.collectionPathRaw, " users ");
 assert.equal(parsed.limit, 1000);
 assert.equal(parsed.offset, 20);
 
 const defaultParsed = parseDataQueryInput({});
+assert.equal(defaultParsed.invalid, false);
 assert.equal(defaultParsed.limit, 100);
 assert.equal(defaultParsed.offset, 0);
 

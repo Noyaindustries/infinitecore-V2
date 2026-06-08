@@ -3,7 +3,11 @@ import { createPortal } from 'react-dom';
 import { Plus, Save, X } from 'lucide-react';
 import {
   formatFcfa,
+  hasLicensePricing,
+  hasSubscriptionPricing,
   isBuiltInAppId,
+  setLicensePricingEnabled,
+  setSubscriptionPricingEnabled,
   slugifyAppId,
   type AppCatalogEntry,
   type AppLicensePricing,
@@ -103,7 +107,7 @@ export default function AppCatalogEditorModal({ mode, draft, onChange, onClose, 
                 {isCreate ? 'Créer une application' : draft.title || 'Sans titre'}
               </h2>
               <p className="mt-1 text-xs text-text-muted">
-                Même formulaire pour la création et l’édition — pensez à enregistrer le catalogue en haut de page.
+                Même formulaire pour la création et l’édition — cliquez sur Appliquer pour sauvegarder en base.
               </p>
             </div>
             <button
@@ -217,46 +221,80 @@ export default function AppCatalogEditorModal({ mode, draft, onChange, onClose, 
             <div className="mt-4 rounded-xl border border-noya-orange/25 bg-noya-orange/5 p-4">
               <p className="text-xs font-bold uppercase tracking-wider text-noya-orange">Tarifs (FCFA)</p>
               <p className="mt-1 text-xs text-text-muted">
-                Licence à vie : client héberge. Abonnement : SaaS en ligne par Infinite Core.
+                Cochez les offres proposées. Licence à vie : client héberge. Abonnement : SaaS en ligne par Infinite Core.
               </p>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
-                {license ? (
-                  <div>
-                    <label htmlFor="editor-license-price" className="mb-1 block text-xs font-semibold text-text-secondary">
-                      Licence à vie — auto-hébergée
-                    </label>
+                <div className={`rounded-lg border p-3 ${hasLicensePricing(draft) ? 'border-border bg-noya-black/40' : 'border-border/60 bg-noya-black/20 opacity-80'}`}>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-text-primary">
                     <input
-                      id="editor-license-price"
-                      type="number"
-                      min={0}
-                      step={1000}
-                      value={license.price}
-                      onChange={(e) => onChange(patchLicensePrice(draft, Number(e.target.value)))}
-                      className="w-full rounded-lg border border-border bg-noya-black px-3 py-2 text-sm font-bold text-text-primary"
+                      type="checkbox"
+                      checked={hasLicensePricing(draft)}
+                      onChange={(e) => onChange(setLicensePricingEnabled(draft, e.target.checked))}
+                      className="accent-noya-orange"
                     />
-                    <p className="mt-1 text-xs text-text-muted">
-                      {formatFcfa(license.price)} — à vie, hébergement client
-                    </p>
-                  </div>
-                ) : null}
-                {subscription ? (
-                  <div>
-                    <label htmlFor="editor-sub-price" className="mb-1 block text-xs font-semibold text-text-secondary">
-                      Abonnement / mois — SaaS en ligne
-                    </label>
+                    Licence à vie — auto-hébergée
+                  </label>
+                  {license ? (
+                    <>
+                      <label htmlFor="editor-license-price" className="mb-1 mt-3 block text-xs font-semibold text-text-secondary">
+                        Montant (FCFA)
+                      </label>
+                      <input
+                        id="editor-license-price"
+                        type="number"
+                        min={0}
+                        step={1000}
+                        value={license.price}
+                        onChange={(e) => onChange(patchLicensePrice(draft, Number(e.target.value)))}
+                        className="w-full rounded-lg border border-border bg-noya-black px-3 py-2 text-sm font-bold text-text-primary"
+                      />
+                      <p className="mt-1 text-xs text-text-muted">
+                        {formatFcfa(license.price)} — à vie, hébergement client
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-xs text-text-muted">Non proposée aux clients.</p>
+                  )}
+                </div>
+
+                <div className={`rounded-lg border p-3 ${hasSubscriptionPricing(draft) ? 'border-border bg-noya-black/40' : 'border-border/60 bg-noya-black/20 opacity-80'}`}>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-text-primary">
                     <input
-                      id="editor-sub-price"
-                      type="number"
-                      min={0}
-                      step={500}
-                      value={subscription.price}
-                      onChange={(e) => onChange(patchSubscriptionPrice(draft, Number(e.target.value)))}
-                      className="w-full rounded-lg border border-border bg-noya-black px-3 py-2 text-sm font-bold text-text-primary"
+                      type="checkbox"
+                      checked={hasSubscriptionPricing(draft)}
+                      onChange={(e) => onChange(setSubscriptionPricingEnabled(draft, e.target.checked))}
+                      className="accent-noya-orange"
                     />
-                    <p className="mt-1 text-xs text-text-muted">
-                      {formatFcfa(subscription.price)} / mois — Infinite Core
-                    </p>
-                    <label htmlFor="editor-saas-url" className="mb-1 mt-3 block text-xs font-semibold text-text-secondary">
+                    Abonnement / mois — SaaS en ligne
+                  </label>
+                  {subscription ? (
+                    <>
+                      <label htmlFor="editor-sub-price" className="mb-1 mt-3 block text-xs font-semibold text-text-secondary">
+                        Montant / mois (FCFA)
+                      </label>
+                      <input
+                        id="editor-sub-price"
+                        type="number"
+                        min={0}
+                        step={500}
+                        value={subscription.price}
+                        onChange={(e) => onChange(patchSubscriptionPrice(draft, Number(e.target.value)))}
+                        className="w-full rounded-lg border border-border bg-noya-black px-3 py-2 text-sm font-bold text-text-primary"
+                      />
+                      <p className="mt-1 text-xs text-text-muted">
+                        {formatFcfa(subscription.price)} / mois — Infinite Core
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-2 text-xs text-text-muted">Non proposée aux clients.</p>
+                  )}
+                </div>
+              </div>
+
+              {subscription ? (
+                <div className="mt-4 space-y-0 rounded-lg border border-border/80 bg-noya-black/30 p-3">
+                  <p className="mb-3 text-xs font-bold uppercase tracking-wider text-text-muted">Options SaaS (abonnement)</p>
+                    <label htmlFor="editor-saas-url" className="mb-1 block text-xs font-semibold text-text-secondary">
                       URL SaaS (abonnement)
                     </label>
                     <input
@@ -401,9 +439,8 @@ export default function AppCatalogEditorModal({ mode, draft, onChange, onClose, 
                     <p className="mt-1 text-xs text-text-muted">
                       Header <code className="text-[10px]">X-InfiniteCore-SaaS-Key</code> = SAAS_BRIDGE_API_KEY
                     </p>
-                  </div>
-                ) : null}
-              </div>
+                </div>
+              ) : null}
               {!draft.onlineCheckout && (
                 <p className="mt-3 text-xs text-noya-blue">
                   Tarifs affichés seulement. Activez le paiement en ligne pour l’achat direct.

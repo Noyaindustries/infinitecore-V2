@@ -34,10 +34,16 @@ export default function AppCatalogBoutiqueCard({ app, buyTo, buyLabel }: Props) 
               <p className="text-[11px] text-[#6B7280]">SaaS — hébergé par Infinite Core</p>
             </div>
           )}
-          {license && (
+          {license && sub && (
             <p className="text-xs text-[#8D98AA]">
               ou licence à vie {formatFcfa(license.price)} — auto-hébergée
             </p>
+          )}
+          {license && !sub && (
+            <div>
+              <p className="font-bold text-[#FFB332]">{formatFcfa(license.price)}</p>
+              <p className="text-[11px] text-[#6B7280]">Licence à vie — auto-hébergée</p>
+            </div>
           )}
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-4">
