@@ -67,7 +67,7 @@ function agentSessionLog(payload) {
 
 // server.ts
 var import_multer = __toESM(require("multer"), 1);
-var import_crypto3 = require("crypto");
+var import_crypto5 = require("crypto");
 var import_client_s32 = require("@aws-sdk/client-s3");
 var import_s3_request_presigner2 = require("@aws-sdk/s3-request-presigner");
 var import_stripe = __toESM(require("stripe"), 1);
@@ -118,18 +118,20 @@ function int(key, fallback) {
   const n = Number.parseInt(process.env[key] || "", 10);
   return Number.isFinite(n) ? n : fallback;
 }
-var NODE_ENV = process.env.NODE_ENV || "development";
+function currentNodeEnv() {
+  return process.env.NODE_ENV || "development";
+}
 function databaseUrlForPrisma() {
   const trimmed = str("DATABASE_URL");
   if (!trimmed || /serverSelectionTimeoutMS=/i.test(trimmed)) return trimmed;
-  const ms = str("MONGODB_SERVER_SELECTION_TIMEOUT_MS") || (NODE_ENV === "development" ? "10000" : "8000");
+  const ms = str("MONGODB_SERVER_SELECTION_TIMEOUT_MS") || (currentNodeEnv() === "development" ? "10000" : "8000");
   const sep = trimmed.includes("?") ? "&" : "?";
   return `${trimmed}${sep}serverSelectionTimeoutMS=${encodeURIComponent(ms)}&connectTimeoutMS=${encodeURIComponent(ms)}`;
 }
 function getJwtSecret() {
   const envSecret = str("NEXTAUTH_SECRET") || str("JWT_SECRET");
   if (envSecret) return envSecret;
-  if (NODE_ENV === "production") {
+  if (currentNodeEnv() === "production") {
     throw new Error("NEXTAUTH_SECRET ou JWT_SECRET est requis en production.");
   }
   return "dev-secret-change-me";
@@ -137,6 +139,9 @@ function getJwtSecret() {
 function resetAppBaseUrl() {
   const raw = str("NEXTAUTH_URL") || str("APP_BASE_URL") || "http://localhost:3000";
   return raw.replace(/\/$/, "");
+}
+function authUsesSecureCookies() {
+  return resetAppBaseUrl().startsWith("https://");
 }
 function parseCorsOrigins(raw) {
   const seen = /* @__PURE__ */ new Set();
@@ -154,12 +159,14 @@ function parseCorsOrigins(raw) {
 }
 var appEnv = {
   node: {
-    env: NODE_ENV,
+    get env() {
+      return currentNodeEnv();
+    },
     get isProduction() {
-      return NODE_ENV === "production";
+      return currentNodeEnv() === "production";
     },
     get isDevelopment() {
-      return NODE_ENV === "development";
+      return currentNodeEnv() === "development";
     }
   },
   database: {
@@ -517,8 +524,8 @@ function isOrdersPaddeCiSourceOnlyQuery(collectionPath, filters) {
   const f = filters[0];
   return f.field === "source" && f.operator === "==" && String(f.value) === "padde-ci";
 }
-function registerDataRoutes(app, deps) {
-  app.post("/api/data/query", async (req, res) => {
+function registerDataRoutes(app2, deps) {
+  app2.post("/api/data/query", async (req, res) => {
     try {
       const auth = await deps.requireAuth(req, res);
       if (!auth) return;
@@ -599,7 +606,7 @@ function registerDataRoutes(app, deps) {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.get("/api/data/doc", async (req, res) => {
+  app2.get("/api/data/doc", async (req, res) => {
     try {
       const auth = await deps.requireAuth(req, res);
       if (!auth) return;
@@ -624,7 +631,7 @@ function registerDataRoutes(app, deps) {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.post("/api/data/doc", async (req, res) => {
+  app2.post("/api/data/doc", async (req, res) => {
     try {
       const auth = await deps.requireAuth(req, res);
       if (!auth) return;
@@ -651,7 +658,7 @@ function registerDataRoutes(app, deps) {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.patch("/api/data/doc", async (req, res) => {
+  app2.patch("/api/data/doc", async (req, res) => {
     try {
       const auth = await deps.requireAuth(req, res);
       if (!auth) return;
@@ -686,7 +693,7 @@ function registerDataRoutes(app, deps) {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.delete("/api/data/doc", async (req, res) => {
+  app2.delete("/api/data/doc", async (req, res) => {
     try {
       const auth = await deps.requireAuth(req, res);
       if (!auth) return;
@@ -758,11 +765,30 @@ var UserProfileSchema = import_zod.z.object({
   companyName: import_zod.z.string().optional(),
   photoURL: import_zod.z.string().url().optional().or(import_zod.z.literal(""))
 });
+var billingCycleSchema = import_zod.z.preprocess(
+  (val) => {
+    const v = String(val ?? "").trim().toLowerCase();
+    if (["mensuel", "monthly", "month", "mois"].includes(v)) return "month";
+    if (["annuel", "yearly", "annual", "year", "an"].includes(v)) return "year";
+    return val;
+  },
+  import_zod.z.enum(["month", "year"])
+);
 var OrderSchema = import_zod.z.object({
   serviceId: import_zod.z.string().min(1),
   serviceName: import_zod.z.string().min(1),
   amount: import_zod.z.number().positive(),
-  billingCycle: import_zod.z.enum(["month", "year"]),
+  billingCycle: billingCycleSchema,
+  moduleKey: import_zod.z.string().optional(),
+  note: import_zod.z.string().optional()
+});
+var LicenseCheckoutSchema = import_zod.z.object({
+  appId: import_zod.z.string().min(1),
+  appName: import_zod.z.string().min(1),
+  moduleKey: import_zod.z.string().min(1),
+  amount: import_zod.z.number().positive(),
+  /** 0 = licence à vie ; > 0 = durée limitée en jours. */
+  licenseDurationDays: import_zod.z.number().int().min(0).optional(),
   note: import_zod.z.string().optional()
 });
 var PaddeAuditPayloadSchema = import_zod.z.record(import_zod.z.string(), import_zod.z.unknown()).and(
@@ -801,6 +827,8 @@ var AUTH_RATE_BLOCK_MS = 20 * 60 * 1e3;
 var RESET_TOKEN_TTL_MS = 30 * 60 * 1e3;
 var LOGIN_VERIFICATION_TTL_MS = 10 * 60 * 1e3;
 var LOGIN_VERIFICATION_MAX_ATTEMPTS = 5;
+var E2E_TEST_EMAIL_SUFFIX = "@infinitecore.local";
+var E2E_FIXED_LOGIN_CODE = "424242";
 var USER_FIELDS = [
   "uid",
   "email",
@@ -846,6 +874,15 @@ function generateNumericCode(length = 6) {
   const min = 10 ** (length - 1);
   const max = 10 ** length - 1;
   return String(Math.floor(min + Math.random() * (max - min + 1)));
+}
+function isLocalHttpDevApp() {
+  return !resetAppBaseUrl().startsWith("https://");
+}
+function loginVerificationCodeForEmail(email) {
+  if (isLocalHttpDevApp() && isE2eTestAccountEmail(email)) {
+    return E2E_FIXED_LOGIN_CODE;
+  }
+  return generateNumericCode(6);
 }
 async function sendLoginVerificationEmail(input) {
   const transporter = getSmtpTransport();
@@ -916,11 +953,11 @@ function signAuthToken(payload) {
   });
 }
 function authCookieOptions() {
-  const domain = appEnv.auth.cookieDomain;
+  const domain = appEnv.node.isDevelopment ? void 0 : appEnv.auth.cookieDomain;
   return {
     httpOnly: true,
     sameSite: "lax",
-    secure: appEnv.node.isProduction,
+    secure: authUsesSecureCookies(),
     path: "/",
     maxAge: AUTH_COOKIE_TTL_MS,
     ...domain ? { domain } : {}
@@ -930,11 +967,11 @@ function setAuthCookie(res, token) {
   res.cookie(AUTH_COOKIE_NAME, token, authCookieOptions());
 }
 function clearAuthCookie(res) {
-  const domain = appEnv.auth.cookieDomain;
+  const domain = appEnv.node.isDevelopment ? void 0 : appEnv.auth.cookieDomain;
   res.clearCookie(AUTH_COOKIE_NAME, {
     httpOnly: true,
     sameSite: "lax",
-    secure: appEnv.node.isProduction,
+    secure: authUsesSecureCookies(),
     path: "/",
     ...domain ? { domain } : {}
   });
@@ -988,6 +1025,16 @@ function parseAuthFromRequest(req) {
 var VALID_ROLES = /* @__PURE__ */ new Set(["admin", "commando", "developer", "partner", "client"]);
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
+}
+function isE2eTestAccountEmail(email) {
+  return String(email || "").trim().toLowerCase().endsWith(E2E_TEST_EMAIL_SUFFIX);
+}
+function shouldSkipLoginVerificationForE2e(email) {
+  if (!isE2eTestAccountEmail(email)) return false;
+  if (process.env.E2E_DISABLE_TEST_LOGIN_BYPASS === "1") return false;
+  if (process.env.E2E_SKIP_LOGIN_VERIFICATION === "1") return true;
+  if (isLocalHttpDevApp()) return true;
+  return !appEnv.node.isProduction;
 }
 function isStrongPassword(password) {
   if (password.length < 8 || password.length > 128) return false;
@@ -1262,6 +1309,7 @@ function getAllowedPrefixes(role, op) {
       "dossier_steps",
       "payments",
       "orders",
+      "licenses",
       "logs",
       "chats",
       "documents",
@@ -1281,7 +1329,7 @@ function getAllowedPrefixes(role, op) {
     return ["users", "notifications", "leads", "missions", "payments", "orders", "chats", "resources"];
   }
   if (role === "client") {
-    if (op === "read") return ["users", "notifications", "missions", "dossier_steps", "payments", "orders", "chats"];
+    if (op === "read") return ["users", "notifications", "missions", "dossier_steps", "payments", "orders", "licenses", "chats"];
     return ["users", "notifications", "chats", "dossier_steps", "orders"];
   }
   return [];
@@ -1299,6 +1347,7 @@ function hasClientScopedFilters(auth, collectionPath, filters) {
   if (isPath(collectionPath, "dossier_steps")) return eq("clientId", auth.uid);
   if (isPath(collectionPath, "payments")) return eq("userId", auth.uid) || eq("clientId", auth.uid);
   if (isPath(collectionPath, "orders")) return eq("userId", auth.uid) || eq("clientId", auth.uid);
+  if (isPath(collectionPath, "licenses")) return eq("userId", auth.uid);
   if (isPath(collectionPath, "chats")) return eq("clientId", auth.uid);
   if (isPathPrefix(collectionPath, "chats/")) {
     const parts = collectionPath.split("/");
@@ -1309,6 +1358,7 @@ function hasClientScopedFilters(auth, collectionPath, filters) {
 function hasClientScopedDocumentAccess(auth, collectionPath, docId) {
   if (isPath(collectionPath, "users")) return docId === auth.uid;
   if (isPath(collectionPath, "chats")) return docId === auth.uid;
+  if (isPath(collectionPath, "licenses")) return docId.startsWith(`${auth.uid}__`);
   if (isPathPrefix(collectionPath, "chats/")) {
     const parts = collectionPath.split("/");
     return parts[0] === "chats" && parts[1] === auth.uid;
@@ -1438,6 +1488,24 @@ async function upsertDataDocument(collectionPath, docId, data, merge) {
     update: { data: nextData }
   });
 }
+function buildAuthLoginUserResponse(account) {
+  return {
+    uid: account.uid,
+    email: account.email,
+    role: account.role,
+    displayName: [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email
+  };
+}
+async function respondWithAuthenticatedLogin(res, account) {
+  await ensureUserDocumentFromAccount(account);
+  const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+  setAuthCookie(res, token);
+  return res.status(200).json({
+    success: true,
+    token,
+    user: buildAuthLoginUserResponse(account)
+  });
+}
 async function ensureUserDocumentFromAccount(account) {
   const profile = coerceRecord(account.profile);
   await upsertDataDocument(
@@ -1464,11 +1532,11 @@ async function ensureUserDocumentFromAccount(account) {
     true
   );
 }
-function registerMongoApi(app) {
+function registerMongoApi(app2) {
   const dbUrl = appEnv.database.url;
   const dbMasked = dbUrl ? `${dbUrl.slice(0, 15)}...${dbUrl.slice(-10)}` : "NON_DEFINIE";
   console.log(`[mongoApi] Initialisation. DB: ${dbMasked}. CORS: ${appEnv.http.corsOriginRaw}`);
-  app.get("/api/auth/me", async (req, res) => {
+  app2.get("/api/auth/me", async (req, res) => {
     try {
       const auth = parseAuth(req);
       if (!auth) return res.status(401).json({ success: false, error: "Non authentifi\xE9." });
@@ -1515,7 +1583,7 @@ function registerMongoApi(app) {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.patch("/api/auth/profile", async (req, res) => {
+  app2.patch("/api/auth/profile", async (req, res) => {
     try {
       const auth = await requireAuth(req, res);
       if (!auth) return;
@@ -1551,7 +1619,7 @@ function registerMongoApi(app) {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.post("/api/auth/register", async (req, res) => {
+  app2.post("/api/auth/register", async (req, res) => {
     try {
       const validated = AuthRegisterSchema.safeParse(req.body);
       if (!validated.success) {
@@ -1651,7 +1719,7 @@ function registerMongoApi(app) {
       return sendAuthPrismaError(res, "[auth/register]", error);
     }
   });
-  app.post("/api/auth/register/verify", async (req, res) => {
+  app2.post("/api/auth/register/verify", async (req, res) => {
     try {
       const email = String(req.body?.email || "").trim().toLowerCase();
       const challengeId = String(req.body?.challengeId || "").trim();
@@ -1757,7 +1825,7 @@ function registerMongoApi(app) {
       return sendAuthPrismaError(res, "[auth/register/verify]", error);
     }
   });
-  app.get("/api/auth/referral", async (req, res) => {
+  app2.get("/api/auth/referral", async (req, res) => {
     try {
       const refRaw = String(req.query.ref || "").trim();
       if (!refRaw) {
@@ -1781,7 +1849,7 @@ function registerMongoApi(app) {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.post("/api/auth/referral-signup-notify", async (req, res) => {
+  app2.post("/api/auth/referral-signup-notify", async (req, res) => {
     try {
       const auth = await requireAuth(req, res);
       if (!auth) return;
@@ -1935,7 +2003,7 @@ Code parrainage : ${referralCode}`
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.post("/api/auth/login", async (req, res) => {
+  app2.post("/api/auth/login", async (req, res) => {
     const loginT0 = Date.now();
     try {
       if (!appEnv.database.url) {
@@ -1999,8 +2067,12 @@ Code parrainage : ${referralCode}`
         await registerAuthFailure(authKey);
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
+      if (shouldSkipLoginVerificationForE2e(email)) {
+        await clearAuthFailures(authKey);
+        return respondWithAuthenticatedLogin(res, account);
+      }
       const challengeId = (0, import_crypto2.randomUUID)().replace(/-/g, "");
-      const verificationCode = generateNumericCode(6);
+      const verificationCode = loginVerificationCodeForEmail(email);
       const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
       await upsertDataDocument(
         "auth_login_verifications",
@@ -2020,7 +2092,7 @@ Code parrainage : ${referralCode}`
         to: account.email,
         code: verificationCode
       });
-      if (!mailResult.delivered) {
+      if (!mailResult.delivered && !shouldSkipLoginVerificationForE2e(email)) {
         await prisma.dataDocument.delete({
           where: { collectionPath_docId: { collectionPath: "auth_login_verifications", docId: challengeId } }
         });
@@ -2049,11 +2121,11 @@ Code parrainage : ${referralCode}`
       return sendAuthPrismaError(res, "[auth/login]", error);
     }
   });
-  app.post("/api/auth/logout", async (_req, res) => {
+  app2.post("/api/auth/logout", async (_req, res) => {
     clearAuthCookie(res);
     return res.status(200).json({ success: true });
   });
-  app.post("/api/chats/client-email-notify", async (req, res) => {
+  app2.post("/api/chats/client-email-notify", async (req, res) => {
     try {
       const auth = await requireAuth(req, res);
       if (!auth) return;
@@ -2120,7 +2192,7 @@ Code parrainage : ${referralCode}`
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.post("/api/auth/login/verify", async (req, res) => {
+  app2.post("/api/auth/login/verify", async (req, res) => {
     try {
       const email = String(req.body?.email || "").trim().toLowerCase();
       const challengeId = String(req.body?.challengeId || "").trim();
@@ -2181,18 +2253,14 @@ Code parrainage : ${referralCode}`
       setAuthCookie(res, token);
       return res.status(200).json({
         success: true,
-        user: {
-          uid: account.uid,
-          email: account.email,
-          role: account.role,
-          displayName: [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email
-        }
+        token,
+        user: buildAuthLoginUserResponse(account)
       });
     } catch (error) {
       return sendAuthPrismaError(res, "[auth/login/verify]", error);
     }
   });
-  app.post("/api/auth/google", async (req, res) => {
+  app2.post("/api/auth/google", async (req, res) => {
     try {
       const staffOnly = Boolean(req.body?.staffOnly);
       const accessToken = String(req.body?.accessToken || "").trim();
@@ -2364,7 +2432,7 @@ Code parrainage : ${referralCode}`
       return sendAuthPrismaError(res, "[auth/google]", error);
     }
   });
-  app.post("/api/auth/admin-role", async (req, res) => {
+  app2.post("/api/auth/admin-role", async (req, res) => {
     try {
       const auth = await requireAuth(req, res);
       if (!auth) return;
@@ -2439,7 +2507,7 @@ Code parrainage : ${referralCode}`
       return sendAuthPrismaError(res, "[auth/admin-role]", error);
     }
   });
-  app.post("/api/auth/admin-create", async (req, res) => {
+  app2.post("/api/auth/admin-create", async (req, res) => {
     try {
       const auth = await requireAuth(req, res);
       if (!auth) return;
@@ -2517,7 +2585,7 @@ Code parrainage : ${referralCode}`
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.post("/api/auth/password-reset/request", async (req, res) => {
+  app2.post("/api/auth/password-reset/request", async (req, res) => {
     try {
       const email = String(req.body?.email || "").trim().toLowerCase();
       if (!email || !isValidEmail(email)) {
@@ -2565,7 +2633,7 @@ Code parrainage : ${referralCode}`
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.post("/api/auth/password-reset/confirm", async (req, res) => {
+  app2.post("/api/auth/password-reset/confirm", async (req, res) => {
     try {
       const email = String(req.body?.email || "").trim().toLowerCase();
       const token = String(req.body?.token || "").trim();
@@ -2618,7 +2686,7 @@ Code parrainage : ${referralCode}`
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  registerDataRoutes(app, {
+  registerDataRoutes(app2, {
     prisma,
     requireAuth,
     normalizeCollectionPath,
@@ -2637,6 +2705,1149 @@ Code parrainage : ${referralCode}`
   });
 }
 
+// src/server/sendLeadEmail.ts
+function isValidEmail2(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim());
+}
+function escapeHtml2(s) {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+async function sendLeadEmail(input) {
+  const to = String(input.to || "").trim().toLowerCase();
+  if (!isValidEmail2(to)) return { sent: false, reason: "Email destinataire invalide." };
+  const subject = String(input.subject || "Message de l\u2019\xE9quipe Infinite Core").trim().slice(0, 140);
+  const text = String(input.text || "").trim();
+  if (!text) return { sent: false, reason: "Message vide." };
+  const transporter = getSmtpTransport();
+  if (!transporter) return { sent: false, reason: "SMTP non configur\xE9." };
+  const html = input.html ?? `<pre style="font-family:system-ui,sans-serif;white-space:pre-wrap">${escapeHtml2(text)}</pre>`;
+  await transporter.sendMail({
+    from: appEnv.smtp.fromOrUser,
+    to,
+    subject,
+    text,
+    html
+  });
+  return { sent: true };
+}
+
+// src/data/appCatalogDetails.ts
+var WHATSAPP = "2250103015467";
+function detail(partial) {
+  return {
+    whatsappNumber: WHATSAPP,
+    ...partial,
+    galleryImages: partial.galleryImages?.length ? partial.galleryImages : []
+  };
+}
+var APP_CATALOG_DETAIL_DEFAULTS = {
+  "erp-multi-ecole": detail({
+    longDescription: "Pilotez plusieurs \xE9tablissements scolaires depuis une seule plateforme : inscriptions, notes, bulletins, frais de scolarit\xE9 et communication parents.",
+    problem: "Vos donn\xE9es scolaires sont \xE9parpill\xE9es entre cahiers, Excel et groupes WhatsApp. Les frais impay\xE9s ne sont pas suivis et chaque \xE9tablissement travaille en silo.",
+    advantages: [
+      "Vue consolid\xE9e multi-\xE9coles en temps r\xE9el",
+      "R\xE9duction des impay\xE9s gr\xE2ce aux relances automatiques",
+      "Bulletins et emplois du temps g\xE9n\xE9r\xE9s en un clic",
+      "Acc\xE8s parents s\xE9curis\xE9 (notes, absences, paiements)"
+    ],
+    features: [
+      { title: "Multi-\xE9tablissements", description: "G\xE9rez plusieurs campus avec des r\xF4les direction, enseignant et comptabilit\xE9." },
+      { title: "Scolarit\xE9 & notes", description: "Saisie des notes, moyennes, bulletins PDF et historique par \xE9l\xE8ve." },
+      { title: "Frais & encaissements", description: "\xC9ch\xE9anciers, re\xE7us, suivi Wave/Orange Money et rapports de tr\xE9sorerie." },
+      { title: "Emplois du temps", description: "Planning par classe, salles et enseignants avec export partageable." }
+    ],
+    demoUrl: "",
+    whatsappMessage: "Bonjour, je souhaite une d\xE9mo de ERP Multi-\xC9cole Infinite Core.",
+    galleryImages: ["/apps/erp-multi-ecole.svg"]
+  }),
+  "caisse-enregistreuse": detail({
+    longDescription: "Encaissez rapidement en boutique, \xE9ditez des tickets, suivez vos ventes et synchronisez avec votre stock et votre comptabilit\xE9.",
+    problem: "La caisse ne communique pas avec le stock. Les \xE9carts de fin de journ\xE9e s'accumulent et vous ne savez pas quel produit rapporte vraiment.",
+    advantages: [
+      "Encaissement rapide m\xEAme en connexion instable",
+      "Tickets et re\xE7us conformes",
+      "Rapports de caisse par vendeur et par point de vente",
+      "Int\xE9gration Wave / Orange Money"
+    ],
+    features: [
+      { title: "Point de vente", description: "Interface tactile, recherche produit, remises et modes de paiement multiples." },
+      { title: "Tickets & re\xE7us", description: "Impression ou envoi PDF/WhatsApp au client." },
+      { title: "Cl\xF4ture de caisse", description: "\xC9carts, fonds de caisse et historique par session." },
+      { title: "Tableau de bord", description: "CA journalier, top produits et marge en temps r\xE9el." }
+    ],
+    demoUrl: "",
+    whatsappMessage: "Bonjour, je souhaite une d\xE9mo de la Caisse enregistreuse Infinite Core.",
+    galleryImages: ["/apps/caisse-enregistreuse.svg"]
+  }),
+  "erp-immobiliere": detail({
+    longDescription: "Centralisez biens, mandats, baux, quittances et relances loyers pour agences et propri\xE9taires multi-biens.",
+    problem: "Les baux sont dans des dossiers papier, les quittances sont faites \xE0 la main et les loyers impay\xE9s sont d\xE9couverts trop tard.",
+    advantages: [
+      "Pipeline biens \u2192 mandat \u2192 bail automatis\xE9",
+      "Quittances et relances en un clic",
+      "Portail propri\xE9taire et locataire",
+      "Tableau de bord de rentabilit\xE9 par bien"
+    ],
+    features: [
+      { title: "Gestion des biens", description: "Fiches bien, photos, statut (disponible, lou\xE9, en travaux)." },
+      { title: "Baux & quittances", description: "G\xE9n\xE9ration automatique, \xE9ch\xE9anciers et indexation." },
+      { title: "Mandats & visites", description: "Suivi commercial et calendrier des visites." },
+      { title: "Reporting", description: "Taux d'occupation, impay\xE9s et cash-flow par portefeuille." }
+    ],
+    demoUrl: "",
+    whatsappMessage: "Bonjour, je souhaite une d\xE9mo de l'ERP immobili\xE8re Infinite Core.",
+    galleryImages: ["/apps/erp-immobiliere.svg"]
+  }),
+  "erp-gestion-stock": detail({
+    longDescription: "Ma\xEEtrisez vos stocks multi-d\xE9p\xF4ts : entr\xE9es, sorties, inventaires, seuils d'alerte et tra\xE7abilit\xE9 compl\xE8te.",
+    problem: "Les ruptures et surstocks coexistent faute de visibilit\xE9. Les inventaires sont longs et les \xE9carts inexpliqu\xE9s.",
+    advantages: [
+      "Alertes seuil par produit et par d\xE9p\xF4t",
+      "Tra\xE7abilit\xE9 lot / s\xE9rie",
+      "Inventaires guid\xE9s sur mobile",
+      "Valorisation stock en temps r\xE9el"
+    ],
+    features: [
+      { title: "Multi-d\xE9p\xF4ts", description: "Transferts inter-sites et stock consolid\xE9." },
+      { title: "Mouvements", description: "Entr\xE9es fournisseur, sorties vente, ajustements et casse." },
+      { title: "Inventaire", description: "Comptage par zone, \xE9carts et rapprochement automatique." },
+      { title: "Alertes", description: "Notifications rupture et r\xE9approvisionnement sugg\xE9r\xE9." }
+    ],
+    demoUrl: "",
+    whatsappMessage: "Bonjour, je souhaite une d\xE9mo de l'ERP gestion de stock Infinite Core.",
+    galleryImages: ["/apps/erp-gestion-stock.svg"]
+  }),
+  "erp-gestion-evenementielle": detail({
+    longDescription: "Organisez \xE9v\xE9nements professionnels ou culturels : planning, invit\xE9s, prestataires, budget et billetterie.",
+    problem: "Les prestataires et invit\xE9s sont g\xE9r\xE9s sur des fichiers s\xE9par\xE9s. Le budget d\xE9rape sans suivi centralis\xE9.",
+    advantages: [
+      "Planning unifi\xE9 \xE9quipe + prestataires",
+      "Billetterie et contr\xF4le d'acc\xE8s",
+      "Budget vs r\xE9alis\xE9 en direct",
+      "Check-list jour J sur mobile"
+    ],
+    features: [
+      { title: "Planning", description: "Timeline, t\xE2ches, responsables et rappels." },
+      { title: "Invit\xE9s & RSVP", description: "Listes, segments, confirmations et badges." },
+      { title: "Prestataires", description: "Contrats, paiements \xE9chelonn\xE9s et livrables." },
+      { title: "Billetterie", description: "Tarifs, codes promo et suivi des ventes." }
+    ],
+    demoUrl: "",
+    whatsappMessage: "Bonjour, je souhaite une d\xE9mo de l'ERP gestion \xE9v\xE9nementielle Infinite Core.",
+    galleryImages: ["/apps/erp-gestion-evenementielle.svg"]
+  }),
+  "crm-boutique": detail({
+    longDescription: "Fid\xE9lisez vos clients retail : historique d'achats, programmes de fid\xE9lit\xE9, campagnes et suivi omnicanal.",
+    problem: "Vous ne connaissez pas vos meilleurs clients. Les promotions sont envoy\xE9es au hasard et le panier moyen stagne.",
+    advantages: [
+      "Fiche client 360\xB0 (achats, pr\xE9f\xE9rences, r\xE9clamations)",
+      "Campagnes SMS / WhatsApp cibl\xE9es",
+      "Programme fid\xE9lit\xE9 int\xE9gr\xE9",
+      "Synchronisation caisse & e-commerce"
+    ],
+    features: [
+      { title: "Base clients", description: "Segmentation RFM, tags et historique complet." },
+      { title: "Fid\xE9lit\xE9", description: "Points, cartes et offres personnalis\xE9es." },
+      { title: "Ventes", description: "Panier, commandes en ligne et suivi livraison." },
+      { title: "Marketing", description: "Campagnes, taux d'ouverture et ROI simplifi\xE9." }
+    ],
+    demoUrl: "",
+    whatsappMessage: "Bonjour, je souhaite une d\xE9mo du CRM Boutique Infinite Core.",
+    galleryImages: ["/apps/crm-boutique.svg"]
+  }),
+  "app-location-voiture": detail({
+    longDescription: "G\xE9rez votre flotte de location : r\xE9servations, contrats, \xE9tats des lieux, maintenance et facturation.",
+    problem: "Les r\xE9servations arrivent par t\xE9l\xE9phone et WhatsApp sans calendrier unique. Les v\xE9hicules sont double-book\xE9s.",
+    advantages: [
+      "Calendrier flotte en temps r\xE9el",
+      "Contrats et cautions num\xE9riques",
+      "\xC9tats des lieux photo \xE0 l'entr\xE9e/sortie",
+      "Maintenance et alertes assurance"
+    ],
+    features: [
+      { title: "R\xE9servations", description: "Disponibilit\xE9, tarifs saisonniers et options." },
+      { title: "Contrats", description: "G\xE9n\xE9ration PDF, signature et archivage." },
+      { title: "\xC9tats des lieux", description: "Photos, kilom\xE9trage et dommages trac\xE9s." },
+      { title: "Facturation", description: "Extras, p\xE9nalit\xE9s et encaissement multi-canal." }
+    ],
+    demoUrl: "",
+    whatsappMessage: "Bonjour, je souhaite une d\xE9mo de l'application location voiture Infinite Core.",
+    galleryImages: ["/apps/app-location-voiture.svg"]
+  }),
+  "cms-clinique": detail({
+    longDescription: "Site vitrine m\xE9dical, prise de rendez-vous en ligne, dossiers patients et t\xE9l\xE9consultation pour cliniques modernes.",
+    problem: "Les patients appellent pour un cr\xE9neau d\xE9j\xE0 pris. Le site est obsol\xE8te et les dossiers sont fragment\xE9s.",
+    advantages: [
+      "Prise de RDV 24h/24 sans secr\xE9tariat satur\xE9",
+      "Site conforme et rassurant pour les patients",
+      "Dossier patient centralis\xE9",
+      "T\xE9l\xE9consultation int\xE9gr\xE9e"
+    ],
+    features: [
+      { title: "Site vitrine", description: "Pages m\xE9decins, sp\xE9cialit\xE9s, horaires et FAQ." },
+      { title: "Agenda RDV", description: "Cr\xE9neaux, rappels SMS/WhatsApp et liste d'attente." },
+      { title: "Dossier patient", description: "Ant\xE9c\xE9dents, ordonnances et documents s\xE9curis\xE9s." },
+      { title: "T\xE9l\xE9consultation", description: "Lien de visio et compte-rendu archiv\xE9." }
+    ],
+    demoUrl: "",
+    whatsappMessage: "Bonjour, je souhaite une d\xE9mo du CMS Clinique Infinite Core.",
+    galleryImages: ["/apps/cms-clinique.svg"]
+  }),
+  "crm-multi-hotel": detail({
+    longDescription: "Pilotez plusieurs h\xF4tels : chambres, r\xE9servations, housekeeping, tarifs et performance par \xE9tablissement.",
+    problem: "Les r\xE9servations Booking et direct ne sont pas synchronis\xE9es. Le housekeeping d\xE9couvre les d\xE9parts tardivement.",
+    advantages: [
+      "Calendrier chambres multi-h\xF4tels",
+      "Housekeeping mobile en temps r\xE9el",
+      "Tarification dynamique par saison",
+      "Reporting occupation & RevPAR"
+    ],
+    features: [
+      { title: "R\xE9servations", description: "Channel manager simplifi\xE9 et walk-in." },
+      { title: "Chambres", description: "Statuts propre / sale / maintenance / occup\xE9e." },
+      { title: "Housekeeping", description: "T\xE2ches assign\xE9es et contr\xF4le qualit\xE9." },
+      { title: "Multi-\xE9tablissements", description: "KPI consolid\xE9s et comparaison par site." }
+    ],
+    demoUrl: "",
+    whatsappMessage: "Bonjour, je souhaite une d\xE9mo du CRM Multi-H\xF4tel Infinite Core.",
+    galleryImages: ["/apps/crm-multi-hotel.svg"]
+  })
+};
+
+// src/lib/saasUrlTemplate.ts
+var DEFAULT_TEMPLATE = "https://{moduleKey}.saas.infinitecore.net";
+function saasUrlTemplateFromEnv() {
+  if (typeof process === "undefined") return DEFAULT_TEMPLATE;
+  return process.env.NEXT_PUBLIC_SAAS_URL_TEMPLATE?.trim() || process.env.SAAS_URL_TEMPLATE?.trim() || DEFAULT_TEMPLATE;
+}
+function resolveSaasUrlTemplate(template, app2) {
+  return template.replace(/\{moduleKey\}/g, app2.moduleKey).replace(/\{appId\}/g, app2.id);
+}
+function enrichAppSaasDefaults(entry, template = saasUrlTemplateFromEnv()) {
+  if (entry.saasBaseUrl?.trim()) return entry;
+  const hasSubscription = entry.pricing.some((p) => p.type === "subscription");
+  if (!hasSubscription || !template.trim()) return entry;
+  return {
+    ...entry,
+    saasBaseUrl: resolveSaasUrlTemplate(template, entry)
+  };
+}
+function enrichCatalogSaasDefaults(apps, template = saasUrlTemplateFromEnv()) {
+  return apps.map((a) => enrichAppSaasDefaults(a, template));
+}
+
+// src/data/appCatalog.ts
+function monthly(price) {
+  return {
+    type: "subscription",
+    price,
+    billingCycle: "month",
+    label: "Abonnement mensuel (SaaS Infinite Core)"
+  };
+}
+function lifetimeLicense(price) {
+  return { type: "license", price, durationDays: 0, label: "Licence \xE0 vie (auto-h\xE9berg\xE9e)" };
+}
+function app(id, title, desc, licensePrice, monthlyPrice, deliveryLabel = "5-7 jours") {
+  return {
+    id,
+    moduleKey: id,
+    title,
+    desc,
+    deliveryLabel,
+    imageUrl: `/apps/${id}.svg`,
+    onlineCheckout: true,
+    pricing: [lifetimeLicense(licensePrice), monthly(monthlyPrice)]
+  };
+}
+var INFINITE_APP_CATALOG = [
+  app(
+    "erp-multi-ecole",
+    "ERP Multi-\xC9cole",
+    "Scolarit\xE9, notes, frais de scolarit\xE9, emplois du temps et suivi multi-\xE9tablissements.",
+    35e4,
+    35e3,
+    "10-14 jours"
+  ),
+  app(
+    "caisse-enregistreuse",
+    "Caisse enregistreuse",
+    "Point de vente, tickets, encaissement Wave/Orange Money et rapports de caisse en temps r\xE9el.",
+    12e4,
+    12e3,
+    "3-5 jours"
+  ),
+  app(
+    "erp-immobiliere",
+    "ERP immobili\xE8re",
+    "Biens, mandats, baux, quittances de loyer et tableau de bord propri\xE9taires.",
+    4e5,
+    4e4,
+    "10-14 jours"
+  ),
+  app(
+    "erp-gestion-stock",
+    "ERP gestion de stock",
+    "Entr\xE9es, sorties, inventaires, alertes seuil et tra\xE7abilit\xE9 multi-d\xE9p\xF4ts.",
+    18e4,
+    18e3,
+    "5-7 jours"
+  ),
+  app(
+    "erp-gestion-evenementielle",
+    "ERP gestion \xE9v\xE9nementielle",
+    "Planning, invit\xE9s, prestataires, budget et billetterie pour vos \xE9v\xE9nements.",
+    22e4,
+    22e3,
+    "7-10 jours"
+  ),
+  app(
+    "crm-boutique",
+    "CRM Boutique",
+    "Clients, fid\xE9lit\xE9, ventes omnicanal et suivi des commandes pour commerces de d\xE9tail.",
+    15e4,
+    15e3,
+    "5-7 jours"
+  ),
+  app(
+    "app-location-voiture",
+    "Application location voiture",
+    "Flotte, r\xE9servations, contrats, \xE9tats des lieux et facturation location.",
+    2e5,
+    2e4,
+    "7-10 jours"
+  ),
+  app(
+    "cms-clinique",
+    "CMS Clinique en ligne",
+    "Site vitrine, prise de RDV, dossiers patients et t\xE9l\xE9consultation.",
+    28e4,
+    28e3,
+    "10-14 jours"
+  ),
+  app(
+    "crm-multi-hotel",
+    "CRM Gestion Multi-H\xF4tel",
+    "Chambres, r\xE9servations, housekeeping et pilotage multi-\xE9tablissements h\xF4teliers.",
+    38e4,
+    38e3,
+    "10-14 jours"
+  )
+];
+function mergeDetailFields(entry) {
+  const details = APP_CATALOG_DETAIL_DEFAULTS[entry.id];
+  if (!details) return entry;
+  const gallery = entry.galleryImages?.length ? entry.galleryImages : details.galleryImages?.length ? details.galleryImages : entry.imageUrl ? [entry.imageUrl] : [];
+  return {
+    ...entry,
+    longDescription: entry.longDescription || details.longDescription,
+    problem: entry.problem || details.problem,
+    advantages: entry.advantages !== void 0 ? entry.advantages : details.advantages,
+    features: entry.features !== void 0 ? entry.features : details.features,
+    galleryImages: gallery,
+    demoUrl: entry.demoUrl ?? details.demoUrl,
+    whatsappNumber: entry.whatsappNumber || details.whatsappNumber,
+    whatsappMessage: entry.whatsappMessage || details.whatsappMessage
+  };
+}
+function mergeStoredWithDefault(def, found) {
+  if (!found) return mergeDetailFields(def);
+  const merged = {
+    ...def,
+    ...found,
+    moduleKey: found.moduleKey || def.moduleKey,
+    imageUrl: found.imageUrl?.trim() ? found.imageUrl : def.imageUrl,
+    pricing: found.pricing?.length ? found.pricing : def.pricing,
+    advantages: found.advantages !== void 0 ? found.advantages : def.advantages,
+    features: found.features !== void 0 ? found.features : def.features,
+    galleryImages: found.galleryImages?.length ? found.galleryImages : def.galleryImages
+  };
+  return mergeDetailFields(merged);
+}
+function mergeCatalogWithDefaults(remote) {
+  const remoteById = new Map(remote.map((r) => [r.id, r]));
+  const defaultIds = new Set(INFINITE_APP_CATALOG.map((d) => d.id));
+  const defaults = INFINITE_APP_CATALOG.map(
+    (def) => mergeStoredWithDefault(def, remoteById.get(def.id))
+  );
+  const customs = remote.filter((r) => !defaultIds.has(r.id)).map((r) => mergeDetailFields(r));
+  return enrichCatalogSaasDefaults([...defaults, ...customs]);
+}
+function parseAppCatalogEntries(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item;
+    const id = String(row.id || "").trim();
+    const moduleKey = String(row.moduleKey || id).trim();
+    const title = String(row.title || "").trim();
+    if (!id || !title) continue;
+    const pricing = [];
+    if (Array.isArray(row.pricing)) {
+      for (const p of row.pricing) {
+        if (!p || typeof p !== "object") continue;
+        const pr = p;
+        const type = String(pr.type || "");
+        const price = Number(pr.price);
+        if (!Number.isFinite(price) || price <= 0) continue;
+        if (type === "license") {
+          const durationDays = Number(pr.durationDays);
+          pricing.push({
+            type: "license",
+            price: Math.round(price),
+            durationDays: Number.isFinite(durationDays) && durationDays >= 0 ? Math.round(durationDays) : 0,
+            label: typeof pr.label === "string" ? pr.label : void 0
+          });
+        } else if (type === "subscription") {
+          const cycle = String(pr.billingCycle || "month") === "year" ? "year" : "month";
+          pricing.push({
+            type: "subscription",
+            price: Math.round(price),
+            billingCycle: cycle,
+            label: typeof pr.label === "string" ? pr.label : void 0
+          });
+        }
+      }
+    }
+    const features = [];
+    if (Array.isArray(row.features)) {
+      for (const f of row.features) {
+        if (!f || typeof f !== "object") continue;
+        const fr = f;
+        const fTitle = String(fr.title || "").trim();
+        if (!fTitle) continue;
+        features.push({
+          title: fTitle,
+          description: String(fr.description || "").trim()
+        });
+      }
+    }
+    const advantages = [];
+    if (Array.isArray(row.advantages)) {
+      for (const a of row.advantages) {
+        const line = String(a || "").trim();
+        if (line) advantages.push(line);
+      }
+    }
+    const galleryImages = [];
+    if (Array.isArray(row.galleryImages)) {
+      for (const g of row.galleryImages) {
+        const url = String(g || "").trim();
+        if (url) galleryImages.push(url);
+      }
+    }
+    out.push({
+      id,
+      moduleKey,
+      title,
+      desc: String(row.desc || ""),
+      deliveryLabel: String(row.deliveryLabel || "Sur devis"),
+      imageUrl: typeof row.imageUrl === "string" && row.imageUrl.trim() ? row.imageUrl.trim() : `/apps/${id}.svg`,
+      onlineCheckout: row.onlineCheckout === true,
+      pricing,
+      longDescription: typeof row.longDescription === "string" ? row.longDescription : void 0,
+      problem: typeof row.problem === "string" ? row.problem : void 0,
+      advantages: Array.isArray(row.advantages) ? advantages : void 0,
+      features: Array.isArray(row.features) ? features : void 0,
+      galleryImages: galleryImages.length ? galleryImages : void 0,
+      demoUrl: typeof row.demoUrl === "string" ? row.demoUrl : void 0,
+      whatsappNumber: typeof row.whatsappNumber === "string" ? row.whatsappNumber : void 0,
+      whatsappMessage: typeof row.whatsappMessage === "string" ? row.whatsappMessage : void 0,
+      licensePackageUrl: typeof row.licensePackageUrl === "string" && row.licensePackageUrl.trim() ? row.licensePackageUrl.trim() : void 0,
+      licensePackagePublicId: typeof row.licensePackagePublicId === "string" && row.licensePackagePublicId.trim() ? row.licensePackagePublicId.trim() : void 0,
+      licensePackageName: typeof row.licensePackageName === "string" && row.licensePackageName.trim() ? row.licensePackageName.trim() : void 0,
+      installGuideUrl: typeof row.installGuideUrl === "string" && row.installGuideUrl.trim() ? row.installGuideUrl.trim() : void 0,
+      saasBaseUrl: typeof row.saasBaseUrl === "string" && row.saasBaseUrl.trim() ? row.saasBaseUrl.trim() : void 0,
+      saasTenantRoute: row.saasTenantRoute === "path" ? "path" : "query",
+      saasTenantQueryKey: typeof row.saasTenantQueryKey === "string" && row.saasTenantQueryKey.trim() ? row.saasTenantQueryKey.trim() : void 0,
+      saasBillingMode: row.saasBillingMode === "external" ? "external" : "infinitecore",
+      saasExternalCheckoutUrl: typeof row.saasExternalCheckoutUrl === "string" && row.saasExternalCheckoutUrl.trim() ? row.saasExternalCheckoutUrl.trim() : void 0,
+      saasProvisionWebhookUrl: typeof row.saasProvisionWebhookUrl === "string" && row.saasProvisionWebhookUrl.trim() ? row.saasProvisionWebhookUrl.trim() : void 0,
+      saasWebhookUrl: typeof row.saasWebhookUrl === "string" && row.saasWebhookUrl.trim() ? row.saasWebhookUrl.trim() : void 0
+    });
+  }
+  return mergeCatalogWithDefaults(out);
+}
+
+// src/server/appCatalogStore.ts
+var COLLECTION = "admin_config";
+var DOC_ID = "app_catalog";
+function readDataRowAsRecord(value) {
+  return value && typeof value === "object" ? value : {};
+}
+var LEGACY_CATALOG_IDS = /* @__PURE__ */ new Set([
+  "crm",
+  "finance",
+  "rh",
+  "projects",
+  "academy",
+  "comms",
+  "store",
+  "pack-croissance",
+  "pack-elite"
+]);
+function isStoredCatalogLegacy(rawApps) {
+  if (!Array.isArray(rawApps)) return false;
+  return rawApps.some((item) => {
+    if (!item || typeof item !== "object") return false;
+    const id = String(item.id || "").trim();
+    return LEGACY_CATALOG_IDS.has(id);
+  });
+}
+async function persistCatalog(apps) {
+  const merged = mergeCatalogWithDefaults(apps);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  await prisma.dataDocument.upsert({
+    where: {
+      collectionPath_docId: { collectionPath: COLLECTION, docId: DOC_ID }
+    },
+    create: {
+      collectionPath: COLLECTION,
+      docId: DOC_ID,
+      data: { apps: merged, updatedAt: now, catalogVersion: 2 }
+    },
+    update: {
+      data: { apps: merged, updatedAt: now, catalogVersion: 2 }
+    }
+  });
+  return merged;
+}
+async function loadAppCatalog() {
+  const row = await prisma.dataDocument.findUnique({
+    where: {
+      collectionPath_docId: { collectionPath: COLLECTION, docId: DOC_ID }
+    }
+  });
+  if (!row) return mergeCatalogWithDefaults(INFINITE_APP_CATALOG);
+  const data = readDataRowAsRecord(row.data);
+  if (isStoredCatalogLegacy(data.apps)) {
+    return persistCatalog(INFINITE_APP_CATALOG);
+  }
+  const parsed = parseAppCatalogEntries(data.apps);
+  if (!parsed.length) return mergeCatalogWithDefaults(INFINITE_APP_CATALOG);
+  const missingDefault = INFINITE_APP_CATALOG.some((a) => !parsed.some((c) => c.id === a.id));
+  if (missingDefault) {
+    return persistCatalog(mergeCatalogWithDefaults(parsed));
+  }
+  return mergeCatalogWithDefaults(parsed);
+}
+async function saveAppCatalog(apps) {
+  return persistCatalog(apps);
+}
+
+// src/lib/appAppointment.ts
+function parseAppointmentBody(body) {
+  const appId = String(body.appId || "").trim();
+  const appTitle = String(body.appTitle || "").trim();
+  const firstName = String(body.firstName || "").trim();
+  const lastName = String(body.lastName || "").trim();
+  const phone = String(body.phone || "").trim();
+  const email = String(body.email || "").trim().toLowerCase();
+  const companyName = String(body.companyName || "").trim();
+  const preferredDate = String(body.preferredDate || "").trim();
+  const message = String(body.message || "").trim();
+  if (!appId || !firstName || !lastName || !phone) {
+    return {
+      ok: false,
+      error: "Champs requis : application, pr\xE9nom, nom, t\xE9l\xE9phone/WhatsApp."
+    };
+  }
+  return {
+    ok: true,
+    data: {
+      appId,
+      appTitle,
+      firstName,
+      lastName,
+      phone,
+      email,
+      companyName,
+      preferredDate,
+      message
+    }
+  };
+}
+
+// src/server/licenseActivation.ts
+var import_crypto4 = require("crypto");
+
+// src/lib/licenses.ts
+function licenseDocId(userId, appId) {
+  return `${userId}__${appId}`;
+}
+function isLicenseActive(license, now = Date.now()) {
+  if (license.status !== "active") return false;
+  if (!license.expiresAt) return true;
+  const exp = Date.parse(license.expiresAt);
+  return Number.isFinite(exp) && exp > now;
+}
+
+// src/lib/appDeliveryGuide.ts
+var SYSTEM_SENDER_ID = "system-infinitecore";
+var SYSTEM_SENDER_NAME = "Infinite Core";
+function optionalLinks(ctx) {
+  const lines = [];
+  if (ctx.licensePackageUrl?.trim()) {
+    lines.push(`\u{1F4E5} T\xE9l\xE9chargement : ${ctx.licensePackageUrl.trim()}`);
+  }
+  if (ctx.installGuideUrl?.trim()) {
+    lines.push(`\u{1F4D8} Guide d\u2019installation : ${ctx.installGuideUrl.trim()}`);
+  }
+  return lines.length ? `
+
+${lines.join("\n")}` : "";
+}
+function buildLicenseWelcomeMessage(ctx) {
+  const links = optionalLinks(ctx);
+  const packageHint = ctx.licensePackageUrl?.trim() ? "Le lien de t\xE9l\xE9chargement est disponible ci-dessous et dans Mon espace." : "Notre \xE9quipe vous transmettra le lien de t\xE9l\xE9chargement ici sous peu.";
+  return [
+    `F\xE9licitations ! Votre licence \xE0 vie pour \xAB ${ctx.appName} \xBB est active.`,
+    "",
+    "\u{1F4E6} Auto-h\xE9bergement \u2014 prochaines \xE9tapes :",
+    `1. ${packageHint}`,
+    "2. Installez l\u2019application sur votre infrastructure (serveur, VPS ou cloud).",
+    `3. D\xE9lai indicatif de mise en service : ${ctx.deliveryLabel}.`,
+    "4. R\xE9pondez \xE0 ce message pour planifier l\u2019accompagnement technique.",
+    links
+  ].filter((line, i, arr) => !(line === "" && arr[i - 1] === "")).join("\n");
+}
+function buildSubscriptionWelcomeMessage(ctx) {
+  const saasUrl = ctx.saasBaseUrl?.trim();
+  const accessLines = saasUrl ? [
+    "\u{1F680} Acc\xE8s SaaS imm\xE9diat :",
+    `1. Ouvrez directement : ${saasUrl}`,
+    "2. Ou Mon espace \u2192 Applications SaaS \u2192 Ouvrir le SaaS.",
+    "3. Aucune installation requise \u2014 Infinite Core h\xE9berge et maintient l\u2019application."
+  ] : [
+    "\u{1F680} Acc\xE8s SaaS Infinite Core :",
+    "1. Mon espace \u2192 Mes applications \u2192 votre module.",
+    "2. Notre \xE9quipe finalise le d\xE9ploiement de votre instance (d\xE9lai indicatif selon accompagnement).",
+    "3. Vous serez notifi\xE9 d\xE8s que l\u2019URL est active."
+  ];
+  return [
+    `Votre abonnement \xE0 \xAB ${ctx.appName} \xBB est actif !`,
+    "",
+    ...accessLines,
+    "4. G\xE9rez votre abonnement via la boutique (G\xE9rer mes abonnements).",
+    "",
+    `Module int\xE9gr\xE9 : /module/${ctx.moduleKey}/dashboard`
+  ].join("\n");
+}
+function buildWelcomeMessage(licenseType, ctx) {
+  return licenseType === "license" ? buildLicenseWelcomeMessage(ctx) : buildSubscriptionWelcomeMessage(ctx);
+}
+function buildActivationNotification(licenseType, appName) {
+  if (licenseType === "license") {
+    return {
+      title: "Licence activ\xE9e",
+      message: `${appName} \u2014 consultez la messagerie et Mon espace pour t\xE9l\xE9charger et installer l\u2019application chez vous.`
+    };
+  }
+  return {
+    title: "Abonnement activ\xE9",
+    message: `${appName} \u2014 acc\xE9dez au SaaS depuis Mon espace (Applications SaaS ou module int\xE9gr\xE9).`
+  };
+}
+function deliveryContextFromApp(app2) {
+  return {
+    appName: app2.title,
+    moduleKey: app2.moduleKey,
+    deliveryLabel: app2.deliveryLabel,
+    licensePackageUrl: app2.licensePackageUrl ?? null,
+    installGuideUrl: app2.installGuideUrl ?? null,
+    saasBaseUrl: app2.saasBaseUrl ?? null
+  };
+}
+
+// src/lib/saasAccess.ts
+function defaultSaasTenantId(userId, appId) {
+  return `${userId}__${appId}`;
+}
+function resolveSaasTenantId(license) {
+  return license.saasTenantId?.trim() || defaultSaasTenantId(license.userId, license.appId);
+}
+function initialSaasStateForSubscription(catalogApp, userId, appId) {
+  const saasTenantId = defaultSaasTenantId(userId, appId);
+  const hasSharedBase = Boolean(catalogApp?.saasBaseUrl?.trim());
+  return {
+    saasInstanceUrl: null,
+    saasTenantId,
+    saasProvisioningStatus: hasSharedBase ? "ready" : "pending"
+  };
+}
+
+// src/server/saasAppBridge.ts
+var import_crypto3 = require("crypto");
+function bridgeApiKey() {
+  return String(process.env.SAAS_BRIDGE_API_KEY || "").trim();
+}
+function secureEquals(expected, provided) {
+  const a = Buffer.from(expected);
+  const b = Buffer.from(provided);
+  if (a.length !== b.length) return false;
+  return (0, import_crypto3.timingSafeEqual)(a, b);
+}
+function verifySaasBridgeAuth(headerValue) {
+  const expected = bridgeApiKey();
+  if (!expected) return true;
+  const provided = String(headerValue || "").trim();
+  if (!provided) return false;
+  return secureEquals(expected, provided);
+}
+function saasBridgeHeaders() {
+  const key = bridgeApiKey();
+  const headers = { "Content-Type": "application/json" };
+  if (key) headers["X-InfiniteCore-SaaS-Key"] = key;
+  return headers;
+}
+async function postSaasWebhook(url, body) {
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: saasBridgeHeaders(),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15e3)
+    });
+    return { ok: res.ok, status: res.status };
+  } catch (error) {
+    console.error("[saasAppBridge] webhook failed:", url, error);
+    return { ok: false };
+  }
+}
+function webhookUrl(app2, kind) {
+  if (!app2) return null;
+  if (kind === "provision") {
+    return app2.saasProvisionWebhookUrl?.trim() || app2.saasWebhookUrl?.trim() || null;
+  }
+  return app2.saasWebhookUrl?.trim() || app2.saasProvisionWebhookUrl?.trim() || null;
+}
+async function notifySaasTenantProvision(input) {
+  const url = webhookUrl(input.app, "provision");
+  if (!url) return;
+  await postSaasWebhook(url, {
+    event: "tenant.provision",
+    userId: input.userId,
+    appId: input.appId,
+    moduleKey: input.moduleKey,
+    tenantId: input.tenantId,
+    email: input.email ?? null,
+    appName: input.appName ?? input.app?.title ?? null,
+    saasBaseUrl: input.app?.saasBaseUrl ?? null
+  });
+}
+async function notifySaasSubscriptionEvent(input) {
+  const url = webhookUrl(input.app, "events");
+  if (!url) return;
+  await postSaasWebhook(url, {
+    event: input.event,
+    userId: input.license.userId,
+    appId: input.license.appId,
+    moduleKey: input.license.moduleKey,
+    tenantId: resolveSaasTenantId(input.license),
+    stripeSubscriptionId: input.license.stripeSubscriptionId ?? null
+  });
+}
+
+// src/server/licenseActivation.ts
+var LICENSES_COLLECTION_PATH = "licenses";
+var USERS_COLLECTION_PATH = "users";
+function readDataRowAsRecord2(value) {
+  return value && typeof value === "object" ? value : {};
+}
+async function upsertAppLicense(input) {
+  const docId = licenseDocId(input.userId, input.appId);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const existing = await prisma.dataDocument.findUnique({
+    where: {
+      collectionPath_docId: { collectionPath: LICENSES_COLLECTION_PATH, docId }
+    }
+  });
+  const current = readDataRowAsRecord2(existing?.data);
+  const data = {
+    id: docId,
+    userId: input.userId,
+    appId: input.appId,
+    moduleKey: input.moduleKey,
+    appName: input.appName,
+    type: input.type,
+    status: input.status ?? "active",
+    orderId: input.orderId ?? current.orderId ?? null,
+    stripeSubscriptionId: input.stripeSubscriptionId ?? current.stripeSubscriptionId ?? null,
+    stripeCheckoutSessionId: input.stripeCheckoutSessionId ?? current.stripeCheckoutSessionId ?? null,
+    expiresAt: input.expiresAt ?? current.expiresAt ?? null,
+    saasInstanceUrl: input.saasInstanceUrl !== void 0 ? input.saasInstanceUrl : current.saasInstanceUrl ?? null,
+    saasTenantId: input.saasTenantId !== void 0 ? input.saasTenantId : current.saasTenantId ?? null,
+    saasProvisioningStatus: input.saasProvisioningStatus !== void 0 ? input.saasProvisioningStatus : current.saasProvisioningStatus ?? null,
+    activatedAt: now,
+    createdAt: current.createdAt || now,
+    updatedAt: now
+  };
+  await prisma.dataDocument.upsert({
+    where: {
+      collectionPath_docId: { collectionPath: LICENSES_COLLECTION_PATH, docId }
+    },
+    create: {
+      collectionPath: LICENSES_COLLECTION_PATH,
+      docId,
+      data
+    },
+    update: {
+      data
+    }
+  });
+}
+async function patchLicenseBySubscriptionId(subscriptionId, patch) {
+  const rows = await prisma.dataDocument.findMany({
+    where: { collectionPath: LICENSES_COLLECTION_PATH },
+    take: 5e3
+  });
+  const catalog = await loadAppCatalog();
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const updated = [];
+  for (const row of rows) {
+    const data = readDataRowAsRecord2(row.data);
+    if (String(data.stripeSubscriptionId || "") !== subscriptionId) continue;
+    const next = {
+      ...data,
+      ...patch,
+      updatedAt: now
+    };
+    await prisma.dataDocument.update({
+      where: {
+        collectionPath_docId: { collectionPath: LICENSES_COLLECTION_PATH, docId: row.docId }
+      },
+      data: { data: next }
+    });
+    updated.push(next);
+  }
+  for (const license of updated) {
+    if (license.type !== "subscription") continue;
+    const catalogApp = catalog.find(
+      (a) => a.id === license.appId || a.moduleKey === license.moduleKey
+    );
+    if (patch.status === "suspended" || patch.saasProvisioningStatus === "suspended") {
+      await notifySaasSubscriptionEvent({
+        app: catalogApp,
+        license,
+        event: "subscription.suspended"
+      });
+    } else if (patch.saasProvisioningStatus === "ready" && license.status === "active") {
+      await notifySaasSubscriptionEvent({
+        app: catalogApp,
+        license,
+        event: "subscription.resumed"
+      });
+    }
+  }
+}
+async function resolveClientChatProfile(userId) {
+  const row = await prisma.dataDocument.findUnique({
+    where: {
+      collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH, docId: userId }
+    }
+  });
+  const data = readDataRowAsRecord2(row?.data);
+  const first = String(data.firstName || "").trim();
+  const last = String(data.lastName || "").trim();
+  const email = String(data.email || "").trim();
+  const clientName = `${first} ${last}`.trim() || email || "Client";
+  return { clientName, clientEmail: email };
+}
+async function postWelcomeDeliveryMessage(input) {
+  const { clientName, clientEmail } = await resolveClientChatProfile(input.userId);
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const msgId = (0, import_crypto4.randomUUID)();
+  const text = buildWelcomeMessage(input.licenseType, input.guide);
+  const preview = text.split("\n")[0]?.slice(0, 120) || "Votre application est pr\xEAte";
+  const existingChat = await prisma.dataDocument.findUnique({
+    where: {
+      collectionPath_docId: { collectionPath: "chats", docId: input.userId }
+    }
+  });
+  const chatData = {
+    ...readDataRowAsRecord2(existingChat?.data),
+    clientId: input.userId,
+    clientName,
+    clientEmail: clientEmail || readDataRowAsRecord2(existingChat?.data).clientEmail,
+    lastMessage: preview,
+    lastMessageAt: now,
+    unreadCommando: true,
+    unreadClient: false
+  };
+  await prisma.dataDocument.upsert({
+    where: {
+      collectionPath_docId: { collectionPath: "chats", docId: input.userId }
+    },
+    create: {
+      collectionPath: "chats",
+      docId: input.userId,
+      data: chatData
+    },
+    update: {
+      data: chatData
+    }
+  });
+  await prisma.dataDocument.create({
+    data: {
+      collectionPath: `chats/${input.userId}/messages`,
+      docId: msgId,
+      data: {
+        id: msgId,
+        senderId: SYSTEM_SENDER_ID,
+        senderName: SYSTEM_SENDER_NAME,
+        senderRole: "commando",
+        text,
+        type: "text",
+        readByCommando: true,
+        createdAt: now
+      }
+    }
+  });
+}
+async function activateLicenseFromCheckoutSession(meta) {
+  let expiresAt = null;
+  if (meta.licenseType === "license") {
+    const days = meta.licenseDurationDays ?? 0;
+    if (days > 0) {
+      expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1e3).toISOString();
+    }
+  } else if (meta.currentPeriodEnd) {
+    expiresAt = meta.currentPeriodEnd;
+  }
+  const catalog = await loadAppCatalog();
+  const catalogApp = catalog.find((a) => a.id === meta.appId || a.moduleKey === meta.moduleKey);
+  const saasState = meta.licenseType === "subscription" ? initialSaasStateForSubscription(catalogApp, meta.userId, meta.appId) : null;
+  await upsertAppLicense({
+    userId: meta.userId,
+    appId: meta.appId,
+    moduleKey: meta.moduleKey,
+    appName: meta.appName,
+    type: meta.licenseType,
+    status: "active",
+    orderId: meta.orderId,
+    stripeCheckoutSessionId: meta.checkoutSessionId,
+    stripeSubscriptionId: meta.subscriptionId ?? null,
+    expiresAt,
+    saasInstanceUrl: saasState?.saasInstanceUrl ?? null,
+    saasTenantId: saasState?.saasTenantId ?? null,
+    saasProvisioningStatus: saasState?.saasProvisioningStatus ?? null
+  });
+  const guide = catalogApp ? deliveryContextFromApp(catalogApp) : {
+    appName: meta.appName,
+    moduleKey: meta.moduleKey,
+    deliveryLabel: "selon accompagnement",
+    licensePackageUrl: null,
+    installGuideUrl: null
+  };
+  const activationNotice = buildActivationNotification(meta.licenseType, meta.appName);
+  const notifId = (0, import_crypto4.randomUUID)();
+  await prisma.dataDocument.create({
+    data: {
+      collectionPath: "notifications",
+      docId: notifId,
+      data: {
+        id: notifId,
+        userId: meta.userId,
+        title: activationNotice.title,
+        message: activationNotice.message,
+        type: "license",
+        read: false,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+        metadata: {
+          appId: meta.appId,
+          moduleKey: meta.moduleKey,
+          orderId: meta.orderId,
+          licenseType: meta.licenseType
+        }
+      }
+    }
+  });
+  try {
+    await postWelcomeDeliveryMessage({
+      userId: meta.userId,
+      licenseType: meta.licenseType,
+      guide
+    });
+  } catch (error) {
+    console.error("[licenseActivation] welcome message failed:", error);
+  }
+  if (meta.licenseType === "subscription" && saasState?.saasTenantId && catalogApp) {
+    const { clientEmail } = await resolveClientChatProfile(meta.userId);
+    try {
+      await notifySaasTenantProvision({
+        app: catalogApp,
+        userId: meta.userId,
+        appId: meta.appId,
+        moduleKey: meta.moduleKey,
+        tenantId: saasState.saasTenantId,
+        email: clientEmail,
+        appName: meta.appName
+      });
+    } catch (error) {
+      console.error("[licenseActivation] saas tenant provision webhook failed:", error);
+    }
+  }
+}
+async function upsertExternalSubscriptionLicense(input) {
+  const catalog = await loadAppCatalog();
+  const catalogApp = catalog.find((a) => a.id === input.appId);
+  const moduleKey = input.moduleKey || catalogApp?.moduleKey || input.appId;
+  const appName = input.appName || catalogApp?.title || input.appId;
+  const tenantId = input.tenantId?.trim() || defaultSaasTenantId(input.userId, input.appId);
+  const saasState = initialSaasStateForSubscription(catalogApp, input.userId, input.appId);
+  await upsertAppLicense({
+    userId: input.userId,
+    appId: input.appId,
+    moduleKey,
+    appName,
+    type: "subscription",
+    status: "active",
+    expiresAt: input.expiresAt ?? null,
+    saasTenantId: tenantId,
+    saasProvisioningStatus: saasState.saasProvisioningStatus
+  });
+  const docId = licenseDocId(input.userId, input.appId);
+  const row = await prisma.dataDocument.findUnique({
+    where: {
+      collectionPath_docId: { collectionPath: LICENSES_COLLECTION_PATH, docId }
+    }
+  });
+  const license = readDataRowAsRecord2(row?.data);
+  if (catalogApp) {
+    const { clientEmail } = await resolveClientChatProfile(input.userId);
+    try {
+      await notifySaasTenantProvision({
+        app: catalogApp,
+        userId: input.userId,
+        appId: input.appId,
+        moduleKey,
+        tenantId,
+        email: clientEmail,
+        appName
+      });
+    } catch (error) {
+      console.error("[licenseActivation] external subscription provision webhook failed:", error);
+    }
+  }
+  return license;
+}
+async function confirmSaasTenantReady(input) {
+  const docId = licenseDocId(input.userId, input.appId);
+  const existing = await prisma.dataDocument.findUnique({
+    where: {
+      collectionPath_docId: { collectionPath: LICENSES_COLLECTION_PATH, docId }
+    }
+  });
+  if (!existing) return null;
+  const current = readDataRowAsRecord2(existing.data);
+  if (String(current.type || "") !== "subscription") return null;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const tenantId = input.tenantId?.trim() || current.saasTenantId || null;
+  const data = {
+    ...current,
+    saasTenantId: tenantId,
+    saasProvisioningStatus: "ready",
+    updatedAt: now
+  };
+  await prisma.dataDocument.update({
+    where: {
+      collectionPath_docId: { collectionPath: LICENSES_COLLECTION_PATH, docId }
+    },
+    data: { data }
+  });
+  return data;
+}
+async function provisionSaasLicense(input) {
+  const docId = licenseDocId(input.userId, input.appId);
+  const existing = await prisma.dataDocument.findUnique({
+    where: {
+      collectionPath_docId: { collectionPath: LICENSES_COLLECTION_PATH, docId }
+    }
+  });
+  if (!existing) return null;
+  const current = readDataRowAsRecord2(existing.data);
+  if (String(current.type || "") !== "subscription") return null;
+  const url = input.saasInstanceUrl?.trim() || null;
+  const tenantId = input.saasTenantId?.trim() || current.saasTenantId || null;
+  if (!url && !tenantId) return null;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const data = {
+    ...current,
+    saasInstanceUrl: url,
+    saasTenantId: tenantId,
+    saasProvisioningStatus: url || tenantId ? "ready" : "pending",
+    updatedAt: now
+  };
+  await prisma.dataDocument.update({
+    where: {
+      collectionPath_docId: { collectionPath: LICENSES_COLLECTION_PATH, docId }
+    },
+    data: { data }
+  });
+  const notifId = (0, import_crypto4.randomUUID)();
+  await prisma.dataDocument.create({
+    data: {
+      collectionPath: "notifications",
+      docId: notifId,
+      data: {
+        id: notifId,
+        userId: input.userId,
+        title: "Application SaaS pr\xEAte",
+        message: tenantId ? `Votre espace tenant (${tenantId}) est pr\xEAt${url ? ` : ${url}` : ""}.` : `Votre instance est en ligne : ${url}`,
+        type: "license",
+        read: false,
+        createdAt: now,
+        metadata: { appId: input.appId, saasInstanceUrl: url }
+      }
+    }
+  });
+  return data;
+}
+
+// src/lib/saasBilling.ts
+function isExternalSaasBilling(app2) {
+  return app2?.saasBillingMode === "external";
+}
+
+// src/server/saasAccessToken.ts
+var import_jsonwebtoken2 = __toESM(require("jsonwebtoken"), 1);
+var SAAS_TOKEN_AUDIENCE = "infinitecore-saas-access";
+var SAAS_TOKEN_TTL = "2h";
+function signSaasAccessToken(payload) {
+  return import_jsonwebtoken2.default.sign(
+    { ...payload, purpose: "saas-access" },
+    getJwtSecret(),
+    {
+      expiresIn: SAAS_TOKEN_TTL,
+      algorithm: "HS256",
+      issuer: appEnv.auth.jwtIssuer,
+      audience: SAAS_TOKEN_AUDIENCE
+    }
+  );
+}
+function verifySaasAccessToken(token) {
+  try {
+    const decoded = import_jsonwebtoken2.default.verify(token, getJwtSecret(), {
+      algorithms: ["HS256"],
+      issuer: appEnv.auth.jwtIssuer,
+      audience: SAAS_TOKEN_AUDIENCE
+    });
+    if (decoded.purpose !== "saas-access") return null;
+    if (!decoded.uid || !decoded.appId || !decoded.moduleKey || !decoded.tenantId) return null;
+    return {
+      uid: decoded.uid,
+      appId: decoded.appId,
+      moduleKey: decoded.moduleKey,
+      tenantId: decoded.tenantId,
+      email: decoded.email,
+      stripeSubscriptionId: decoded.stripeSubscriptionId ?? null
+    };
+  } catch {
+    return null;
+  }
+}
+
 // server.ts
 var ALLOWED_UPLOAD_MIME_TYPES = /* @__PURE__ */ new Set([
   "application/pdf",
@@ -2649,6 +3860,8 @@ var ALLOWED_UPLOAD_MIME_TYPES = /* @__PURE__ */ new Set([
   "image/webp",
   "text/plain",
   "text/csv",
+  "application/zip",
+  "application/x-zip-compressed",
   "application/octet-stream"
 ]);
 var ALLOWED_UPLOAD_EXTENSIONS = /* @__PURE__ */ new Set([
@@ -2662,13 +3875,14 @@ var ALLOWED_UPLOAD_EXTENSIONS = /* @__PURE__ */ new Set([
   ".png",
   ".webp",
   ".txt",
-  ".csv"
+  ".csv",
+  ".zip"
 ]);
 var DB_FILE_COLLECTION_PATH = "__file_blobs";
 var DB_FILE_PUBLIC_ID_PREFIX = "dbf/";
 var MAX_DB_FALLBACK_BYTES = 8 * 1024 * 1024;
 var ORDERS_COLLECTION_PATH = "orders";
-var USERS_COLLECTION_PATH = "users";
+var USERS_COLLECTION_PATH2 = "users";
 var NOTIFICATIONS_COLLECTION_PATH = "notifications";
 function subscriptionStatusFromStripe(raw) {
   const status = String(raw || "").trim().toLowerCase();
@@ -2679,7 +3893,7 @@ function subscriptionStatusFromStripe(raw) {
   if (["canceled", "ended", "paused"].includes(status)) return "Annul\xE9";
   return "Paiement en cours";
 }
-function readDataRowAsRecord(value) {
+function readDataRowAsRecord3(value) {
   return value && typeof value === "object" ? value : {};
 }
 function isDbStoredPublicId(publicId) {
@@ -2694,11 +3908,18 @@ function isAllowedUpload(file) {
   if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimetype || "")) return false;
   return true;
 }
+function contentDispositionForDownload(storageKey, originalName, mimetype) {
+  const safeName = originalName.replace(/"/g, "");
+  const key = storageKey.toLowerCase();
+  const type = mimetype.toLowerCase();
+  const asAttachment = key.endsWith(".zip") || type.includes("zip");
+  return `${asAttachment ? "attachment" : "inline"}; filename="${safeName}"`;
+}
 function secureSecretEquals(expected, provided) {
   const expectedBuf = Buffer.from(expected);
   const providedBuf = Buffer.from(provided);
   if (expectedBuf.length !== providedBuf.length) return false;
-  return (0, import_crypto3.timingSafeEqual)(expectedBuf, providedBuf);
+  return (0, import_crypto5.timingSafeEqual)(expectedBuf, providedBuf);
 }
 async function readAuthenticatedUser(req) {
   const auth = parseAuthFromRequest(req);
@@ -2754,7 +3975,7 @@ function paddeClientNameFromPayload(payload) {
   );
 }
 async function createExpressApplication() {
-  const app = (0, import_express.default)();
+  const app2 = (0, import_express.default)();
   const port = appEnv.http.port;
   const corsOrigins = parseCorsOrigins(appEnv.http.corsOriginRaw);
   const paddeAllowedOrigins = /* @__PURE__ */ new Set(["https://padde-ci.com", "https://www.padde-ci.com"]);
@@ -2785,10 +4006,10 @@ async function createExpressApplication() {
     if (!stripe) return null;
     const userRow = await prisma.dataDocument.findUnique({
       where: {
-        collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH, docId: auth.uid }
+        collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH2, docId: auth.uid }
       }
     });
-    const userData = readDataRowAsRecord(userRow?.data);
+    const userData = readDataRowAsRecord3(userRow?.data);
     const existingCustomerId = String(userData.stripeCustomerId || "").trim();
     if (existingCustomerId) return existingCustomerId;
     const listed = await stripe.customers.list({
@@ -2805,10 +4026,10 @@ async function createExpressApplication() {
     }
     await prisma.dataDocument.upsert({
       where: {
-        collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH, docId: auth.uid }
+        collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH2, docId: auth.uid }
       },
       create: {
-        collectionPath: USERS_COLLECTION_PATH,
+        collectionPath: USERS_COLLECTION_PATH2,
         docId: auth.uid,
         data: {
           uid: auth.uid,
@@ -2829,7 +4050,7 @@ async function createExpressApplication() {
     });
     return customerId;
   };
-  app.use(
+  app2.use(
     (0, import_cors.default)({
       origin(origin, callback) {
         if (!origin || corsOrigins.includes(origin)) {
@@ -2850,13 +4071,13 @@ async function createExpressApplication() {
       credentials: true
     })
   );
-  app.use((_, res, next) => {
+  app2.use((_, res, next) => {
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("X-Frame-Options", "DENY");
     next();
   });
-  app.use(
+  app2.use(
     import_express.default.json({
       limit: "1mb",
       strict: true,
@@ -2867,19 +4088,19 @@ async function createExpressApplication() {
       }
     })
   );
-  app.use(
+  app2.use(
     import_express.default.urlencoded({
       extended: true,
       limit: "1mb"
     })
   );
-  app.use((req, res, next) => {
-    const requestId = (0, import_crypto3.randomUUID)();
+  app2.use((req, res, next) => {
+    const requestId = (0, import_crypto5.randomUUID)();
     req.headers["x-request-id"] = requestId;
     res.setHeader("X-Request-Id", requestId);
     next();
   });
-  app.use((req, res, next) => {
+  app2.use((req, res, next) => {
     const start = Date.now();
     const routePath = (req.path || req.url?.split("?")[0] || "").slice(0, 160);
     const requestId = String(req.headers["x-request-id"] || "unknown");
@@ -2899,11 +4120,147 @@ async function createExpressApplication() {
     });
     next();
   });
-  app.get("/health", (_req, res) => {
-    res.status(200).json({ ok: true });
+  app2.get("/health", (_req, res) => {
+    res.status(200).json({
+      ok: true,
+      nodeEnv: appEnv.node.env,
+      localHttpDev: !resetAppBaseUrl().startsWith("https://"),
+      e2eSkipLoginVerification: process.env.E2E_SKIP_LOGIN_VERIFICATION === "1"
+    });
   });
-  registerMongoApi(app);
-  app.post("/api/stripe/checkout/subscription", async (req, res) => {
+  app2.get("/api/apps/catalog", async (_req, res) => {
+    try {
+      let stored = await loadAppCatalog();
+      const legacyIds = /* @__PURE__ */ new Set([
+        "crm",
+        "finance",
+        "rh",
+        "projects",
+        "academy",
+        "comms",
+        "store",
+        "pack-croissance",
+        "pack-elite"
+      ]);
+      if (stored.some((a) => legacyIds.has(a.id))) {
+        stored = await saveAppCatalog(INFINITE_APP_CATALOG);
+      }
+      const apps = mergeCatalogWithDefaults(stored);
+      return res.status(200).json({ success: true, apps });
+    } catch (error) {
+      console.error("[apps/catalog GET]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app2.put("/api/apps/catalog", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+      if (auth.role !== "admin") {
+        return res.status(403).json({ success: false, error: "Acces reserve a l'administrateur." });
+      }
+      const rawApps = req.body?.apps;
+      const parsed = parseAppCatalogEntries(rawApps);
+      if (!parsed.length) {
+        return res.status(400).json({ success: false, error: "Catalogue invalide." });
+      }
+      const apps = await saveAppCatalog(parsed);
+      return res.status(200).json({ success: true, apps });
+    } catch (error) {
+      console.error("[apps/catalog PUT]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app2.post("/api/apps/appointment", async (req, res) => {
+    try {
+      const parsed = parseAppointmentBody(req.body ?? {});
+      if (!parsed.ok) {
+        return res.status(400).json({ success: false, error: parsed.error });
+      }
+      const {
+        appId,
+        appTitle,
+        firstName,
+        lastName,
+        phone,
+        email,
+        companyName,
+        preferredDate,
+        message
+      } = parsed.data;
+      const createdAt = (/* @__PURE__ */ new Date()).toISOString();
+      const leadId = (0, import_crypto5.randomUUID)().replace(/-/g, "");
+      const noteParts = [
+        `Demande RDV \u2014 ${appTitle || appId}`,
+        preferredDate ? `Date souhait\xE9e : ${preferredDate}` : "",
+        message || ""
+      ].filter(Boolean);
+      await prisma.dataDocument.create({
+        data: {
+          collectionPath: "leads",
+          docId: leadId,
+          data: {
+            id: leadId,
+            source: "app-appointment",
+            appId,
+            appTitle: appTitle || appId,
+            firstName,
+            lastName,
+            email: email || void 0,
+            whatsapp: phone,
+            phone,
+            companyName: companyName || "Non renseign\xE9",
+            status: "soumis",
+            urgency: "moyenne",
+            note: noteParts.join("\n"),
+            preferredDate: preferredDate || void 0,
+            createdAt
+          }
+        }
+      });
+      const teamRows = await prisma.dataDocument.findMany({
+        where: { collectionPath: USERS_COLLECTION_PATH2 }
+      });
+      const teamIds = teamRows.map((row) => {
+        const data = readDataRowAsRecord3(row.data);
+        const role = String(data.role || "").toLowerCase();
+        if (role !== "commando" && role !== "admin") return null;
+        const uid = String(data.uid || row.docId || "").trim();
+        return uid || null;
+      }).filter((v) => Boolean(v));
+      const title = "Nouveau rendez-vous application";
+      const notifMessage = `${firstName} ${lastName} \u2014 ${appTitle || appId}${companyName ? ` (${companyName})` : ""} \u2014 ${phone}${preferredDate ? ` \u2014 ${preferredDate}` : ""}`;
+      await Promise.all(
+        teamIds.map(
+          (uid) => prisma.dataDocument.create({
+            data: {
+              collectionPath: NOTIFICATIONS_COLLECTION_PATH,
+              docId: (0, import_crypto5.randomUUID)().replace(/-/g, ""),
+              data: {
+                userId: uid,
+                title,
+                message: notifMessage,
+                type: "order",
+                read: false,
+                createdAt,
+                metadata: { leadId, appId, source: "app-appointment" }
+              }
+            }
+          })
+        )
+      );
+      void sendStaffNotifyEmail({
+        subject: `[Infinite Core] ${title}`,
+        text: [notifMessage, "", `Lead : ${leadId}`, noteParts.join("\n")].join("\n")
+      }).catch((err) => console.warn("[apps/appointment] staff email:", err));
+      return res.status(200).json({ success: true, leadId });
+    } catch (error) {
+      console.error("[apps/appointment]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  registerMongoApi(app2);
+  app2.post("/api/stripe/checkout/subscription", async (req, res) => {
     try {
       const auth = await readAuthenticatedUser(req);
       if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
@@ -2917,13 +4274,16 @@ async function createExpressApplication() {
       if (!validated.success) {
         return res.status(400).json({ success: false, error: "Param\xE8tres abonnement invalides.", details: validated.error.format() });
       }
-      const { serviceId, serviceName, note = "", amount, billingCycle } = validated.data;
+      const { serviceId, serviceName, note = "", amount, billingCycle, moduleKey: moduleKeyInput } = validated.data;
+      const catalog = await loadAppCatalog();
+      const catalogApp = catalog.find((a) => a.id === serviceId);
+      const moduleKey = moduleKeyInput || catalogApp?.moduleKey || serviceId;
       const unitAmount = Math.round(amount);
-      const orderId = `CMD-${(0, import_crypto3.randomUUID)().split("-")[0].toUpperCase()}`;
+      const orderId = `CMD-${(0, import_crypto5.randomUUID)().split("-")[0].toUpperCase()}`;
       const customerId = await resolveStripeCustomerId({ uid: auth.uid, email: auth.email });
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
-        success_url: `${appBaseUrl}/dashboard/boutique?checkout=success&orderId=${encodeURIComponent(orderId)}`,
+        success_url: `${appBaseUrl}/dashboard/boutique?checkout=success&orderId=${encodeURIComponent(orderId)}&type=subscription`,
         cancel_url: `${appBaseUrl}/dashboard/boutique?checkout=cancel&orderId=${encodeURIComponent(orderId)}`,
         customer: customerId || void 0,
         customer_email: customerId ? void 0 : auth.email,
@@ -2931,13 +4291,20 @@ async function createExpressApplication() {
           orderId,
           userId: auth.uid,
           serviceId,
-          billingCycle
+          appId: serviceId,
+          appName: serviceName,
+          moduleKey,
+          billingCycle,
+          licenseType: "subscription"
         },
         subscription_data: {
           metadata: {
             orderId,
             userId: auth.uid,
-            serviceId
+            serviceId,
+            appId: serviceId,
+            moduleKey,
+            licenseType: "subscription"
           }
         },
         line_items: [
@@ -2948,7 +4315,8 @@ async function createExpressApplication() {
               unit_amount: unitAmount,
               recurring: { interval: billingCycle },
               product_data: {
-                name: serviceName,
+                name: `${serviceName} \u2014 Abonnement SaaS`,
+                description: "Abonnement mensuel \u2014 application en ligne h\xE9berg\xE9e par Infinite Core (SaaS multi-tenant).",
                 metadata: { serviceId }
               }
             }
@@ -2968,6 +4336,7 @@ async function createExpressApplication() {
             clientEmail: auth.email,
             serviceName,
             serviceId,
+            moduleKey,
             orderType: "abonnement",
             isSubscription: true,
             billingCycle,
@@ -2988,6 +4357,7 @@ async function createExpressApplication() {
             clientEmail: auth.email,
             serviceName,
             serviceId,
+            moduleKey,
             orderType: "abonnement",
             isSubscription: true,
             billingCycle,
@@ -3012,7 +4382,120 @@ async function createExpressApplication() {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.post("/api/orders/notify-team", async (req, res) => {
+  app2.post("/api/stripe/checkout/license", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+      if (!stripe) {
+        return res.status(503).json({
+          success: false,
+          error: "Stripe non configur\xE9. Ajoutez STRIPE_SECRET_KEY."
+        });
+      }
+      const validated = LicenseCheckoutSchema.safeParse(req.body);
+      if (!validated.success) {
+        return res.status(400).json({
+          success: false,
+          error: "Param\xE8tres licence invalides.",
+          details: validated.error.format()
+        });
+      }
+      const { appId, appName, moduleKey, amount, licenseDurationDays, note = "" } = validated.data;
+      const unitAmount = Math.round(amount);
+      const durationDays = licenseDurationDays !== void 0 && licenseDurationDays >= 0 ? licenseDurationDays : 0;
+      const orderId = `CMD-${(0, import_crypto5.randomUUID)().split("-")[0].toUpperCase()}`;
+      const customerId = await resolveStripeCustomerId({ uid: auth.uid, email: auth.email });
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        success_url: `${appBaseUrl}/dashboard/boutique?checkout=success&orderId=${encodeURIComponent(orderId)}&type=license`,
+        cancel_url: `${appBaseUrl}/dashboard/boutique?checkout=cancel&orderId=${encodeURIComponent(orderId)}`,
+        customer: customerId || void 0,
+        customer_email: customerId ? void 0 : auth.email,
+        metadata: {
+          orderId,
+          userId: auth.uid,
+          serviceId: appId,
+          appId,
+          appName,
+          moduleKey,
+          licenseType: "license",
+          licenseDurationDays: String(durationDays)
+        },
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: "xof",
+              unit_amount: unitAmount,
+              product_data: {
+                name: durationDays === 0 ? `${appName} \u2014 Licence \xE0 vie (auto-h\xE9berg\xE9e)` : `${appName} \u2014 Licence`,
+                description: durationDays === 0 ? "Licence \xE0 vie \u2014 le client h\xE9berge l'application." : void 0,
+                metadata: { appId, moduleKey }
+              }
+            }
+          }
+        ]
+      });
+      await prisma.dataDocument.upsert({
+        where: {
+          collectionPath_docId: { collectionPath: ORDERS_COLLECTION_PATH, docId: orderId }
+        },
+        create: {
+          collectionPath: ORDERS_COLLECTION_PATH,
+          docId: orderId,
+          data: {
+            id: orderId,
+            userId: auth.uid,
+            clientEmail: auth.email,
+            serviceName: appName,
+            serviceId: appId,
+            moduleKey,
+            orderType: "licence",
+            isSubscription: false,
+            licenseDurationDays: durationDays,
+            amount: unitAmount,
+            currency: "XOF",
+            note: note || null,
+            status: "Paiement en cours",
+            paymentStatus: "pending",
+            stripeCheckoutSessionId: session.id,
+            createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+            updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        },
+        update: {
+          data: {
+            id: orderId,
+            userId: auth.uid,
+            clientEmail: auth.email,
+            serviceName: appName,
+            serviceId: appId,
+            moduleKey,
+            orderType: "licence",
+            isSubscription: false,
+            licenseDurationDays: durationDays,
+            amount: unitAmount,
+            currency: "XOF",
+            note: note || null,
+            status: "Paiement en cours",
+            paymentStatus: "pending",
+            stripeCheckoutSessionId: session.id,
+            updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+          }
+        }
+      });
+      return res.status(200).json({
+        success: true,
+        checkoutUrl: session.url,
+        sessionId: session.id,
+        orderId
+      });
+    } catch (error) {
+      console.error("[stripe/checkout/license]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app2.post("/api/orders/notify-team", async (req, res) => {
     try {
       const auth = await readAuthenticatedUser(req);
       if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
@@ -3034,17 +4517,17 @@ async function createExpressApplication() {
       if (!orderRow) {
         return res.status(404).json({ success: false, error: "Commande introuvable." });
       }
-      const orderData = readDataRowAsRecord(orderRow.data);
+      const orderData = readDataRowAsRecord3(orderRow.data);
       const orderOwnerId = String(orderData.userId || "");
       if (orderOwnerId !== auth.uid && auth.role !== "admin" && auth.role !== "commando") {
         return res.status(403).json({ success: false, error: "Acc\xE8s refus\xE9." });
       }
       const clientName = String(orderData.clientName || "").trim() || String(orderData.clientEmail || "").trim() || auth.email || "Client";
       const teamRows = await prisma.dataDocument.findMany({
-        where: { collectionPath: USERS_COLLECTION_PATH }
+        where: { collectionPath: USERS_COLLECTION_PATH2 }
       });
       const teamIds = teamRows.map((row) => {
-        const data = readDataRowAsRecord(row.data);
+        const data = readDataRowAsRecord3(row.data);
         const role = String(data.role || "").toLowerCase();
         if (role !== "commando" && role !== "admin") return null;
         const uid = String(data.uid || row.docId || "").trim();
@@ -3057,7 +4540,7 @@ async function createExpressApplication() {
       let created = 0;
       await Promise.all(
         teamIds.map(async (uid) => {
-          const notifId = (0, import_crypto3.randomUUID)();
+          const notifId = (0, import_crypto5.randomUUID)();
           await prisma.dataDocument.create({
             data: {
               collectionPath: NOTIFICATIONS_COLLECTION_PATH,
@@ -3103,7 +4586,187 @@ async function createExpressApplication() {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.post("/api/stripe/billing-portal-session", async (req, res) => {
+  app2.post("/api/saas/webhooks/subscription-active", async (req, res) => {
+    try {
+      if (!verifySaasBridgeAuth(String(req.headers["x-infinitecore-saas-key"] || ""))) {
+        return res.status(401).json({ success: false, error: "Cl\xE9 API invalide." });
+      }
+      const body = req.body ?? {};
+      const userId = String(body.userId || "").trim();
+      const appId = String(body.appId || "").trim();
+      if (!userId || !appId) {
+        return res.status(400).json({ success: false, error: "userId et appId requis." });
+      }
+      const license = await upsertExternalSubscriptionLicense({
+        userId,
+        appId,
+        moduleKey: String(body.moduleKey || "").trim() || void 0,
+        appName: String(body.appName || "").trim() || void 0,
+        tenantId: String(body.tenantId || "").trim() || void 0,
+        expiresAt: body.expiresAt ? String(body.expiresAt) : null
+      });
+      return res.status(200).json({ success: true, license });
+    } catch (error) {
+      console.error("[saas/webhooks/subscription-active]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app2.post("/api/saas/webhooks/tenant-ready", async (req, res) => {
+    try {
+      if (!verifySaasBridgeAuth(String(req.headers["x-infinitecore-saas-key"] || ""))) {
+        return res.status(401).json({ success: false, error: "Cl\xE9 API invalide." });
+      }
+      const body = req.body ?? {};
+      const userId = String(body.userId || "").trim();
+      const appId = String(body.appId || "").trim();
+      if (!userId || !appId) {
+        return res.status(400).json({ success: false, error: "userId et appId requis." });
+      }
+      const license = await confirmSaasTenantReady({
+        userId,
+        appId,
+        tenantId: String(body.tenantId || "").trim() || void 0
+      });
+      if (!license) {
+        return res.status(404).json({ success: false, error: "Abonnement introuvable." });
+      }
+      return res.status(200).json({ success: true, license });
+    } catch (error) {
+      console.error("[saas/webhooks/tenant-ready]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app2.get("/api/saas/access-token", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+      const appId = String(req.query.appId || "").trim();
+      if (!appId) {
+        return res.status(400).json({ success: false, error: "appId requis." });
+      }
+      const catalog = await loadAppCatalog();
+      const catalogApp = catalog.find((a) => a.id === appId);
+      if (!catalogApp) {
+        return res.status(404).json({ success: false, error: "Application introuvable." });
+      }
+      if (isExternalSaasBilling(catalogApp)) {
+        return res.status(400).json({
+          success: false,
+          error: "Cette application utilise le paiement externe \u2014 pas de jeton Infinite Core."
+        });
+      }
+      const docId = licenseDocId(auth.uid, appId);
+      const row = await prisma.dataDocument.findUnique({
+        where: {
+          collectionPath_docId: { collectionPath: LICENSES_COLLECTION_PATH, docId }
+        }
+      });
+      if (!row) {
+        return res.status(403).json({ success: false, error: "Abonnement actif requis." });
+      }
+      const license = readDataRowAsRecord3(row.data);
+      if (license.type !== "subscription" || !isLicenseActive(license)) {
+        return res.status(403).json({ success: false, error: "Abonnement actif requis." });
+      }
+      const tenantId = resolveSaasTenantId(license);
+      const token = signSaasAccessToken({
+        uid: auth.uid,
+        appId,
+        moduleKey: license.moduleKey || catalogApp.moduleKey,
+        tenantId,
+        email: auth.email,
+        stripeSubscriptionId: license.stripeSubscriptionId ?? null
+      });
+      return res.status(200).json({ success: true, token, tenantId, expiresIn: 7200 });
+    } catch (error) {
+      console.error("[saas/access-token]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app2.get("/api/saas/verify-token", async (req, res) => {
+    try {
+      const bridgeKey = String(process.env.SAAS_BRIDGE_API_KEY || "").trim();
+      if (bridgeKey) {
+        const provided = String(req.headers["x-infinitecore-saas-key"] || "").trim();
+        if (!provided || !secureSecretEquals(bridgeKey, provided)) {
+          return res.status(401).json({ success: false, error: "Cl\xE9 API invalide." });
+        }
+      }
+      const token = String(req.query.token || "").trim();
+      if (!token) {
+        return res.status(400).json({ success: false, error: "token requis." });
+      }
+      const payload = verifySaasAccessToken(token);
+      if (!payload) {
+        return res.status(401).json({ success: false, valid: false, error: "Jeton invalide ou expir\xE9." });
+      }
+      const docId = licenseDocId(payload.uid, payload.appId);
+      const row = await prisma.dataDocument.findUnique({
+        where: {
+          collectionPath_docId: { collectionPath: LICENSES_COLLECTION_PATH, docId }
+        }
+      });
+      if (!row) {
+        return res.status(200).json({ success: true, valid: false, error: "Abonnement introuvable." });
+      }
+      const license = readDataRowAsRecord3(row.data);
+      const active = license.type === "subscription" && isLicenseActive(license);
+      return res.status(200).json({
+        success: true,
+        valid: active,
+        userId: payload.uid,
+        appId: payload.appId,
+        moduleKey: payload.moduleKey,
+        tenantId: payload.tenantId,
+        email: payload.email ?? null,
+        stripeSubscriptionId: payload.stripeSubscriptionId ?? null
+      });
+    } catch (error) {
+      console.error("[saas/verify-token]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app2.post("/api/admin/saas/provision", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+      if (auth.role !== "admin" && auth.role !== "commando") {
+        return res.status(403).json({ success: false, error: "Acc\xE8s refus\xE9." });
+      }
+      const body = req.body ?? {};
+      const userId = String(body.userId || "").trim();
+      const appId = String(body.appId || "").trim();
+      const saasInstanceUrl = String(body.saasInstanceUrl || "").trim();
+      const saasTenantId = String(body.saasTenantId || "").trim();
+      if (!userId || !appId || !saasInstanceUrl && !saasTenantId) {
+        return res.status(400).json({
+          success: false,
+          error: "userId, appId et (saasInstanceUrl ou saasTenantId) requis."
+        });
+      }
+      if (saasInstanceUrl) {
+        try {
+          new URL(saasInstanceUrl);
+        } catch {
+          return res.status(400).json({ success: false, error: "URL SaaS invalide." });
+        }
+      }
+      const license = await provisionSaasLicense({
+        userId,
+        appId,
+        saasInstanceUrl: saasInstanceUrl || void 0,
+        saasTenantId: saasTenantId || void 0
+      });
+      if (!license) {
+        return res.status(404).json({ success: false, error: "Abonnement introuvable pour cet utilisateur." });
+      }
+      return res.status(200).json({ success: true, license });
+    } catch (error) {
+      console.error("[admin/saas/provision]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app2.post("/api/stripe/billing-portal-session", async (req, res) => {
     try {
       const auth = await readAuthenticatedUser(req);
       if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
@@ -3130,7 +4793,7 @@ async function createExpressApplication() {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.post("/api/stripe/webhook", async (req, res) => {
+  app2.post("/api/stripe/webhook", async (req, res) => {
     try {
       if (!stripe) {
         return res.status(503).json({ success: false, error: "Stripe non configur\xE9." });
@@ -3153,7 +4816,7 @@ async function createExpressApplication() {
           }
         });
         if (!existing) return;
-        const current = readDataRowAsRecord(existing.data);
+        const current = readDataRowAsRecord3(existing.data);
         await prisma.dataDocument.update({
           where: {
             collectionPath_docId: { collectionPath: ORDERS_COLLECTION_PATH, docId: orderId }
@@ -3173,7 +4836,7 @@ async function createExpressApplication() {
           take: 5e3
         });
         for (const row of rows) {
-          const data = readDataRowAsRecord(row.data);
+          const data = readDataRowAsRecord3(row.data);
           if (String(data.subscriptionId || "") !== subscriptionId) continue;
           await upsertOrderPatch(row.docId, patch);
         }
@@ -3183,6 +4846,16 @@ async function createExpressApplication() {
           const session = event.data.object;
           const orderId = String(session.metadata?.orderId || "").trim();
           const subscriptionId = typeof session.subscription === "string" ? session.subscription : String(session.subscription?.id || "");
+          const userId = String(session.metadata?.userId || "").trim();
+          const appId = String(session.metadata?.appId || session.metadata?.serviceId || "").trim();
+          const moduleKey = String(session.metadata?.moduleKey || appId).trim();
+          const appName = String(session.metadata?.appName || session.metadata?.serviceId || appId).trim();
+          const licenseTypeRaw = String(session.metadata?.licenseType || "").trim();
+          const licenseType = licenseTypeRaw === "license" || session.mode === "payment" ? "license" : "subscription";
+          const licenseDurationDays = Number.parseInt(
+            String(session.metadata?.licenseDurationDays ?? "0"),
+            10
+          );
           if (orderId) {
             await upsertOrderPatch(orderId, {
               status: "Actif",
@@ -3190,8 +4863,21 @@ async function createExpressApplication() {
               stripeCheckoutSessionId: session.id,
               subscriptionId: subscriptionId || null,
               stripeCustomerId: session.customer ? String(session.customer) : null,
-              subscriptionStatus: "active",
+              subscriptionStatus: licenseType === "subscription" ? "active" : null,
               activatedAt: (/* @__PURE__ */ new Date()).toISOString()
+            });
+          }
+          if (userId && appId && moduleKey) {
+            await activateLicenseFromCheckoutSession({
+              userId,
+              appId,
+              moduleKey,
+              appName,
+              orderId,
+              checkoutSessionId: session.id,
+              licenseType,
+              subscriptionId: subscriptionId || null,
+              licenseDurationDays: Number.isFinite(licenseDurationDays) ? licenseDurationDays : 0
             });
           }
           break;
@@ -3201,12 +4887,19 @@ async function createExpressApplication() {
           const sub = event.data.object;
           const subscriptionId = String(sub.id || "").trim();
           const rawSub = sub;
+          const periodEnd = typeof rawSub.current_period_end === "number" ? new Date(rawSub.current_period_end * 1e3).toISOString() : null;
+          const isCanceled = event.type === "customer.subscription.deleted" || sub.status === "canceled";
           if (subscriptionId) {
             await updateBySubscriptionId(subscriptionId, {
               status: subscriptionStatusFromStripe(sub.status),
               subscriptionStatus: sub.status,
-              currentPeriodEnd: typeof rawSub.current_period_end === "number" ? new Date(rawSub.current_period_end * 1e3).toISOString() : null,
+              currentPeriodEnd: periodEnd,
               canceledAt: typeof rawSub.canceled_at === "number" ? new Date(rawSub.canceled_at * 1e3).toISOString() : null
+            });
+            await patchLicenseBySubscriptionId(subscriptionId, {
+              status: isCanceled ? "expired" : sub.status === "active" || sub.status === "trialing" ? "active" : "suspended",
+              expiresAt: periodEnd,
+              saasProvisioningStatus: isCanceled ? "suspended" : sub.status === "active" || sub.status === "trialing" ? "ready" : "suspended"
             });
           }
           break;
@@ -3220,6 +4913,10 @@ async function createExpressApplication() {
               status: "Impay\xE9",
               paymentStatus: "failed",
               subscriptionStatus: "past_due"
+            });
+            await patchLicenseBySubscriptionId(subscriptionId, {
+              status: "suspended",
+              saasProvisioningStatus: "suspended"
             });
           }
           break;
@@ -3266,7 +4963,7 @@ async function createExpressApplication() {
       return res.status(400).json({ success: false, error: "Requ\xEAte d'upload invalide." });
     });
   };
-  app.post("/api/files/upload", requireAuthenticatedUser, uploadSingleWithHandling, async (req, res) => {
+  app2.post("/api/files/upload", requireAuthenticatedUser, uploadSingleWithHandling, async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ success: false, error: "Aucun fichier re\xE7u." });
@@ -3274,13 +4971,13 @@ async function createExpressApplication() {
       if (!isAllowedUpload(req.file)) {
         return res.status(415).json({
           success: false,
-          error: "Type de fichier non autoris\xE9. Formats accept\xE9s: PDF, Office, JPG/PNG/WEBP, TXT/CSV."
+          error: "Type de fichier non autoris\xE9. Formats accept\xE9s: PDF, Office, JPG/PNG/WEBP, TXT/CSV, ZIP."
         });
       }
       const folderRaw = typeof req.body?.folder === "string" ? req.body.folder : "misc";
       const folder = sanitizeFolder(folderRaw);
       const safeOriginal = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const objectKey = `${folder}/${Date.now()}-${(0, import_crypto3.randomUUID)()}-${safeOriginal}`;
+      const objectKey = `${folder}/${Date.now()}-${(0, import_crypto5.randomUUID)()}-${safeOriginal}`;
       if (canUseR2 && s3) {
         await s3.send(
           new import_client_s32.PutObjectCommand({
@@ -3362,7 +5059,7 @@ async function createExpressApplication() {
       return res.status(500).json({ success: false, error: msg });
     }
   });
-  app.delete("/api/files", requireAuthenticatedUser, async (req, res) => {
+  app2.delete("/api/files", requireAuthenticatedUser, async (req, res) => {
     try {
       const safePath = normalizePublicIdQuery(String(req.query.publicId || ""));
       if (!safePath) {
@@ -3406,7 +5103,7 @@ async function createExpressApplication() {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.get("/api/files/download", requireAuthenticatedUser, async (req, res) => {
+  app2.get("/api/files/download", requireAuthenticatedUser, async (req, res) => {
     try {
       const safePath = normalizePublicIdQuery(String(req.query.publicId || ""));
       if (!safePath) {
@@ -3432,7 +5129,10 @@ async function createExpressApplication() {
         const originalName = typeof data.originalName === "string" && data.originalName.trim().length > 0 ? data.originalName : import_path2.default.basename(docId);
         const buffer = Buffer.from(encoded, "base64");
         res.setHeader("Content-Type", mimetype);
-        res.setHeader("Content-Disposition", `inline; filename="${originalName.replace(/"/g, "")}"`);
+        res.setHeader(
+          "Content-Disposition",
+          contentDispositionForDownload(docId, originalName, mimetype)
+        );
         res.setHeader("Cache-Control", "private, max-age=3600");
         return res.status(200).send(buffer);
       }
@@ -3457,8 +5157,9 @@ async function createExpressApplication() {
           throw e;
         }
         const filename = import_path2.default.basename(safePath).replace(/"/g, "");
-        res.setHeader("Content-Type", mimeFromStorageKey(safePath));
-        res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+        const mimetype = mimeFromStorageKey(safePath);
+        res.setHeader("Content-Type", mimetype);
+        res.setHeader("Content-Disposition", contentDispositionForDownload(safePath, filename, mimetype));
         res.setHeader("Cache-Control", "private, max-age=3600");
         const stream = (0, import_fs.createReadStream)(absPath);
         stream.on("error", (err) => {
@@ -3489,7 +5190,7 @@ async function createExpressApplication() {
       console.warn("[padde-ci] payload invalide (Zod):", validated.error.format());
     }
     const payload = data && typeof data === "object" ? data : {};
-    const auditId = options.existingAuditId?.trim() || `PADDE-${(0, import_crypto3.randomUUID)().replace(/-/g, "")}`;
+    const auditId = options.existingAuditId?.trim() || `PADDE-${(0, import_crypto5.randomUUID)().replace(/-/g, "")}`;
     const auditType = String(payload.type_audit || payload.type || payload.auditType || "Audit PADDE-CI").trim();
     const lowerKeyPayload = {};
     for (const [key, value] of Object.entries(payload)) {
@@ -3560,19 +5261,19 @@ async function createExpressApplication() {
     }
     const existingUserDoc = await prisma.dataDocument.findUnique({
       where: {
-        collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH, docId: linkedClientId }
+        collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH2, docId: linkedClientId }
       },
       select: { data: true }
     });
-    const existingUserData = readDataRowAsRecord(existingUserDoc?.data);
+    const existingUserData = readDataRowAsRecord3(existingUserDoc?.data);
     const [fallbackFirst = "", ...fallbackLastParts] = clientName.split(/\s+/).filter(Boolean);
     const fallbackLast = fallbackLastParts.join(" ");
     await prisma.dataDocument.upsert({
       where: {
-        collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH, docId: linkedClientId }
+        collectionPath_docId: { collectionPath: USERS_COLLECTION_PATH2, docId: linkedClientId }
       },
       create: {
-        collectionPath: USERS_COLLECTION_PATH,
+        collectionPath: USERS_COLLECTION_PATH2,
         docId: linkedClientId,
         data: {
           uid: linkedClientId,
@@ -3670,7 +5371,7 @@ async function createExpressApplication() {
           (recipientId) => prisma.dataDocument.create({
             data: {
               collectionPath: "notifications",
-              docId: (0, import_crypto3.randomUUID)().replace(/-/g, ""),
+              docId: (0, import_crypto5.randomUUID)().replace(/-/g, ""),
               data: {
                 userId: recipientId,
                 title: "Nouveau flux PADDE-CI",
@@ -3746,7 +5447,7 @@ async function createExpressApplication() {
     }
     return void 0;
   };
-  app.get("/api/webhooks/noya-recrutement/config-check", (_req, res) => {
+  app2.get("/api/webhooks/noya-recrutement/config-check", (_req, res) => {
     const configuredPartnerId = appEnv.webhooks.noyaRecrutementPartnerId.trim();
     res.setHeader("Cache-Control", "private, no-store, max-age=0, must-revalidate");
     return res.status(200).json({
@@ -3761,7 +5462,7 @@ async function createExpressApplication() {
       hint: noyaSecretExpected.length > 0 ? "L\u2019API exige le m\xEAme secret que NOYA_RECRUTEMENT_WEBHOOK_SECRET (header X-Webhook-Secret ou champs JSON webhookSecret / secret)." : "Aucun NOYA_RECRUTEMENT_WEBHOOK_SECRET : les POST JSON sont accept\xE9s sans secret (\xE9vitez en prod)."
     });
   });
-  app.post("/api/webhooks/noya-recrutement", async (req, res) => {
+  app2.post("/api/webhooks/noya-recrutement", async (req, res) => {
     try {
       const origin = String(req.headers.origin || "").trim();
       if (origin && !noyaAllowedOrigins.has(origin)) {
@@ -3817,7 +5518,7 @@ async function createExpressApplication() {
         });
       }
       const createdAt = (/* @__PURE__ */ new Date()).toISOString();
-      const leadId = (0, import_crypto3.randomUUID)().replace(/-/g, "");
+      const leadId = (0, import_crypto5.randomUUID)().replace(/-/g, "");
       const configuredPartnerId = appEnv.webhooks.noyaRecrutementPartnerId.trim();
       const configuredPartnerLabel = appEnv.webhooks.noyaRecrutementPartnerLabel.trim() || "Noya Partenaire";
       const partnerId = configuredPartnerId || "noya-recrutement";
@@ -3840,6 +5541,7 @@ async function createExpressApplication() {
             companyName: companyName || "Candidat Noya",
             status: "soumis",
             urgency: "moyenne",
+            parcours,
             note: note || `Soumission via formulaire Noya (${parcours}).`,
             createdAt
           }
@@ -3858,7 +5560,7 @@ async function createExpressApplication() {
           (recipientId) => prisma.dataDocument.create({
             data: {
               collectionPath: "notifications",
-              docId: (0, import_crypto3.randomUUID)().replace(/-/g, ""),
+              docId: (0, import_crypto5.randomUUID)().replace(/-/g, ""),
               data: {
                 userId: recipientId,
                 title,
@@ -3899,7 +5601,47 @@ async function createExpressApplication() {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.get("/api/webhooks/padde-ci/config-check", (_req, res) => {
+  app2.post("/api/noya/recrutement/send-email", requireAuthenticatedUser, async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifi\xE9." });
+      if (auth.role !== "admin" && auth.role !== "commando") {
+        return res.status(403).json({ success: false, error: "Acc\xE8s refus\xE9." });
+      }
+      const body = req.body && typeof req.body === "object" && !Array.isArray(req.body) ? req.body : {};
+      const leadId = String(body.leadId || "").trim();
+      const subject = String(body.subject || "").trim();
+      const message = String(body.message || body.text || "").trim();
+      const toFromBody = String(body.to || "").trim();
+      if (!leadId) return res.status(400).json({ success: false, error: "leadId requis." });
+      if (!message) return res.status(400).json({ success: false, error: "message requis." });
+      const leadRow = await prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath: "leads", docId: leadId } }
+      });
+      if (!leadRow) return res.status(404).json({ success: false, error: "Lead introuvable." });
+      const leadData = readDataRowAsRecord3(leadRow.data);
+      const source = String(leadData.source || "");
+      if (source !== "noya-recrutement") {
+        return res.status(400).json({ success: false, error: "Lead hors scope Noya recrutement." });
+      }
+      const emailFromLead = String(leadData.email || "").trim().toLowerCase();
+      const emailTo = toFromBody || emailFromLead;
+      if (!emailTo) return res.status(400).json({ success: false, error: "Le lead ne contient pas d\u2019email (ou champ `to` manquant)." });
+      const out = await sendLeadEmail({
+        to: emailTo,
+        subject: subject || "Noya Industries \u2014 suivi de votre demande",
+        text: message
+      });
+      if (!out.sent) {
+        return res.status(503).json({ success: false, error: out.reason || "Impossible d\u2019envoyer l\u2019e-mail." });
+      }
+      return res.status(200).json({ success: true });
+    } catch (error) {
+      console.error("[noya-recrutement] send-email:", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+  app2.get("/api/webhooks/padde-ci/config-check", (_req, res) => {
     res.setHeader("Cache-Control", "private, no-store, max-age=0, must-revalidate");
     return res.status(200).json({
       ok: true,
@@ -3912,7 +5654,7 @@ async function createExpressApplication() {
       hint: paddeSecretExpected.length > 0 ? "L\u2019API exige le m\xEAme secret que PADDE_WEBHOOK_SECRET (header X-Webhook-Secret ou champs JSON webhookSecret / secret)." : "Aucun PADDE_WEBHOOK_SECRET : les POST JSON sont accept\xE9s sans secret (\xE9vitez en prod)."
     });
   });
-  app.post("/api/webhooks/padde-ci", async (req, res) => {
+  app2.post("/api/webhooks/padde-ci", async (req, res) => {
     try {
       if (paddeSecretExpected) {
         const provided = extractPaddeProvidedSecret(req);
@@ -3933,7 +5675,7 @@ async function createExpressApplication() {
       res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.post("/api/webhooks/padde-ci/direct", async (req, res) => {
+  app2.post("/api/webhooks/padde-ci/direct", async (req, res) => {
     try {
       const origin = String(req.headers.origin || "").trim();
       if (origin && !paddeAllowedOrigins.has(origin)) {
@@ -3961,7 +5703,7 @@ async function createExpressApplication() {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.get("/api/webhooks/padde-ci", requirePaddeAuditViewer, async (req, res) => {
+  app2.get("/api/webhooks/padde-ci", requirePaddeAuditViewer, async (req, res) => {
     try {
       res.setHeader("Cache-Control", "private, no-store, max-age=0, must-revalidate");
       if (!appEnv.database.url) {
@@ -3975,7 +5717,7 @@ async function createExpressApplication() {
       const orderRows = ids.length > 0 ? await prisma.dataDocument.findMany({
         where: { collectionPath: ORDERS_COLLECTION_PATH, docId: { in: ids } }
       }) : [];
-      const orderById = new Map(orderRows.map((r) => [r.docId, readDataRowAsRecord(r.data)]));
+      const orderById = new Map(orderRows.map((r) => [r.docId, readDataRowAsRecord3(r.data)]));
       const audits = rows.map((row) => {
         const payload = row.payload;
         const typeFromPayload = typeof payload?.type === "string" ? payload.type : typeof payload?.type_audit === "string" ? payload.type_audit : "audit-inconnu";
@@ -4004,7 +5746,7 @@ async function createExpressApplication() {
       res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  app.post("/api/webhooks/padde-ci/backfill", async (req, res) => {
+  app2.post("/api/webhooks/padde-ci/backfill", async (req, res) => {
     try {
       const auth = await readAuthenticatedUser(req);
       if (!auth) return res.status(401).json({ success: false, error: "Non authentifi\xE9." });
@@ -4067,11 +5809,11 @@ async function createExpressApplication() {
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
-  return { app, port };
+  return { app: app2, port };
 }
 async function startServer() {
-  const { app, port } = await createExpressApplication();
-  app.listen(port, "0.0.0.0", () => {
+  const { app: app2, port } = await createExpressApplication();
+  app2.listen(port, "0.0.0.0", () => {
     console.log(`[infinitecore-api] http://0.0.0.0:${port}`);
   });
 }

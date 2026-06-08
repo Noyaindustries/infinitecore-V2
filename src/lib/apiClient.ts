@@ -24,6 +24,17 @@ const USE_LEGACY_BEARER =
   !!process.env &&
   process.env.NEXT_PUBLIC_USE_LEGACY_BEARER === "1";
 
+function isLocalDevHost(): boolean {
+  if (typeof window === "undefined") return false;
+  const host = window.location.hostname;
+  return host === "localhost" || host === "127.0.0.1";
+}
+
+/** Stockage JWT côté navigateur (Playwright ou secours dev local sur http://localhost). */
+function clientStoresAuthToken(): boolean {
+  return USE_LEGACY_BEARER || isLocalDevHost();
+}
+
 function agentDebugLog(payload: Record<string, unknown>) {
   agentSessionLog(payload);
 }
@@ -58,14 +69,14 @@ function buildTimeoutMessage(resolvedUrl: string, method?: string) {
 }
 
 export function getAuthToken(): string | null {
-  if (!USE_LEGACY_BEARER) return null;
   if (typeof window === "undefined") return null;
+  if (!clientStoresAuthToken()) return null;
   return localStorage.getItem(AUTH_TOKEN_KEY);
 }
 
 export function setAuthToken(token: string | null) {
-  if (!USE_LEGACY_BEARER) return;
   if (typeof window === "undefined") return;
+  if (!clientStoresAuthToken()) return;
   if (!token) {
     localStorage.removeItem(AUTH_TOKEN_KEY);
     return;

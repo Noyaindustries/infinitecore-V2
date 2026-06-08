@@ -10,6 +10,7 @@ import CookieBanner from './components/CookieBanner';
 import GoogleEmailModal from './components/GoogleEmailModal';
 import GoogleConfirmModal from './components/GoogleConfirmModal';
 import ProtectedRoute from './components/ProtectedRoute';
+import ModuleLicenseGate from './components/ModuleLicenseGate';
 import AdminLayout from './components/layout/AdminLayout';
 import ClientLayout from './components/layout/ClientLayout';
 import DeveloperLayout from './components/layout/DeveloperLayout';
@@ -32,6 +33,7 @@ const Login = lazy(() => import('./views/auth/Login'));
 const Signup = lazy(() => import('./views/auth/Signup'));
 const ResetPassword = lazy(() => import('./views/auth/ResetPassword'));
 const MarketingPage = lazy(() => import('./views/marketing/MarketingPage'));
+const AppDetailPage = lazy(() => import('./views/marketing/AppDetailPage'));
 const AdminDashboard = lazy(() => import('./views/admin/Dashboard'));
 const KanbanPipeline = lazy(() => import('./views/admin/KanbanPipeline'));
 const Operations = lazy(() => import('./views/admin/Operations'));
@@ -41,6 +43,7 @@ const AdminTickets = lazy(() => import('./views/admin/Tickets'));
 const AdminDossiers = lazy(() => import('./views/admin/Dossiers'));
 const AdminMessagerie = lazy(() => import('./views/admin/Messagerie'));
 const AdminInstances = lazy(() => import('./views/admin/Instances'));
+const AdminSaasProvisioning = lazy(() => import('./views/admin/SaasProvisioning'));
 const AdminPartners = lazy(() => import('./views/admin/Partners'));
 const AdminNoyaPartner = lazy(() => import('./views/admin/NoyaPartner'));
 const AdminLeads = lazy(() => import('./views/admin/Leads'));
@@ -67,6 +70,7 @@ const SuperAdminSupervision = lazy(() => import('./views/superadmin/Supervision'
 const SuperAdminSettings = lazy(() => import('./views/superadmin/Settings'));
 const PaddeCiAudits = lazy(() => import(/* webpackChunkName: "padde-ci-audits-v3" */ './views/superadmin/PaddeCiAudits'));
 const SuperAdminMissions = lazy(() => import('./views/superadmin/Missions'));
+const SuperAdminAppCatalog = lazy(() => import('./views/superadmin/AppCatalog'));
 const PartnerDashboard = lazy(() => import('./views/partner/Dashboard'));
 const PartnerClients = lazy(() => import('./views/partner/Clients'));
 const PartnerCommissions = lazy(() => import('./views/partner/Commissions'));
@@ -116,6 +120,7 @@ function AnimatedRoutes() {
             <Route path="/academy" element={<MarketingPage />} />
             <Route path="/comms" element={<MarketingPage />} />
             <Route path="/store" element={<MarketingPage />} />
+            <Route path="/applications/:appId" element={<AppDetailPage />} />
             <Route path="/tarifs" element={<Pricing />} />
             <Route path="/contact" element={<Navigate to="/signup" replace />} />
             <Route path="/a-propos" element={<About />} />
@@ -135,9 +140,13 @@ function AnimatedRoutes() {
             <Route path="/reset-password" element={<ResetPassword />} />
           </Route>
           
-          {/* Module Routes */}
+          {/* Module Routes — licence ou abonnement actif requis */}
           <Route path="/module/:id/login" element={<Navigate to="/login" replace />} />
-          <Route path="/module/:id/dashboard" element={<ModuleDashboard />} />
+          <Route element={<ProtectedRoute allowedRoles={['client', 'admin', 'commando']} />}>
+            <Route element={<ModuleLicenseGate />}>
+              <Route path="/module/:id/dashboard" element={<ModuleDashboard />} />
+            </Route>
+          </Route>
           
           {/* Super Admin Routes (Admin Général) */}
           <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
@@ -150,6 +159,7 @@ function AnimatedRoutes() {
               <Route path="developers" element={<SuperAdminDevelopers />} />
               <Route path="supervision" element={<SuperAdminSupervision />} />
               <Route path="settings" element={<SuperAdminSettings />} />
+              <Route path="apps" element={<SuperAdminAppCatalog />} />
               <Route path="audits-padde" element={<PaddeCiAudits />} />
               <Route path="missions" element={<SuperAdminMissions />} />
             </Route>
@@ -167,6 +177,7 @@ function AnimatedRoutes() {
               <Route path="messagerie" element={<AdminMessagerie />} />
               <Route path="dossiers" element={<AdminDossiers />} />
               <Route path="instances" element={<AdminInstances />} />
+              <Route path="saas" element={<AdminSaasProvisioning />} />
               <Route path="partners" element={<AdminPartners />} />
               <Route path="noya-partenaire" element={<AdminNoyaPartner />} />
               <Route path="leads" element={<AdminLeads />} />

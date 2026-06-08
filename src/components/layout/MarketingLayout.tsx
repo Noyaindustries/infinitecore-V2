@@ -8,6 +8,8 @@ import MarketingV4Background from './MarketingV4Background';
 import { cn } from '../../lib/utils';
 import { userInitialLetter } from '../../lib/userProfile';
 import { getWorkspaceNavLinks } from '../../lib/workspaceSpaces';
+import MarketingSeo from '../MarketingSeo';
+import SeaTracking from '../SeaTracking';
 
 /** Liens modules marketing (menu Solutions + footer). */
 const MARKETING_SOLUTION_MODULE_LINKS: { to: string; label: string }[] = [
@@ -102,6 +104,8 @@ export default function MarketingLayout() {
 
   return (
     <div className="flex min-h-dvh flex-col bg-black font-[Urbanist,ui-sans-serif,system-ui,sans-serif] text-[#C8D0E0] selection:bg-noya-blue/30">
+      <MarketingSeo />
+      <SeaTracking />
       <MarketingV4Background />
 
       {/* HEADER — nav fixe floutée (infinitecore-v4.html) */}

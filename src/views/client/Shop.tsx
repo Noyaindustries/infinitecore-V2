@@ -1,28 +1,56 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  ArrowRight, Star, Users, Wallet, FileSignature, Briefcase,
-  GraduationCap, MessageSquare, ShoppingCart, Search, Zap, Building2, Globe,
-  LayoutTemplate, Wrench, Share2, TrendingUp, Package, Crown, X, CheckCircle2,
+  ArrowRight, Star, Search, Zap, Building2, Globe,
+  LayoutTemplate, Wrench, Share2, TrendingUp, X, CheckCircle2,
   Send, ExternalLink, Sparkles
 } from 'lucide-react';
+import AppCatalogCardImage from '../../components/AppCatalogCardImage';
+import AppHowToGetAppGuide from '../../components/AppHowToGetAppGuide';
 import { db, auth } from '@/lib/clientSdk';
 import { collection, doc, setDoc } from '@/lib/mongoFirestore';
 import { apiRequest } from '@/lib/apiClient';
 import { useAuth } from '../../components/AuthProvider';
 import toast from 'react-hot-toast';
 import { PADDE_CI_FREE_AUDITS } from '../../data/paddeCiFreeAudits';
+import {
+  formatFcfa,
+  formatPricingHostingLabel,
+  formatPricingHostingShort,
+  type AppPricing,
+} from '../../data/appCatalog';
 import { openPaddeCiAuditForm } from '../../utils/openPaddeCiAuditForm';
-
+import { useLicenses } from '../../hooks/useLicenses';
+import { useAppCatalog } from '../../hooks/useAppCatalog';
+import { buildExternalCheckoutUrl, isExternalSaasBilling } from '../../lib/saasBilling';
+import { defaultSaasTenantId } from '../../lib/saasAccess';
 const AUDIT_ICONS = {
   'audit-rapide': Zap,
   'audit-business': Search,
   'audit-institutionnel': Building2,
 } as const;
 
+type ShopSelection = {
+  id: string;
+  title: string;
+  duration: string;
+  desc?: string;
+  moduleKey?: string;
+  imageUrl?: string;
+  onlineCheckout?: boolean;
+  isSubscription?: boolean;
+  billingCycle?: string;
+  price?: number;
+  pricing?: AppPricing[];
+};
+
 export default function ClientShop() {
   const { user, userData } = useAuth();
-  const [selectedService, setSelectedService] = useState<any | null>(null);
+  const { canAccessModule } = useLicenses();
+  const { apps: catalogApps, loading: catalogLoading } = useAppCatalog();
+  const [selectedService, setSelectedService] = useState<ShopSelection | null>(null);
+  const [selectedPricing, setSelectedPricing] = useState<AppPricing | null>(null);
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [orderSent, setOrderSent] = useState(false);
@@ -32,12 +60,18 @@ export default function ClientShop() {
     const params = new URLSearchParams(window.location.search);
     const checkout = params.get('checkout');
     if (!checkout) return;
+    const checkoutType = params.get('type');
     if (checkout === 'success') {
-      toast.success("Abonnement activé. Vous pouvez gérer votre offre via 'Gérer mes abonnements'.");
+      if (checkoutType === 'license') {
+        toast.success('Licence activée — consultez la messagerie et Mon espace pour télécharger votre application.');
+      } else {
+        toast.success('Abonnement actif — ouvrez Mes applications. Gérez le paiement via « Gérer mes abonnements ».');
+      }
     } else if (checkout === 'cancel') {
       toast("Paiement annulé. Vous pouvez réessayer quand vous voulez.");
     }
     params.delete('checkout');
+    params.delete('type');
     params.delete('orderId');
     const next = params.toString();
     const newUrl = `${window.location.pathname}${next ? `?${next}` : ''}${window.location.hash}`;
@@ -61,33 +95,56 @@ export default function ClientShop() {
     { id: 'rs-dominance', title: 'RS Formule Dominance', price: 150000, desc: 'Croissance + carrousels + stories + 2 campagnes Ads + retargeting', duration: 'Mensuel', icon: Star, color: 'text-red-500', bg: 'bg-red-50', isSubscription: true, billingCycle: 'mensuel' },
   ];
 
-  const coreModules = [
-    { id: 'crm', title: 'Infinite CRM', price: 15000, desc: 'Gestion clients, pipeline, devis, facturation, signature OHADA', duration: '5-7 jours', icon: Users, color: 'text-blue-500', bg: 'bg-blue-50' },
-    { id: 'finance', title: 'Infinite Finance', price: 15000, desc: 'Trésorerie, factures, relances, rapports financiers en temps réel', duration: '5-7 jours', icon: Wallet, color: 'text-green-500', bg: 'bg-green-50' },
-    { id: 'rh', title: 'Infinite RH', price: 15000, desc: 'Employés, paie CNPS, congés, contrats droit ivoirien', duration: '5-7 jours', icon: FileSignature, color: 'text-purple-500', bg: 'bg-purple-50' },
-    { id: 'projects', title: 'Infinite Projects', price: 10000, desc: 'Kanban projets, tâches, deadlines, suivi client', duration: '5 jours', icon: Briefcase, color: 'text-orange-500', bg: 'bg-orange-50' },
-    { id: 'academy', title: 'Infinite Academy', price: 10000, desc: 'Formation interne, quiz, certifications, bibliothèque ressources', duration: '5 jours', icon: GraduationCap, color: 'text-red-500', bg: 'bg-red-50' },
-    { id: 'comms', title: 'Infinite Comms', price: 5000, desc: 'Messagerie sécurisée d\'entreprise — remplace WhatsApp pro', duration: '3-5 jours', icon: MessageSquare, color: 'text-indigo-500', bg: 'bg-indigo-50' },
-    { id: 'store', title: 'Infinite Store', price: 25000, desc: 'Boutique en ligne + Wave/Orange Money + lien CRM et finances', duration: '7-10 jours', icon: ShoppingCart, color: 'text-pink-500', bg: 'bg-pink-50' },
-    { id: 'pack-croissance', title: 'Pack Croissance', price: 35000, desc: '3 modules au choix + onboarding dédié + support WhatsApp prioritaire', duration: '7-14 jours', icon: Package, color: 'text-teal-500', bg: 'bg-teal-50' },
-    { id: 'pack-elite', title: 'Pack Elite', price: 95000, desc: '7 solutions + personnalisation + chef de projet dédié + SLA garanti', duration: 'Sur devis', icon: Crown, color: 'text-yellow-600', bg: 'bg-yellow-50' },
-  ];
+  const coreModules = catalogApps.map((app) => ({
+    ...app,
+    duration: app.deliveryLabel,
+  }));
 
-  const handleOrderClick = (service: any) => {
+  const selectedCatalogApp = selectedService
+    ? catalogApps.find((a) => a.id === selectedService.id)
+    : undefined;
+  const usesExternalSubscriptionCheckout = Boolean(
+    selectedPricing?.type === 'subscription' &&
+      selectedCatalogApp &&
+      isExternalSaasBilling(selectedCatalogApp) &&
+      selectedCatalogApp.saasExternalCheckoutUrl?.trim()
+  );
+
+  const handleOrderClick = (service: ShopSelection, pricing?: AppPricing) => {
     if (!auth.currentUser) {
       toast.error('Vous devez être connecté pour passer une commande.');
       return;
     }
     setSelectedService(service);
+    setSelectedPricing(pricing ?? service.pricing?.[0] ?? null);
     setNote('');
     setOrderSent(false);
   };
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const preselectApp = params.get('app');
+    if (!preselectApp || !catalogApps.length || !auth.currentUser) return;
+    const mod = coreModules.find((m) => m.id === preselectApp);
+    if (!mod) return;
+    handleOrderClick(mod);
+    params.delete('app');
+    const next = params.toString();
+    window.history.replaceState(
+      {},
+      '',
+      `${window.location.pathname}${next ? `?${next}` : ''}${window.location.hash}`
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- une fois au chargement catalogue + session
+  }, [catalogApps.length, auth.currentUser?.uid]);
 
   const submitOrderViaMessagerie = async (options?: { stripeUnavailable?: boolean }) => {
     if (!auth.currentUser || !selectedService) return;
     const clientName = `${userData?.firstName || ''} ${userData?.lastName || ''}`.trim() || auth.currentUser.email || 'Client';
     const orderId = `CMD-${crypto.randomUUID().split('-')[0].toUpperCase()}`;
-    const isSub = selectedService.isSubscription === true;
+    const isSub =
+      selectedService.isSubscription === true || selectedPricing?.type === 'subscription';
+    const amount = selectedPricing?.price ?? selectedService.price ?? 0;
 
     await setDoc(doc(db, 'orders', orderId), {
       id: orderId,
@@ -96,10 +153,14 @@ export default function ClientShop() {
       clientEmail: auth.currentUser.email,
       serviceName: selectedService.title,
       serviceId: selectedService.id,
+      moduleKey: selectedService.moduleKey || null,
       isSubscription: isSub,
-      billingCycle: selectedService.billingCycle || null,
-      orderType: isSub ? 'abonnement' : 'service',
-      amount: selectedService.price,
+      billingCycle:
+        selectedPricing?.type === 'subscription'
+          ? selectedPricing.billingCycle
+          : selectedService.billingCycle || null,
+      orderType: isSub ? 'abonnement' : selectedPricing?.type === 'license' ? 'licence' : 'service',
+      amount,
       note: note.trim() || null,
       status: 'En attente',
       paymentMode: isSub ? 'manuel-messagerie' : 'messagerie',
@@ -161,31 +222,92 @@ export default function ClientShop() {
     setOrderSent(true);
   };
 
+  const startStripeCheckout = async (
+    endpoint: '/api/stripe/checkout/subscription' | '/api/stripe/checkout/license',
+    body: Record<string, unknown>
+  ) => {
+    const payload = await apiRequest<{
+      success: boolean;
+      checkoutUrl?: string;
+      error?: string;
+    }>(endpoint, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+    if (!payload?.checkoutUrl) {
+      throw new Error(payload?.error || "Impossible d'ouvrir la page de paiement.");
+    }
+    window.location.assign(payload.checkoutUrl);
+  };
+
   const handleConfirmOrder = async () => {
     if (!auth.currentUser || !selectedService) return;
     setIsSubmitting(true);
 
     try {
+      const pricing = selectedPricing;
+      if (selectedService.onlineCheckout && pricing) {
+        try {
+          if (pricing.type === 'subscription') {
+            const catalogApp = catalogApps.find((a) => a.id === selectedService.id);
+            if (catalogApp && isExternalSaasBilling(catalogApp)) {
+              const checkoutTemplate = catalogApp.saasExternalCheckoutUrl?.trim();
+              if (!checkoutTemplate) {
+                toast.error('URL de paiement de l’application non configurée. Contactez l’équipe.');
+                return;
+              }
+              const url = buildExternalCheckoutUrl(checkoutTemplate, {
+                userId: auth.currentUser.uid,
+                email: auth.currentUser.email ?? undefined,
+                appId: catalogApp.id,
+                moduleKey: catalogApp.moduleKey,
+                tenantId: defaultSaasTenantId(auth.currentUser.uid, catalogApp.id),
+              });
+              window.location.assign(url);
+              return;
+            }
+          }
+          if (pricing.type === 'license') {
+            await startStripeCheckout('/api/stripe/checkout/license', {
+              appId: selectedService.id,
+              appName: selectedService.title,
+              moduleKey: selectedService.moduleKey || selectedService.id,
+              amount: pricing.price,
+              licenseDurationDays: pricing.durationDays,
+              note: note.trim() || null,
+            });
+            return;
+          }
+          await startStripeCheckout('/api/stripe/checkout/subscription', {
+            serviceId: selectedService.id,
+            serviceName: selectedService.title,
+            moduleKey: selectedService.moduleKey || selectedService.id,
+            amount: pricing.price,
+            billingCycle: pricing.billingCycle,
+            note: note.trim() || null,
+          });
+          return;
+        } catch (stripeError) {
+          const msg = stripeError instanceof Error ? stripeError.message : String(stripeError);
+          const stripeUnavailable = /Stripe non configur/i.test(msg) || /STRIPE_SECRET_KEY/i.test(msg);
+          if (!stripeUnavailable) {
+            throw stripeError;
+          }
+          await submitOrderViaMessagerie({ stripeUnavailable: true });
+          toast.success('Paiement en ligne indisponible — votre demande a été envoyée à l\'équipe via la messagerie.');
+          return;
+        }
+      }
+
       if (selectedService.isSubscription === true) {
         try {
-          const payload = await apiRequest<{
-            success: boolean;
-            checkoutUrl?: string;
-            error?: string;
-          }>('/api/stripe/checkout/subscription', {
-            method: 'POST',
-            body: JSON.stringify({
-              serviceId: selectedService.id,
-              serviceName: selectedService.title,
-              amount: selectedService.price,
-              billingCycle: selectedService.billingCycle || 'mensuel',
-              note: note.trim() || null,
-            }),
+          await startStripeCheckout('/api/stripe/checkout/subscription', {
+            serviceId: selectedService.id,
+            serviceName: selectedService.title,
+            amount: selectedService.price,
+            billingCycle: selectedService.billingCycle || 'mensuel',
+            note: note.trim() || null,
           });
-          if (!payload?.checkoutUrl) {
-            throw new Error(payload?.error || "Impossible d'ouvrir la page de paiement.");
-          }
-          window.location.assign(payload.checkoutUrl);
           return;
         } catch (stripeError) {
           const msg = stripeError instanceof Error ? stripeError.message : String(stripeError);
@@ -238,7 +360,10 @@ export default function ClientShop() {
         <h1 className="text-3xl font-bold text-text-primary tracking-tight">Boutique & Services — Catalogue Complet</h1>
         <div className="mt-4 bg-noya-blue/10 border-l-4 border-noya-blue p-4 rounded-r-lg">
           <p className="text-sm text-text-secondary">
-            <span className="font-bold text-noya-blue">NOTE</span> — Les offres marquées mensuelles ouvrent un paiement Stripe sécurisé avec renouvellement automatique.
+            <span className="font-bold text-noya-blue">NOTE</span> —{' '}
+            <strong>Licence à vie</strong> : vous hébergez l&apos;application chez vous (package ZIP).{' '}
+            <strong>Abonnement</strong> : accès SaaS en ligne — paiement mensuel soit sur Infinite Core (Stripe,
+            espace tenant automatique), soit sur le site de l&apos;application (selon l&apos;app choisie).
           </p>
           <button
             type="button"
@@ -250,6 +375,8 @@ export default function ClientShop() {
           </button>
         </div>
       </div>
+
+      <AppHowToGetAppGuide variant="shop" />
 
       <div className="space-y-12">
 
@@ -352,42 +479,76 @@ export default function ClientShop() {
         {/* ── Modules Infinite Core ───────────────────────────────── */}
         <section>
           <h2 className="text-2xl font-bold text-text-primary mb-6 border-b-2 border-border pb-2">
-            Catégorie 2 — Modules Infinite Core
+            Catégorie 2 — Applications métier
           </h2>
+          {catalogLoading ? (
+            <div className="h-32 animate-pulse rounded-2xl bg-text-primary/5" aria-hidden />
+          ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {coreModules.map((module, index) => (
-              <motion.div
+            {coreModules.map((module) => {
+              const owned = canAccessModule(module.moduleKey);
+              const subPrice = module.pricing.find((p) => p.type === 'subscription');
+              const licensePrice = module.pricing.find((p) => p.type === 'license');
+              return (
+              <div
                 key={module.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.05 }}
-                className="bg-noya-sidebar rounded-2xl p-6 shadow-sm border border-border hover:border-noya-orange/30 hover:bg-text-primary/5 transition-all flex flex-col h-full relative"
+                className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-noya-sidebar shadow-sm transition-all hover:border-noya-orange/30 hover:bg-text-primary/5"
               >
-                <div className="flex items-start gap-4 mb-4">
-                  <div className={`p-3 rounded-xl bg-text-primary/5`}>
-                    <module.icon className={`w-6 h-6 text-noya-orange`} />
+                {owned && (
+                  <span className="absolute right-4 top-4 z-10 rounded-full border border-noya-green/25 bg-noya-green/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-noya-green">
+                    Actif
+                  </span>
+                )}
+                <Link to={`/applications/${module.id}`} className="block shrink-0">
+                  <AppCatalogCardImage app={module} showTitle={false} className="rounded-none border-0 border-b border-border" />
+                </Link>
+                <div className="flex flex-1 flex-col p-5">
+                <Link to={`/applications/${module.id}`}>
+                  <h3 className="text-lg font-bold leading-tight text-text-primary hover:text-noya-orange transition-colors">{module.title}</h3>
+                </Link>
+                {module.onlineCheckout && subPrice ? (
+                  <div className="mt-1">
+                    <p className="font-bold text-noya-orange">À partir de {formatFcfa(subPrice.price)}/mois</p>
+                    <p className="text-[11px] text-text-muted">
+                      {isExternalSaasBilling(module)
+                        ? 'Abonnement sur le site de l’app'
+                        : 'SaaS hébergé par Infinite Core'}
+                    </p>
                   </div>
-                  <div className="flex-1">
-                    <h3 className="text-lg font-bold text-text-primary leading-tight">{module.title}</h3>
-                    <p className="text-noya-orange font-bold mt-1">Sur devis</p>
-                  </div>
-                </div>
-                <p className="text-sm text-text-secondary mb-6 flex-grow">{module.desc}</p>
-                <div className="flex justify-between items-end mt-auto pt-4 border-t border-border">
+                ) : (
+                  <p className="mt-1 font-bold text-noya-orange">Sur devis</p>
+                )}
+                <p className="mb-4 mt-3 flex-grow text-sm text-text-secondary">{module.desc}</p>
+                {module.onlineCheckout && licensePrice && (
+                  <p className="text-xs text-text-muted mb-4">
+                    Licence à vie : {formatFcfa(licensePrice.price)} — auto-hébergée chez vous
+                  </p>
+                )}
+                <div className="flex justify-between items-end mt-auto pt-4 border-t border-border gap-2">
                   <div className="text-xs text-text-secondary">
-                    <span className="block font-medium text-text-muted mb-1">Durée livraison</span>
+                    <span className="block font-medium text-text-muted mb-1">Mise en service</span>
                     {module.duration}
                   </div>
-                  <button
-                    onClick={() => handleOrderClick(module)}
-                    className="flex items-center gap-1 text-sm font-medium text-noya-orange hover:text-noya-orange/80 transition-colors bg-noya-orange/10 hover:bg-noya-orange/20 px-3 py-1.5 rounded-lg border border-noya-orange/20"
-                  >
-                    Commander <ArrowRight size={16} />
-                  </button>
+                  <div className="flex flex-wrap gap-2 justify-end">
+                    <Link
+                      to={`/applications/${module.id}`}
+                      className="flex items-center gap-1 text-sm font-medium text-noya-blue hover:text-noya-blue/80 transition-colors bg-noya-blue/10 hover:bg-noya-blue/20 px-3 py-1.5 rounded-lg border border-noya-blue/20"
+                    >
+                      Détails
+                    </Link>
+                    <button
+                      onClick={() => handleOrderClick(module)}
+                      className="flex items-center gap-1 text-sm font-medium text-noya-orange hover:text-noya-orange/80 transition-colors bg-noya-orange/10 hover:bg-noya-orange/20 px-3 py-1.5 rounded-lg border border-noya-orange/20"
+                    >
+                      {module.onlineCheckout ? 'Acheter' : 'Commander'} <ArrowRight size={16} />
+                    </button>
+                  </div>
                 </div>
-              </motion.div>
-            ))}
+                </div>
+              </div>
+            );})}
           </div>
+          )}
         </section>
       </div>
 
@@ -402,7 +563,9 @@ export default function ClientShop() {
               className="bg-[#0D1320] rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-md overflow-hidden"
             >
               <div className="p-4 md:p-6 border-b border-border flex justify-between items-center bg-noya-black/50">
-                <h3 className="text-xl font-bold text-text-primary">Confirmer la demande</h3>
+                <h3 className="text-xl font-bold text-text-primary">
+                  {selectedService.onlineCheckout ? 'Choisir votre offre' : 'Confirmer la demande'}
+                </h3>
                 <button
                   onClick={() => setSelectedService(null)}
                   title="Fermer la fenêtre"
@@ -417,11 +580,57 @@ export default function ClientShop() {
                 {!orderSent ? (
                   <div className="space-y-6">
                     <div className="bg-noya-blue/10 p-4 rounded-2xl border border-noya-blue/20">
-                      <p className="text-sm text-noya-blue font-medium mb-1">Service sélectionné</p>
+                      <p className="text-sm text-noya-blue font-medium mb-1">Application sélectionnée</p>
                       <h4 className="text-lg font-bold text-text-primary">{selectedService.title}</h4>
-                      <p className="text-xs text-text-secondary mt-2">Délai : {selectedService.duration}</p>
-                      <p className="text-xs text-noya-blue mt-1">Notre équipe vous communiquera les modalités de paiement dans la messagerie.</p>
+                      <p className="text-xs text-text-secondary mt-2">Mise en service : {selectedService.duration}</p>
+                      {usesExternalSubscriptionCheckout ? (
+                        <p className="text-xs text-noya-blue mt-1">
+                          Redirection vers le paiement de l&apos;application — pas de double facturation Infinite Core.
+                        </p>
+                      ) : selectedService.onlineCheckout ? (
+                        <p className="text-xs text-noya-blue mt-1">Paiement sécurisé Stripe — accès activé automatiquement.</p>
+                      ) : (
+                        <p className="text-xs text-noya-blue mt-1">Notre équipe vous communiquera les modalités de paiement dans la messagerie.</p>
+                      )}
                     </div>
+
+                    {selectedService.onlineCheckout && selectedService.pricing && selectedService.pricing.length > 0 && (
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-text-primary">Formule</p>
+                        {selectedService.pricing.map((option) => (
+                          <label
+                            key={option.type === 'license' ? `license-${option.durationDays}` : `sub-${option.billingCycle}`}
+                            className={`flex cursor-pointer items-center justify-between rounded-xl border px-4 py-3 transition-colors ${
+                              selectedPricing === option
+                                ? 'border-noya-orange bg-noya-orange/10'
+                                : 'border-border hover:border-noya-orange/40'
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <input
+                                type="radio"
+                                name="pricing"
+                                checked={selectedPricing === option}
+                                onChange={() => setSelectedPricing(option)}
+                                className="accent-noya-orange"
+                              />
+                              <div>
+                                <span className="text-sm font-medium text-text-primary">
+                                  {option.label ??
+                                    (option.type === 'license' ? 'Licence à vie' : 'Abonnement mensuel')}
+                                </span>
+                                <p className="text-xs text-text-muted">{formatPricingHostingShort(option)}</p>
+                                <p className="text-[11px] text-text-muted">{formatPricingHostingLabel(option)}</p>
+                              </div>
+                            </div>
+                            <span className="text-sm font-bold text-noya-orange">
+                              {formatFcfa(option.price)}
+                              {option.type === 'subscription' ? '/mois' : ''}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
 
                     <div>
                       <label className="block text-sm font-medium text-text-primary mb-2">
@@ -444,11 +653,15 @@ export default function ClientShop() {
                       {isSubmitting ? (
                         <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
                       ) : (
-                        <><Send size={20} /> Envoyer la demande</>
+                        <><Send size={20} /> {usesExternalSubscriptionCheckout ? 'Payer sur le site de l\'app' : selectedService.onlineCheckout ? 'Payer en ligne' : 'Envoyer la demande'}</>
                       )}
                     </button>
                     <p className="text-center text-xs text-text-muted">
-                      Notre équipe vous contactera dans la messagerie pour organiser le paiement.
+                      {usesExternalSubscriptionCheckout
+                        ? 'Vous serez redirigé vers la page d’abonnement de l’application.'
+                        : selectedService.onlineCheckout
+                          ? 'Vous serez redirigé vers Stripe pour finaliser le paiement.'
+                          : 'Notre équipe vous contactera dans la messagerie pour organiser le paiement.'}
                     </p>
                   </div>
                 ) : (

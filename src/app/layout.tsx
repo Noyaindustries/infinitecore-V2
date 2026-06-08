@@ -30,9 +30,26 @@ const dmMono = DM_Mono({
  * pouvaient rendre un carré entièrement noir avec le logo en data-URL.
  */
 export const metadata: Metadata = {
-  title: "Infinite Core | The Operating System for African Business",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || "https://www.infinitecore.net"),
+  title: {
+    default: "Infinite Core — ERP, CRM et applications métier pour l'Afrique",
+    template: "%s | Infinite Core",
+  },
   description:
-    "Infinite Core unifie CRM, Finance, RH et Projets dans un système unique modulaire pour propulser les entreprises africaines.",
+    "Licences et abonnements en FCFA : ERP multi-école, caisse, immobilier, stock, CRM boutique, clinique en ligne. Paiement sécurisé, déploiement rapide.",
+  openGraph: {
+    locale: "fr_FR",
+    type: "website",
+    siteName: "Infinite Core",
+    images: [{ url: "/infinite-core-logo-v2.png", width: 512, height: 512, alt: "Infinite Core" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Infinite Core — Applications métier Afrique",
+    description: "ERP, CRM et solutions sectorielles. Licences et abonnements en FCFA.",
+    images: ["/infinite-core-logo-v2.png"],
+  },
+  robots: { index: true, follow: true },
   icons: {
     icon: [
       { url: "/infinite-core-logo.png", type: "image/png", sizes: "32x32" },

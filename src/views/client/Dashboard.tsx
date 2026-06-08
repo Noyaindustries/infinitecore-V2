@@ -23,6 +23,13 @@ import {
   STEP_ORDER,
   StepType,
 } from '../../services/dossierService';
+import { useLicenses } from '../../hooks/useLicenses';
+import { getAppByModuleKey } from '../../data/appCatalog';
+import { useAppCatalog } from '../../hooks/useAppCatalog';
+import AppHowToGetAppGuide from '../../components/AppHowToGetAppGuide';
+import AppLicenseDeliveryCards from '../../components/AppLicenseDeliveryCards';
+import AppSubscriptionSaasCards from '../../components/AppSubscriptionSaasCards';
+import { isSaasSubscriptionReady } from '../../lib/saasAccess';
 
 const AUDIT_ICONS = {
   'audit-rapide': Zap,
@@ -121,6 +128,8 @@ const quickLinks: QuickLinkItem[] = [
 
 export default function ClientDashboard() {
   const { user, userData } = useAuth();
+  const { activeLicenses, loading: licensesLoading } = useLicenses();
+  const { apps: catalogApps } = useAppCatalog();
   const { loading, progressPct, validatedCount, awaiting, statusMessage } = useDossierProgress(user?.uid);
 
   const displayName = useMemo(() => {
@@ -302,6 +311,75 @@ export default function ClientDashboard() {
             );
           })}
         </div>
+      </section>
+
+      <AppHowToGetAppGuide variant="dashboard" />
+
+      {!licensesLoading && activeLicenses.length > 0 ? (
+        <>
+          <AppSubscriptionSaasCards licenses={activeLicenses} catalogApps={catalogApps} />
+          <AppLicenseDeliveryCards licenses={activeLicenses} catalogApps={catalogApps} />
+        </>
+      ) : null}
+
+      {/* Applications licenciées */}
+      <section className="rounded-2xl border border-white/[0.07] bg-[#0a0e18]/85 p-5 sm:p-6">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-luxe-champagne/85">
+              Mes applications
+            </h2>
+            <p className="mt-1 text-sm text-text-secondary">
+              Licence à vie (chez vous) ou abonnement SaaS hébergé par Infinite Core.
+            </p>
+          </div>
+          <Link
+            to="/dashboard/boutique"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-noya-orange transition-all hover:gap-2"
+          >
+            Acheter une application
+            <ArrowRight className="h-4 w-4" aria-hidden />
+          </Link>
+        </div>
+        {licensesLoading ? (
+          <div className="h-16 animate-pulse rounded-xl bg-white/10" aria-hidden />
+        ) : activeLicenses.length === 0 ? (
+          <p className="text-sm text-text-muted">
+            Aucune licence active pour le moment. Parcourez la boutique pour souscrire à un module Infinite Core.
+          </p>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {activeLicenses.map((license) => {
+              const app = getAppByModuleKey(license.moduleKey, catalogApps);
+              const saasReady =
+                license.type === 'subscription' && isSaasSubscriptionReady(license, app);
+              return (
+                <Link
+                  key={license.id}
+                  to={`/module/${license.moduleKey}/dashboard`}
+                  className="flex items-center justify-between rounded-xl border border-white/[0.08] bg-[#060910]/90 px-4 py-3 transition-colors hover:border-noya-orange/35"
+                >
+                  <div>
+                    <p className="font-semibold text-text-primary">{license.appName || app?.title}</p>
+                    <p className="text-xs text-text-muted">
+                      {license.type === 'subscription'
+                        ? saasReady
+                          ? 'SaaS actif'
+                          : 'Abonnement — déploiement en cours'
+                        : 'Licence active'}
+                      {license.expiresAt
+                        ? ` · jusqu'au ${new Date(license.expiresAt).toLocaleDateString('fr-FR')}`
+                        : license.type === 'license'
+                          ? ' · à vie'
+                          : ''}
+                    </p>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-noya-orange" aria-hidden />
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       {/* Raccourcis */}

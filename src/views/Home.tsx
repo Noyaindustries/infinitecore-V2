@@ -2,6 +2,7 @@ import { useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useScroll, useSpring, useInView, animate } from 'framer-motion';
 import HomeSideNavBars from '../components/HomeSideNavBars';
+import HomeAppCatalogSection from '../components/HomeAppCatalogSection';
 import { 
   Users, 
   FileSignature,
@@ -467,6 +468,8 @@ export default function Home() {
           </motion.div>
         </div>
       </section>
+
+      <HomeAppCatalogSection />
 
       {/* SECTION INFINITE SYSTEM - ENTERPRISE (REPOSITIONED) */}
       <section id="system" className="py-16 md:py-24 relative z-10 bg-[#06080D] border-t border-white/5">

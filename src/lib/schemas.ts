@@ -9,11 +9,32 @@ export const UserProfileSchema = z.object({
   photoURL: z.string().url().optional().or(z.literal('')),
 });
 
+const billingCycleSchema = z.preprocess(
+  (val) => {
+    const v = String(val ?? '').trim().toLowerCase();
+    if (['mensuel', 'monthly', 'month', 'mois'].includes(v)) return 'month';
+    if (['annuel', 'yearly', 'annual', 'year', 'an'].includes(v)) return 'year';
+    return val;
+  },
+  z.enum(['month', 'year'])
+);
+
 export const OrderSchema = z.object({
   serviceId: z.string().min(1),
   serviceName: z.string().min(1),
   amount: z.number().positive(),
-  billingCycle: z.enum(['month', 'year']),
+  billingCycle: billingCycleSchema,
+  moduleKey: z.string().optional(),
+  note: z.string().optional(),
+});
+
+export const LicenseCheckoutSchema = z.object({
+  appId: z.string().min(1),
+  appName: z.string().min(1),
+  moduleKey: z.string().min(1),
+  amount: z.number().positive(),
+  /** 0 = licence à vie ; > 0 = durée limitée en jours. */
+  licenseDurationDays: z.number().int().min(0).optional(),
   note: z.string().optional(),
 });
 

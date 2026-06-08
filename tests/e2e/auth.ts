@@ -1,80 +1,112 @@
-import { Page } from "@playwright/test";
-import jwt from "jsonwebtoken";
-import { existsSync, readFileSync } from "node:fs";
-import path from "node:path";
-
-type TestRole = "admin" | "commando" | "developer" | "partner" | "client";
+import { expect, Page } from "@playwright/test";
+import {
+  buildAuthToken,
+  E2E_FIXED_LOGIN_CODE,
+  E2E_TEST_PASSWORD,
+  isStaffTestRole,
+  testAccountEmail,
+  type TestRole,
+} from "../helpers/authToken";
+import { waitForHydratedBody } from "./page-ready";
 
 const AUTH_TOKEN_KEY = "ic_auth_token";
 
-function parseEnvFile(filePath: string): Record<string, string> {
-  if (!existsSync(filePath)) return {};
-  const content = readFileSync(filePath, "utf-8");
-  const parsed: Record<string, string> = {};
+async function dismissCookieBannerIfPresent(page: Page) {
+  const essentialOnly = page.getByRole("button", { name: "Essentiels uniquement" });
+  if (await essentialOnly.isVisible().catch(() => false)) {
+    await essentialOnly.click();
+  }
+}
 
-  for (const line of content.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const equalIndex = trimmed.indexOf("=");
-    if (equalIndex <= 0) continue;
-    const key = trimmed.slice(0, equalIndex).trim();
-    const rawValue = trimmed.slice(equalIndex + 1).trim();
-    const unquoted =
-      (rawValue.startsWith('"') && rawValue.endsWith('"')) ||
-      (rawValue.startsWith("'") && rawValue.endsWith("'"))
-        ? rawValue.slice(1, -1)
-        : rawValue;
-    parsed[key] = unquoted;
+function homePathForRole(role: TestRole): string {
+  switch (role) {
+    case "admin":
+      return "/superadmin";
+    case "commando":
+      return "/admin";
+    case "developer":
+      return "/developer";
+    case "partner":
+      return "/partenaire";
+    default:
+      return "/dashboard";
+  }
+}
+
+async function resetClientAuthState(page: Page) {
+  await page.evaluate(() => {
+    localStorage.removeItem("ic_auth_token");
+    localStorage.removeItem("ic_has_session_hint");
+  });
+}
+
+/** Session API (cookie httpOnly + token legacy) — repli si l’UI reste bloquée sur /login. */
+export async function establishTestSession(page: Page, role: TestRole) {
+  const email = testAccountEmail(role);
+  const loginRes = await page.request.post("/api/auth/login", {
+    data: { email, password: E2E_TEST_PASSWORD },
+  });
+  const loginBody = (await loginRes.json()) as {
+    success?: boolean;
+    verificationRequired?: boolean;
+    challengeId?: string;
+    token?: string;
+    user?: { uid: string };
+  };
+
+  if (loginBody.verificationRequired && loginBody.challengeId) {
+    const verifyRes = await page.request.post("/api/auth/login/verify", {
+      data: { email, challengeId: loginBody.challengeId, code: E2E_FIXED_LOGIN_CODE },
+    });
+    if (!verifyRes.ok()) {
+      await resetClientAuthState(page);
+      await loginAsRole(page, role);
+    }
+  } else if (loginBody.token) {
+    await page.evaluate(
+      ({ authTokenKey, authToken }) => {
+        window.localStorage.setItem(authTokenKey, authToken);
+        window.localStorage.setItem("ic_has_session_hint", "1");
+        window.localStorage.setItem("ic_consent", "essential");
+      },
+      { authTokenKey: AUTH_TOKEN_KEY, authToken: loginBody.token }
+    );
+  } else {
+    await resetClientAuthState(page);
+    await loginAsRole(page, role);
   }
 
-  return parsed;
+  await page.goto(homePathForRole(role), { waitUntil: "domcontentloaded" });
+  await waitForHydratedBody(page);
+  await expect(page).not.toHaveURL(/\/login/, { timeout: 30_000 });
 }
 
-function resolveServerEnv() {
-  const root = process.cwd();
-  const env = parseEnvFile(path.join(root, ".env"));
-  const envLocal = parseEnvFile(path.join(root, ".env.local"));
+/** Connexion UI (email + mot de passe) avec contournement 2FA pour `*@infinitecore.local`. */
+export async function loginViaUi(page: Page, role: TestRole) {
+  const email = testAccountEmail(role);
+  const staff = isStaffTestRole(role);
+  await page.goto(staff ? "/login/staff" : "/login", { waitUntil: "domcontentloaded" });
+  await waitForHydratedBody(page);
+  await dismissCookieBannerIfPresent(page);
 
-  return {
-    ...env,
-    ...envLocal,
-  };
-}
+  await page.getByLabel("Email").fill(email);
+  await page.getByRole("button", { name: "Continuer", exact: true }).click();
+  await expect(page.locator("#password")).toBeVisible({ timeout: 15_000 });
+  await page.locator("#password").fill(E2E_TEST_PASSWORD);
+  await page.getByRole("button", { name: "Recevoir mon code" }).click();
 
-const USERS_BY_ROLE: Record<TestRole, { uid: string; email: string }> = {
-  admin: { uid: "usr_admin_test", email: "admin.test@infinitecore.local" },
-  commando: { uid: "usr_commando_test", email: "commando.test@infinitecore.local" },
-  developer: { uid: "usr_dev_test", email: "dev.test@infinitecore.local" },
-  partner: { uid: "usr_partner_test", email: "partner.test@infinitecore.local" },
-  client: { uid: "usr_client_test", email: "client.test@infinitecore.local" },
-};
+  const leftLogin = await page
+    .waitForURL((url) => !url.pathname.includes("/login"), { timeout: 12_000 })
+    .then(() => true)
+    .catch(() => false);
 
-function buildAuthToken(role: TestRole): string {
-  const user = USERS_BY_ROLE[role];
-  const serverEnv = resolveServerEnv();
-  const secret =
-    process.env.NEXTAUTH_SECRET ??
-    process.env.JWT_SECRET ??
-    serverEnv.NEXTAUTH_SECRET ??
-    serverEnv.JWT_SECRET ??
-    "dev-secret-change-me";
-  const issuer = process.env.JWT_ISSUER ?? serverEnv.JWT_ISSUER ?? "infinitecore-api";
-  const audience = process.env.JWT_AUDIENCE ?? serverEnv.JWT_AUDIENCE ?? "infinitecore-web";
+  if (!leftLogin && (await page.locator("#verificationCode").isVisible().catch(() => false))) {
+    await page.locator("#verificationCode").fill(E2E_FIXED_LOGIN_CODE);
+    await page.getByRole("button", { name: "Valider le code" }).click();
+  }
 
-  return jwt.sign(
-    {
-      uid: user.uid,
-      email: user.email,
-      role,
-    },
-    secret,
-    {
-      algorithm: "HS256",
-      expiresIn: "7d",
-      issuer,
-      audience,
-    }
-  );
+  await expect(page).not.toHaveURL(/\/login/, { timeout: 30_000 });
+  await waitForHydratedBody(page);
 }
 
 export async function loginAsRole(page: Page, role: TestRole) {
@@ -83,6 +115,7 @@ export async function loginAsRole(page: Page, role: TestRole) {
   await page.addInitScript(
     ({ authTokenKey, authToken }) => {
       window.localStorage.setItem(authTokenKey, authToken);
+      window.localStorage.setItem("ic_has_session_hint", "1");
       window.localStorage.setItem("ic_consent", "essential");
     },
     {

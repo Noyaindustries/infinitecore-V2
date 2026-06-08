@@ -15,7 +15,27 @@ import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } fr
 import { parseAuthFromRequest, registerMongoApi, resolveAuthPayload } from "./mongoApi";
 import { sendStaffNotifyEmail } from "./src/server/staffNotifyEmail";
 import { sendLeadEmail } from "./src/server/sendLeadEmail";
-import { OrderSchema, PaddeAuditPayloadSchema } from "./src/lib/schemas";
+import { LicenseCheckoutSchema, OrderSchema, PaddeAuditPayloadSchema } from "./src/lib/schemas";
+import {
+  INFINITE_APP_CATALOG,
+  mergeCatalogWithDefaults,
+  parseAppCatalogEntries,
+} from "./src/data/appCatalog";
+import { loadAppCatalog, saveAppCatalog } from "./src/server/appCatalogStore";
+import { parseAppointmentBody } from "./src/lib/appAppointment";
+import {
+  activateLicenseFromCheckoutSession,
+  confirmSaasTenantReady,
+  LICENSES_COLLECTION_PATH,
+  patchLicenseBySubscriptionId,
+  provisionSaasLicense,
+  upsertExternalSubscriptionLicense,
+} from "./src/server/licenseActivation";
+import { verifySaasBridgeAuth } from "./src/server/saasAppBridge";
+import { licenseDocId, isLicenseActive, type AppLicense } from "./src/lib/licenses";
+import { isExternalSaasBilling } from "./src/lib/saasBilling";
+import { resolveSaasTenantId } from "./src/lib/saasAccess";
+import { signSaasAccessToken, verifySaasAccessToken } from "./src/server/saasAccessToken";
 
 const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "application/pdf",
@@ -28,6 +48,8 @@ const ALLOWED_UPLOAD_MIME_TYPES = new Set([
   "image/webp",
   "text/plain",
   "text/csv",
+  "application/zip",
+  "application/x-zip-compressed",
   "application/octet-stream",
 ]);
 
@@ -43,6 +65,7 @@ const ALLOWED_UPLOAD_EXTENSIONS = new Set([
   ".webp",
   ".txt",
   ".csv",
+  ".zip",
 ]);
 const DB_FILE_COLLECTION_PATH = "__file_blobs";
 const DB_FILE_PUBLIC_ID_PREFIX = "dbf/";
@@ -87,6 +110,14 @@ function isAllowedUpload(file: Express.Multer.File) {
   if (!ALLOWED_UPLOAD_EXTENSIONS.has(ext)) return false;
   if (!ALLOWED_UPLOAD_MIME_TYPES.has(file.mimetype || "")) return false;
   return true;
+}
+
+function contentDispositionForDownload(storageKey: string, originalName: string, mimetype: string): string {
+  const safeName = originalName.replace(/"/g, "");
+  const key = storageKey.toLowerCase();
+  const type = mimetype.toLowerCase();
+  const asAttachment = key.endsWith(".zip") || type.includes("zip");
+  return `${asAttachment ? "attachment" : "inline"}; filename="${safeName}"`;
 }
 
 function secureSecretEquals(expected: string, provided: string) {
@@ -317,7 +348,155 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   });
 
   app.get("/health", (_req, res) => {
-    res.status(200).json({ ok: true });
+    res.status(200).json({
+      ok: true,
+      nodeEnv: appEnv.node.env,
+      localHttpDev: !resetAppBaseUrl().startsWith("https://"),
+      e2eSkipLoginVerification: process.env.E2E_SKIP_LOGIN_VERIFICATION === "1",
+    });
+  });
+
+  app.get("/api/apps/catalog", async (_req, res) => {
+    try {
+      let stored = await loadAppCatalog();
+      const legacyIds = new Set([
+        "crm",
+        "finance",
+        "rh",
+        "projects",
+        "academy",
+        "comms",
+        "store",
+        "pack-croissance",
+        "pack-elite",
+      ]);
+      if (stored.some((a) => legacyIds.has(a.id))) {
+        stored = await saveAppCatalog(INFINITE_APP_CATALOG);
+      }
+      const apps = mergeCatalogWithDefaults(stored);
+      return res.status(200).json({ success: true, apps });
+    } catch (error) {
+      console.error("[apps/catalog GET]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
+  app.put("/api/apps/catalog", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+      if (auth.role !== "admin") {
+        return res.status(403).json({ success: false, error: "Acces reserve a l'administrateur." });
+      }
+      const rawApps = (req.body as { apps?: unknown })?.apps;
+      const parsed = parseAppCatalogEntries(rawApps);
+      if (!parsed.length) {
+        return res.status(400).json({ success: false, error: "Catalogue invalide." });
+      }
+      const apps = await saveAppCatalog(parsed);
+      return res.status(200).json({ success: true, apps });
+    } catch (error) {
+      console.error("[apps/catalog PUT]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
+  app.post("/api/apps/appointment", async (req, res) => {
+    try {
+      const parsed = parseAppointmentBody((req.body ?? {}) as Record<string, unknown>);
+      if (!parsed.ok) {
+        return res.status(400).json({ success: false, error: parsed.error });
+      }
+      const {
+        appId,
+        appTitle,
+        firstName,
+        lastName,
+        phone,
+        email,
+        companyName,
+        preferredDate,
+        message,
+      } = parsed.data;
+
+      const createdAt = new Date().toISOString();
+      const leadId = randomUUID().replace(/-/g, "");
+      const noteParts = [
+        `Demande RDV — ${appTitle || appId}`,
+        preferredDate ? `Date souhaitée : ${preferredDate}` : "",
+        message || "",
+      ].filter(Boolean);
+
+      await prisma.dataDocument.create({
+        data: {
+          collectionPath: "leads",
+          docId: leadId,
+          data: {
+            id: leadId,
+            source: "app-appointment",
+            appId,
+            appTitle: appTitle || appId,
+            firstName,
+            lastName,
+            email: email || undefined,
+            whatsapp: phone,
+            phone,
+            companyName: companyName || "Non renseigné",
+            status: "soumis",
+            urgency: "moyenne",
+            note: noteParts.join("\n"),
+            preferredDate: preferredDate || undefined,
+            createdAt,
+          } as never,
+        },
+      });
+
+      const teamRows = await prisma.dataDocument.findMany({
+        where: { collectionPath: USERS_COLLECTION_PATH },
+      });
+      const teamIds = teamRows
+        .map((row) => {
+          const data = readDataRowAsRecord(row.data);
+          const role = String(data.role || "").toLowerCase();
+          if (role !== "commando" && role !== "admin") return null;
+          const uid = String(data.uid || row.docId || "").trim();
+          return uid || null;
+        })
+        .filter((v): v is string => Boolean(v));
+
+      const title = "Nouveau rendez-vous application";
+      const notifMessage = `${firstName} ${lastName} — ${appTitle || appId}${companyName ? ` (${companyName})` : ""} — ${phone}${preferredDate ? ` — ${preferredDate}` : ""}`;
+
+      await Promise.all(
+        teamIds.map((uid) =>
+          prisma.dataDocument.create({
+            data: {
+              collectionPath: NOTIFICATIONS_COLLECTION_PATH,
+              docId: randomUUID().replace(/-/g, ""),
+              data: {
+                userId: uid,
+                title,
+                message: notifMessage,
+                type: "order",
+                read: false,
+                createdAt,
+                metadata: { leadId, appId, source: "app-appointment" },
+              } as never,
+            },
+          })
+        )
+      );
+
+      void sendStaffNotifyEmail({
+        subject: `[Infinite Core] ${title}`,
+        text: [notifMessage, "", `Lead : ${leadId}`, noteParts.join("\n")].join("\n"),
+      }).catch((err) => console.warn("[apps/appointment] staff email:", err));
+
+      return res.status(200).json({ success: true, leadId });
+    } catch (error) {
+      console.error("[apps/appointment]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
   });
 
   registerMongoApi(app);
@@ -337,7 +516,10 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       if (!validated.success) {
         return res.status(400).json({ success: false, error: "Paramètres abonnement invalides.", details: validated.error.format() });
       }
-      const { serviceId, serviceName, note = "", amount, billingCycle } = validated.data;
+      const { serviceId, serviceName, note = "", amount, billingCycle, moduleKey: moduleKeyInput } = validated.data;
+      const catalog = await loadAppCatalog();
+      const catalogApp = catalog.find((a) => a.id === serviceId);
+      const moduleKey = moduleKeyInput || catalogApp?.moduleKey || serviceId;
 
       const unitAmount = Math.round(amount);
       const orderId = `CMD-${randomUUID().split("-")[0].toUpperCase()}`;
@@ -345,7 +527,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
 
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
-        success_url: `${appBaseUrl}/dashboard/boutique?checkout=success&orderId=${encodeURIComponent(orderId)}`,
+        success_url: `${appBaseUrl}/dashboard/boutique?checkout=success&orderId=${encodeURIComponent(orderId)}&type=subscription`,
         cancel_url: `${appBaseUrl}/dashboard/boutique?checkout=cancel&orderId=${encodeURIComponent(orderId)}`,
         customer: customerId || undefined,
         customer_email: customerId ? undefined : auth.email,
@@ -353,13 +535,20 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           orderId,
           userId: auth.uid,
           serviceId,
+          appId: serviceId,
+          appName: serviceName,
+          moduleKey,
           billingCycle,
+          licenseType: "subscription",
         },
         subscription_data: {
           metadata: {
             orderId,
             userId: auth.uid,
             serviceId,
+            appId: serviceId,
+            moduleKey,
+            licenseType: "subscription",
           },
         },
         line_items: [
@@ -370,7 +559,8 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
               unit_amount: unitAmount,
               recurring: { interval: billingCycle },
               product_data: {
-                name: serviceName,
+                name: `${serviceName} — Abonnement SaaS`,
+                description: "Abonnement mensuel — application en ligne hébergée par Infinite Core (SaaS multi-tenant).",
                 metadata: { serviceId },
               },
             },
@@ -391,6 +581,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
             clientEmail: auth.email,
             serviceName,
             serviceId,
+            moduleKey,
             orderType: "abonnement",
             isSubscription: true,
             billingCycle,
@@ -411,6 +602,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
             clientEmail: auth.email,
             serviceName,
             serviceId,
+            moduleKey,
             orderType: "abonnement",
             isSubscription: true,
             billingCycle,
@@ -433,6 +625,132 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       });
     } catch (error) {
       console.error("[stripe/checkout/subscription]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
+  app.post("/api/stripe/checkout/license", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+      if (!stripe) {
+        return res.status(503).json({
+          success: false,
+          error: "Stripe non configuré. Ajoutez STRIPE_SECRET_KEY.",
+        });
+      }
+
+      const validated = LicenseCheckoutSchema.safeParse(req.body);
+      if (!validated.success) {
+        return res.status(400).json({
+          success: false,
+          error: "Paramètres licence invalides.",
+          details: validated.error.format(),
+        });
+      }
+
+      const { appId, appName, moduleKey, amount, licenseDurationDays, note = "" } = validated.data;
+      const unitAmount = Math.round(amount);
+      const durationDays =
+        licenseDurationDays !== undefined && licenseDurationDays >= 0 ? licenseDurationDays : 0;
+      const orderId = `CMD-${randomUUID().split("-")[0].toUpperCase()}`;
+      const customerId = await resolveStripeCustomerId({ uid: auth.uid, email: auth.email });
+
+      const session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        success_url: `${appBaseUrl}/dashboard/boutique?checkout=success&orderId=${encodeURIComponent(orderId)}&type=license`,
+        cancel_url: `${appBaseUrl}/dashboard/boutique?checkout=cancel&orderId=${encodeURIComponent(orderId)}`,
+        customer: customerId || undefined,
+        customer_email: customerId ? undefined : auth.email,
+        metadata: {
+          orderId,
+          userId: auth.uid,
+          serviceId: appId,
+          appId,
+          appName,
+          moduleKey,
+          licenseType: "license",
+          licenseDurationDays: String(durationDays),
+        },
+        line_items: [
+          {
+            quantity: 1,
+            price_data: {
+              currency: "xof",
+              unit_amount: unitAmount,
+              product_data: {
+                name:
+                  durationDays === 0
+                    ? `${appName} — Licence à vie (auto-hébergée)`
+                    : `${appName} — Licence`,
+                description:
+                  durationDays === 0
+                    ? "Licence à vie — le client héberge l'application."
+                    : undefined,
+                metadata: { appId, moduleKey },
+              },
+            },
+          },
+        ],
+      });
+
+      await prisma.dataDocument.upsert({
+        where: {
+          collectionPath_docId: { collectionPath: ORDERS_COLLECTION_PATH, docId: orderId },
+        },
+        create: {
+          collectionPath: ORDERS_COLLECTION_PATH,
+          docId: orderId,
+          data: {
+            id: orderId,
+            userId: auth.uid,
+            clientEmail: auth.email,
+            serviceName: appName,
+            serviceId: appId,
+            moduleKey,
+            orderType: "licence",
+            isSubscription: false,
+            licenseDurationDays: durationDays,
+            amount: unitAmount,
+            currency: "XOF",
+            note: note || null,
+            status: "Paiement en cours",
+            paymentStatus: "pending",
+            stripeCheckoutSessionId: session.id,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          } as never,
+        },
+        update: {
+          data: {
+            id: orderId,
+            userId: auth.uid,
+            clientEmail: auth.email,
+            serviceName: appName,
+            serviceId: appId,
+            moduleKey,
+            orderType: "licence",
+            isSubscription: false,
+            licenseDurationDays: durationDays,
+            amount: unitAmount,
+            currency: "XOF",
+            note: note || null,
+            status: "Paiement en cours",
+            paymentStatus: "pending",
+            stripeCheckoutSessionId: session.id,
+            updatedAt: new Date().toISOString(),
+          } as never,
+        },
+      });
+
+      return res.status(200).json({
+        success: true,
+        checkoutUrl: session.url,
+        sessionId: session.id,
+        orderId,
+      });
+    } catch (error) {
+      console.error("[stripe/checkout/license]", error);
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
@@ -549,6 +867,191 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     }
   });
 
+  app.post("/api/saas/webhooks/subscription-active", async (req, res) => {
+    try {
+      if (!verifySaasBridgeAuth(String(req.headers["x-infinitecore-saas-key"] || ""))) {
+        return res.status(401).json({ success: false, error: "Clé API invalide." });
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const userId = String(body.userId || "").trim();
+      const appId = String(body.appId || "").trim();
+      if (!userId || !appId) {
+        return res.status(400).json({ success: false, error: "userId et appId requis." });
+      }
+      const license = await upsertExternalSubscriptionLicense({
+        userId,
+        appId,
+        moduleKey: String(body.moduleKey || "").trim() || undefined,
+        appName: String(body.appName || "").trim() || undefined,
+        tenantId: String(body.tenantId || "").trim() || undefined,
+        expiresAt: body.expiresAt ? String(body.expiresAt) : null,
+      });
+      return res.status(200).json({ success: true, license });
+    } catch (error) {
+      console.error("[saas/webhooks/subscription-active]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
+  app.post("/api/saas/webhooks/tenant-ready", async (req, res) => {
+    try {
+      if (!verifySaasBridgeAuth(String(req.headers["x-infinitecore-saas-key"] || ""))) {
+        return res.status(401).json({ success: false, error: "Clé API invalide." });
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const userId = String(body.userId || "").trim();
+      const appId = String(body.appId || "").trim();
+      if (!userId || !appId) {
+        return res.status(400).json({ success: false, error: "userId et appId requis." });
+      }
+      const license = await confirmSaasTenantReady({
+        userId,
+        appId,
+        tenantId: String(body.tenantId || "").trim() || undefined,
+      });
+      if (!license) {
+        return res.status(404).json({ success: false, error: "Abonnement introuvable." });
+      }
+      return res.status(200).json({ success: true, license });
+    } catch (error) {
+      console.error("[saas/webhooks/tenant-ready]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
+  app.get("/api/saas/access-token", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+      const appId = String(req.query.appId || "").trim();
+      if (!appId) {
+        return res.status(400).json({ success: false, error: "appId requis." });
+      }
+      const catalog = await loadAppCatalog();
+      const catalogApp = catalog.find((a) => a.id === appId);
+      if (!catalogApp) {
+        return res.status(404).json({ success: false, error: "Application introuvable." });
+      }
+      if (isExternalSaasBilling(catalogApp)) {
+        return res.status(400).json({
+          success: false,
+          error: "Cette application utilise le paiement externe — pas de jeton Infinite Core.",
+        });
+      }
+      const docId = licenseDocId(auth.uid, appId);
+      const row = await prisma.dataDocument.findUnique({
+        where: {
+          collectionPath_docId: { collectionPath: LICENSES_COLLECTION_PATH, docId },
+        },
+      });
+      if (!row) {
+        return res.status(403).json({ success: false, error: "Abonnement actif requis." });
+      }
+      const license = readDataRowAsRecord(row.data) as unknown as AppLicense;
+      if (license.type !== "subscription" || !isLicenseActive(license)) {
+        return res.status(403).json({ success: false, error: "Abonnement actif requis." });
+      }
+      const tenantId = resolveSaasTenantId(license);
+      const token = signSaasAccessToken({
+        uid: auth.uid,
+        appId,
+        moduleKey: license.moduleKey || catalogApp.moduleKey,
+        tenantId,
+        email: auth.email,
+        stripeSubscriptionId: license.stripeSubscriptionId ?? null,
+      });
+      return res.status(200).json({ success: true, token, tenantId, expiresIn: 7200 });
+    } catch (error) {
+      console.error("[saas/access-token]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
+  app.get("/api/saas/verify-token", async (req, res) => {
+    try {
+      const bridgeKey = String(process.env.SAAS_BRIDGE_API_KEY || "").trim();
+      if (bridgeKey) {
+        const provided = String(req.headers["x-infinitecore-saas-key"] || "").trim();
+        if (!provided || !secureSecretEquals(bridgeKey, provided)) {
+          return res.status(401).json({ success: false, error: "Clé API invalide." });
+        }
+      }
+      const token = String(req.query.token || "").trim();
+      if (!token) {
+        return res.status(400).json({ success: false, error: "token requis." });
+      }
+      const payload = verifySaasAccessToken(token);
+      if (!payload) {
+        return res.status(401).json({ success: false, valid: false, error: "Jeton invalide ou expiré." });
+      }
+      const docId = licenseDocId(payload.uid, payload.appId);
+      const row = await prisma.dataDocument.findUnique({
+        where: {
+          collectionPath_docId: { collectionPath: LICENSES_COLLECTION_PATH, docId },
+        },
+      });
+      if (!row) {
+        return res.status(200).json({ success: true, valid: false, error: "Abonnement introuvable." });
+      }
+      const license = readDataRowAsRecord(row.data) as unknown as AppLicense;
+      const active = license.type === "subscription" && isLicenseActive(license);
+      return res.status(200).json({
+        success: true,
+        valid: active,
+        userId: payload.uid,
+        appId: payload.appId,
+        moduleKey: payload.moduleKey,
+        tenantId: payload.tenantId,
+        email: payload.email ?? null,
+        stripeSubscriptionId: payload.stripeSubscriptionId ?? null,
+      });
+    } catch (error) {
+      console.error("[saas/verify-token]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
+  app.post("/api/admin/saas/provision", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+      if (auth.role !== "admin" && auth.role !== "commando") {
+        return res.status(403).json({ success: false, error: "Accès refusé." });
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const userId = String(body.userId || "").trim();
+      const appId = String(body.appId || "").trim();
+      const saasInstanceUrl = String(body.saasInstanceUrl || "").trim();
+      const saasTenantId = String(body.saasTenantId || "").trim();
+      if (!userId || !appId || (!saasInstanceUrl && !saasTenantId)) {
+        return res.status(400).json({
+          success: false,
+          error: "userId, appId et (saasInstanceUrl ou saasTenantId) requis.",
+        });
+      }
+      if (saasInstanceUrl) {
+        try {
+          new URL(saasInstanceUrl);
+        } catch {
+          return res.status(400).json({ success: false, error: "URL SaaS invalide." });
+        }
+      }
+      const license = await provisionSaasLicense({
+        userId,
+        appId,
+        saasInstanceUrl: saasInstanceUrl || undefined,
+        saasTenantId: saasTenantId || undefined,
+      });
+      if (!license) {
+        return res.status(404).json({ success: false, error: "Abonnement introuvable pour cet utilisateur." });
+      }
+      return res.status(200).json({ success: true, license });
+    } catch (error) {
+      console.error("[admin/saas/provision]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
   app.post("/api/stripe/billing-portal-session", async (req, res) => {
     try {
       const auth = await readAuthenticatedUser(req);
@@ -635,15 +1138,41 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           const orderId = String(session.metadata?.orderId || "").trim();
           const subscriptionId =
             typeof session.subscription === "string" ? session.subscription : String(session.subscription?.id || "");
+          const userId = String(session.metadata?.userId || "").trim();
+          const appId = String(session.metadata?.appId || session.metadata?.serviceId || "").trim();
+          const moduleKey = String(session.metadata?.moduleKey || appId).trim();
+          const appName = String(session.metadata?.appName || session.metadata?.serviceId || appId).trim();
+          const licenseTypeRaw = String(session.metadata?.licenseType || "").trim();
+          const licenseType =
+            licenseTypeRaw === "license" || session.mode === "payment" ? "license" : "subscription";
+          const licenseDurationDays = Number.parseInt(
+            String(session.metadata?.licenseDurationDays ?? "0"),
+            10
+          );
+
           if (orderId) {
             await upsertOrderPatch(orderId, {
               status: "Actif",
               paymentStatus: "paid",
               stripeCheckoutSessionId: session.id,
               subscriptionId: subscriptionId || null,
-            stripeCustomerId: session.customer ? String(session.customer) : null,
-              subscriptionStatus: "active",
+              stripeCustomerId: session.customer ? String(session.customer) : null,
+              subscriptionStatus: licenseType === "subscription" ? "active" : null,
               activatedAt: new Date().toISOString(),
+            });
+          }
+
+          if (userId && appId && moduleKey) {
+            await activateLicenseFromCheckoutSession({
+              userId,
+              appId,
+              moduleKey,
+              appName,
+              orderId,
+              checkoutSessionId: session.id,
+              licenseType,
+              subscriptionId: subscriptionId || null,
+              licenseDurationDays: Number.isFinite(licenseDurationDays) ? licenseDurationDays : 0,
             });
           }
           break;
@@ -653,18 +1182,29 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           const sub = event.data.object as Stripe.Subscription;
           const subscriptionId = String(sub.id || "").trim();
           const rawSub = sub as unknown as { current_period_end?: number; canceled_at?: number | null };
+          const periodEnd =
+            typeof rawSub.current_period_end === "number"
+              ? new Date(rawSub.current_period_end * 1000).toISOString()
+              : null;
+          const isCanceled = event.type === "customer.subscription.deleted" || sub.status === "canceled";
           if (subscriptionId) {
             await updateBySubscriptionId(subscriptionId, {
               status: subscriptionStatusFromStripe(sub.status),
               subscriptionStatus: sub.status,
-              currentPeriodEnd:
-                typeof rawSub.current_period_end === "number"
-                  ? new Date(rawSub.current_period_end * 1000).toISOString()
-                  : null,
+              currentPeriodEnd: periodEnd,
               canceledAt:
                 typeof rawSub.canceled_at === "number"
                   ? new Date(rawSub.canceled_at * 1000).toISOString()
                   : null,
+            });
+            await patchLicenseBySubscriptionId(subscriptionId, {
+              status: isCanceled ? "expired" : sub.status === "active" || sub.status === "trialing" ? "active" : "suspended",
+              expiresAt: periodEnd,
+              saasProvisioningStatus: isCanceled
+                ? "suspended"
+                : sub.status === "active" || sub.status === "trialing"
+                  ? "ready"
+                  : "suspended",
             });
           }
           break;
@@ -683,6 +1223,10 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
               status: "Impayé",
               paymentStatus: "failed",
               subscriptionStatus: "past_due",
+            });
+            await patchLicenseBySubscriptionId(subscriptionId, {
+              status: "suspended",
+              saasProvisioningStatus: "suspended",
             });
           }
           break;
@@ -742,7 +1286,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       if (!isAllowedUpload(req.file)) {
         return res.status(415).json({
           success: false,
-          error: "Type de fichier non autorisé. Formats acceptés: PDF, Office, JPG/PNG/WEBP, TXT/CSV.",
+          error: "Type de fichier non autorisé. Formats acceptés: PDF, Office, JPG/PNG/WEBP, TXT/CSV, ZIP.",
         });
       }
 
@@ -922,7 +1466,10 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
             : path.basename(docId);
         const buffer = Buffer.from(encoded, "base64");
         res.setHeader("Content-Type", mimetype);
-        res.setHeader("Content-Disposition", `inline; filename="${originalName.replace(/"/g, "")}"`);
+        res.setHeader(
+          "Content-Disposition",
+          contentDispositionForDownload(docId, originalName, mimetype)
+        );
         res.setHeader("Cache-Control", "private, max-age=3600");
         return res.status(200).send(buffer);
       }
@@ -948,8 +1495,9 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           throw e;
         }
         const filename = path.basename(safePath).replace(/"/g, "");
-        res.setHeader("Content-Type", mimeFromStorageKey(safePath));
-        res.setHeader("Content-Disposition", `inline; filename="${filename}"`);
+        const mimetype = mimeFromStorageKey(safePath);
+        res.setHeader("Content-Type", mimetype);
+        res.setHeader("Content-Disposition", contentDispositionForDownload(safePath, filename, mimetype));
         res.setHeader("Cache-Control", "private, max-age=3600");
         // createReadStream évite les NotFoundError du module « send » avec certains chemins Windows / encodages.
         const stream = createReadStream(absPath);

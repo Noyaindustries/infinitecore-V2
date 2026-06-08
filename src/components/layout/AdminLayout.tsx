@@ -8,6 +8,7 @@ import {
   UserPlus,
   Wallet,
   Copy,
+  Cloud,
   FolderOpen,
   LogOut,
   Menu,
@@ -127,6 +128,7 @@ export default function AdminLayout() {
     { id: 'messagerie', to: '/admin/messagerie', icon: MessageCircle, label: 'Messagerie Clients' },
     { id: 'dossiers', to: '/admin/dossiers', icon: FolderOpen, label: 'Dossiers Clients' },
     { id: 'instances', to: '/admin/instances', icon: Copy, label: 'Clonage Instances' },
+    { id: 'saas', to: '/admin/saas', icon: Cloud, label: 'Provisionnement SaaS' },
   ];
 
   const displayName = userData?.firstName

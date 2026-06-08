@@ -12,6 +12,7 @@ import {
   Menu,
   X,
   Box,
+  ShoppingBag,
   Search,
   Bell,
   ChevronDown,
@@ -122,6 +123,7 @@ export default function SuperAdminLayout() {
     { to: '/superadmin', icon: LayoutDashboard, label: 'Tableau de bord' },
     { to: '/superadmin/users', icon: Users, label: 'Utilisateurs' },
     { to: '/superadmin/orders', icon: CreditCard, label: 'Commandes & Paiements' },
+    { to: '/superadmin/apps', icon: ShoppingBag, label: 'Catalogue applications' },
     { to: '/superadmin/audits-padde', icon: ClipboardList, label: 'Audits PADDE-CI' },
     { to: '/superadmin/partners', icon: Handshake, label: 'Partenaires' },
     { to: '/superadmin/commando', icon: ShieldAlert, label: 'Equipe Commando — /admin' },
@@ -140,6 +142,7 @@ export default function SuperAdminLayout() {
       case '/superadmin': return 'Tableau de bord global';
       case '/superadmin/users': return 'Gestion des Utilisateurs';
       case '/superadmin/orders': return 'Commandes & Paiements';
+      case '/superadmin/apps': return 'Catalogue applications';
       case '/superadmin/partners': return 'Gestion des Partenaires';
       case '/superadmin/commando': return 'Équipe Commando — /admin';
       case '/superadmin/developers': return 'Équipe Développeurs — /developer';

@@ -5,6 +5,7 @@
  * Lancé via `npm run dev` (voir package.json). Variable d’env : `PORT` (optionnel).
  * Turbopack : même effet que `next dev --turbo` (voir `TURBOPACK` dans le CLI Next).
  */
+import "./bootstrapDevEnv";
 import { parse } from "node:url";
 import next from "next";
 import express from "express";

@@ -12,3 +12,16 @@ export function publicApiBaseUrl(): string {
 export function publicGoogleClientId(): string {
   return (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "").trim();
 }
+
+/** URL publique du site (SEO, SEA, liens canoniques). */
+export function publicSiteUrl(): string {
+  return (process.env.NEXT_PUBLIC_SITE_URL ?? "https://www.infinitecore.net").trim().replace(/\/$/, "");
+}
+
+/** Template URL SaaS par défaut ({moduleKey}, {appId}) — aligné sur SAAS_URL_TEMPLATE côté serveur. */
+export function publicSaasUrlTemplate(): string {
+  return (
+    process.env.NEXT_PUBLIC_SAAS_URL_TEMPLATE?.trim() ||
+    "https://{moduleKey}.saas.infinitecore.net"
+  );
+}

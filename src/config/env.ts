@@ -22,7 +22,9 @@ function int(key: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-const NODE_ENV = process.env.NODE_ENV || "development";
+function currentNodeEnv(): string {
+  return process.env.NODE_ENV || "development";
+}
 
 /** URL MongoDB avec timeouts driver (même logique qu’historiquement dans prismaClient). */
 export function databaseUrlForPrisma(): string {
@@ -30,7 +32,7 @@ export function databaseUrlForPrisma(): string {
   if (!trimmed || /serverSelectionTimeoutMS=/i.test(trimmed)) return trimmed;
   const ms =
     str("MONGODB_SERVER_SELECTION_TIMEOUT_MS") ||
-    (NODE_ENV === "development" ? "10000" : "8000");
+    (currentNodeEnv() === "development" ? "10000" : "8000");
   const sep = trimmed.includes("?") ? "&" : "?";
   return `${trimmed}${sep}serverSelectionTimeoutMS=${encodeURIComponent(ms)}&connectTimeoutMS=${encodeURIComponent(ms)}`;
 }
@@ -38,7 +40,7 @@ export function databaseUrlForPrisma(): string {
 export function getJwtSecret(): string {
   const envSecret = str("NEXTAUTH_SECRET") || str("JWT_SECRET");
   if (envSecret) return envSecret;
-  if (NODE_ENV === "production") {
+  if (currentNodeEnv() === "production") {
     throw new Error("NEXTAUTH_SECRET ou JWT_SECRET est requis en production.");
   }
   return "dev-secret-change-me";
@@ -47,6 +49,11 @@ export function getJwtSecret(): string {
 export function resetAppBaseUrl(): string {
   const raw = str("NEXTAUTH_URL") || str("APP_BASE_URL") || "http://localhost:3000";
   return raw.replace(/\/$/, "");
+}
+
+/** Cookie `Secure` uniquement si l’URL publique de l’app est en HTTPS (évite les rejets sur `http://localhost`). */
+export function authUsesSecureCookies(): boolean {
+  return resetAppBaseUrl().startsWith("https://");
 }
 
 /**
@@ -72,12 +79,14 @@ export function parseCorsOrigins(raw: string): string[] {
 
 export const appEnv = {
   node: {
-    env: NODE_ENV,
+    get env() {
+      return currentNodeEnv();
+    },
     get isProduction() {
-      return NODE_ENV === "production";
+      return currentNodeEnv() === "production";
     },
     get isDevelopment() {
-      return NODE_ENV === "development";
+      return currentNodeEnv() === "development";
     },
   },
   database: {

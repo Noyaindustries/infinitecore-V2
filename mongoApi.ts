@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { createHash, randomBytes, randomUUID } from "crypto";
 import { prisma } from "./prismaClient";
-import { appEnv, getJwtSecret, resetAppBaseUrl } from "@/config/env";
+import { appEnv, authUsesSecureCookies, getJwtSecret, resetAppBaseUrl } from "@/config/env";
 import { getSmtpTransport } from "@/server/smtpTransport";
 import { sendStaffNotifyEmail } from "@/server/staffNotifyEmail";
 import { agentSessionLog } from "./src/debug/agentSessionLog";
@@ -34,6 +34,9 @@ const AUTH_RATE_BLOCK_MS = 20 * 60 * 1000;
 const RESET_TOKEN_TTL_MS = 30 * 60 * 1000;
 const LOGIN_VERIFICATION_TTL_MS = 10 * 60 * 1000;
 const LOGIN_VERIFICATION_MAX_ATTEMPTS = 5;
+const E2E_TEST_EMAIL_SUFFIX = "@infinitecore.local";
+/** Code 2FA prévisible pour les comptes seed en dev (tests Playwright uniquement). */
+export const E2E_FIXED_LOGIN_CODE = "424242";
 const USER_FIELDS = [
   "uid",
   "email",
@@ -74,6 +77,17 @@ function generateNumericCode(length = 6) {
   const min = 10 ** (length - 1);
   const max = 10 ** length - 1;
   return String(Math.floor(min + Math.random() * (max - min + 1)));
+}
+
+function isLocalHttpDevApp(): boolean {
+  return !resetAppBaseUrl().startsWith("https://");
+}
+
+function loginVerificationCodeForEmail(email: string): string {
+  if (isLocalHttpDevApp() && isE2eTestAccountEmail(email)) {
+    return E2E_FIXED_LOGIN_CODE;
+  }
+  return generateNumericCode(6);
 }
 
 async function sendLoginVerificationEmail(input: { to: string; code: string }) {
@@ -165,11 +179,13 @@ function signAuthToken(payload: AuthPayload) {
 }
 
 function authCookieOptions() {
-  const domain = appEnv.auth.cookieDomain;
+  // En local, ne jamais forcer un domaine prod (ex. `.infinitecore.net`) : le navigateur
+  // n’enregistre pas le cookie sur localhost → 401 en cascade sur `/api/data/query`.
+  const domain = appEnv.node.isDevelopment ? undefined : appEnv.auth.cookieDomain;
   return {
     httpOnly: true as const,
     sameSite: "lax" as const,
-    secure: appEnv.node.isProduction,
+    secure: authUsesSecureCookies(),
     path: "/",
     maxAge: AUTH_COOKIE_TTL_MS,
     ...(domain ? { domain } : {}),
@@ -181,11 +197,11 @@ function setAuthCookie(res: Response, token: string) {
 }
 
 function clearAuthCookie(res: Response) {
-  const domain = appEnv.auth.cookieDomain;
+  const domain = appEnv.node.isDevelopment ? undefined : appEnv.auth.cookieDomain;
   res.clearCookie(AUTH_COOKIE_NAME, {
     httpOnly: true,
     sameSite: "lax",
-    secure: appEnv.node.isProduction,
+    secure: authUsesSecureCookies(),
     path: "/",
     ...(domain ? { domain } : {}),
   });
@@ -245,6 +261,23 @@ const VALID_ROLES = new Set(["admin", "commando", "developer", "partner", "clien
 
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
+}
+
+/** Comptes seed Playwright (`*@infinitecore.local`) — jamais en prod sans garde-fou explicite. */
+export function isE2eTestAccountEmail(email: string): boolean {
+  return String(email || "")
+    .trim()
+    .toLowerCase()
+    .endsWith(E2E_TEST_EMAIL_SUFFIX);
+}
+
+export function shouldSkipLoginVerificationForE2e(email: string): boolean {
+  if (!isE2eTestAccountEmail(email)) return false;
+  if (process.env.E2E_DISABLE_TEST_LOGIN_BYPASS === "1") return false;
+  if (process.env.E2E_SKIP_LOGIN_VERIFICATION === "1") return true;
+  // Dev / test : comptes seed Playwright (`*@infinitecore.local`) sur http://localhost.
+  if (isLocalHttpDevApp()) return true;
+  return !appEnv.node.isProduction;
 }
 
 function isStrongPassword(password: string) {
@@ -576,6 +609,7 @@ function getAllowedPrefixes(role: string, op: DataOperation): string[] {
       "dossier_steps",
       "payments",
       "orders",
+      "licenses",
       "logs",
       "chats",
       "documents",
@@ -595,7 +629,7 @@ function getAllowedPrefixes(role: string, op: DataOperation): string[] {
     return ["users", "notifications", "leads", "missions", "payments", "orders", "chats", "resources"];
   }
   if (role === "client") {
-    if (op === "read") return ["users", "notifications", "missions", "dossier_steps", "payments", "orders", "chats"];
+    if (op === "read") return ["users", "notifications", "missions", "dossier_steps", "payments", "orders", "licenses", "chats"];
     return ["users", "notifications", "chats", "dossier_steps", "orders"];
   }
   return [];
@@ -621,6 +655,7 @@ function hasClientScopedFilters(
   if (isPath(collectionPath, "dossier_steps")) return eq("clientId", auth.uid);
   if (isPath(collectionPath, "payments")) return eq("userId", auth.uid) || eq("clientId", auth.uid);
   if (isPath(collectionPath, "orders")) return eq("userId", auth.uid) || eq("clientId", auth.uid);
+  if (isPath(collectionPath, "licenses")) return eq("userId", auth.uid);
   if (isPath(collectionPath, "chats")) return eq("clientId", auth.uid);
   if (isPathPrefix(collectionPath, "chats/")) {
     const parts = collectionPath.split("/");
@@ -632,6 +667,7 @@ function hasClientScopedFilters(
 function hasClientScopedDocumentAccess(auth: AuthPayload, collectionPath: string, docId: string): boolean {
   if (isPath(collectionPath, "users")) return docId === auth.uid;
   if (isPath(collectionPath, "chats")) return docId === auth.uid;
+  if (isPath(collectionPath, "licenses")) return docId.startsWith(`${auth.uid}__`);
   if (isPathPrefix(collectionPath, "chats/")) {
     const parts = collectionPath.split("/");
     return parts[0] === "chats" && parts[1] === auth.uid;
@@ -710,6 +746,12 @@ function assertDataDocAuthorized(
   }
   return { ok: true };
 }
+
+export const __authE2eTestUtils = {
+  isE2eTestAccountEmail,
+  shouldSkipLoginVerificationForE2e,
+  E2E_FIXED_LOGIN_CODE,
+};
 
 export const __rbacTestUtils = {
   assertDataQueryAuthorized,
@@ -803,7 +845,7 @@ async function upsertDataDocument(
   });
 }
 
-async function ensureUserDocumentFromAccount(account: {
+type UserAccountForAuth = {
   uid: string;
   email: string;
   firstName: string | null;
@@ -815,7 +857,29 @@ async function ensureUserDocumentFromAccount(account: {
   photoURL: string | null;
   profile: unknown;
   createdAt: Date;
-}) {
+};
+
+function buildAuthLoginUserResponse(account: Pick<UserAccountForAuth, "uid" | "email" | "role" | "firstName" | "lastName">) {
+  return {
+    uid: account.uid,
+    email: account.email,
+    role: account.role,
+    displayName: [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email,
+  };
+}
+
+async function respondWithAuthenticatedLogin(res: Response, account: UserAccountForAuth) {
+  await ensureUserDocumentFromAccount(account);
+  const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
+  setAuthCookie(res, token);
+  return res.status(200).json({
+    success: true,
+    token,
+    user: buildAuthLoginUserResponse(account),
+  });
+}
+
+async function ensureUserDocumentFromAccount(account: UserAccountForAuth) {
   const profile = coerceRecord(account.profile);
   await upsertDataDocument(
     "users",
@@ -1438,8 +1502,13 @@ export function registerMongoApi(app: Express) {
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
 
+      if (shouldSkipLoginVerificationForE2e(email)) {
+        await clearAuthFailures(authKey);
+        return respondWithAuthenticatedLogin(res, account);
+      }
+
       const challengeId = randomUUID().replace(/-/g, "");
-      const verificationCode = generateNumericCode(6);
+      const verificationCode = loginVerificationCodeForEmail(email);
       const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
 
       await upsertDataDocument(
@@ -1461,7 +1530,7 @@ export function registerMongoApi(app: Express) {
         to: account.email,
         code: verificationCode,
       });
-      if (!mailResult.delivered) {
+      if (!mailResult.delivered && !shouldSkipLoginVerificationForE2e(email)) {
         await prisma.dataDocument.delete({
           where: { collectionPath_docId: { collectionPath: "auth_login_verifications", docId: challengeId } },
         });
@@ -1657,12 +1726,8 @@ export function registerMongoApi(app: Express) {
 
       return res.status(200).json({
         success: true,
-        user: {
-          uid: account.uid,
-          email: account.email,
-          role: account.role,
-          displayName: [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email,
-        },
+        token,
+        user: buildAuthLoginUserResponse(account),
       });
     } catch (error) {
       return sendAuthPrismaError(res, "[auth/login/verify]", error);

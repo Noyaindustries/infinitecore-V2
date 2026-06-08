@@ -82,4 +82,10 @@ ko(
   })
 );
 
+// Client: licences scopées sur son UID.
+ok(assertDataQueryAuthorized(auth("client"), "licenses", [where("userId", "u_client")]));
+ko(assertDataQueryAuthorized(auth("client"), "licenses", [where("userId", "u_other")]));
+ok(assertDataDocAuthorized(auth("client"), "read", "licenses", "u_client__crm"));
+ko(assertDataDocAuthorized(auth("client"), "read", "licenses", "u_other__crm"));
+
 console.log("RBAC tests passed");

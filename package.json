@@ -16,8 +16,15 @@
     "test:padde-webhook": "node scripts/testPaddeWebhook.mjs",
     "test:noya-recrutement-webhook": "node --env-file=.env.local scripts/testNoyaRecrutementWebhook.mjs",
     "diagnose:padde": "node scripts/diagnosePadde.mjs",
+    "generate:app-covers": "node scripts/generateAppCoverSvgs.mjs",
     "lint": "tsc --noEmit",
-    "test": "npm run test:rbac && npm run test:data-query && npm run test:padde-admin-list",
+    "test": "npm run test:unit && npm run test:rbac && npm run test:data-query && npm run test:padde-admin-list",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest",
+    "test:security": "vitest run tests/security && npm run test:e2e -- tests/e2e/api-security.spec.ts",
+    "test:security:audit": "npm audit --audit-level=high",
+    "test:licenses": "npm run test:unit -- tests/unit/licenses.vitest.ts",
+    "test:stripe-checkout": "node --env-file=.env.local scripts/testStripeCheckout.mjs",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:rbac": "tsx tests/rbac.test.ts",
@@ -84,6 +91,7 @@
     "prisma": "^6.19.3",
     "tailwindcss": "^4.2.1",
     "tsx": "^4.21.0",
-    "typescript": "~5.8.2"
+    "typescript": "~5.8.2",
+    "vitest": "^4.1.8"
   }
 }

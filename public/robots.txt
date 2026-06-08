@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /dashboard/
+Disallow: /admin/
+Disallow: /superadmin/
+Disallow: /developer/
+Disallow: /partenaire/
+Disallow: /module/
+
+Sitemap: https://www.infinitecore.net/sitemap.xml
