@@ -50,9 +50,10 @@ import { isExternalSaasBilling } from "./src/lib/saasBilling";
 import { resolveSaasTenantId } from "./src/lib/saasAccess";
 import { signSaasAccessToken, verifySaasAccessToken } from "./src/server/saasAccessToken";
 import { isAllowedUpload, uploadSingleWithHandling } from "./src/server/multerUpload";
-import { applySensitiveRateLimits } from "./src/server/rateLimit";
+import { applySensitiveRateLimits, isRateLimitEnabled } from "./src/server/rateLimit";
 import { registerErrorHandlers } from "./src/server/errorHandler";
 import { applySecurityHeaders } from "./src/server/securityHeaders";
+import { applyCsrfProtection } from "./src/server/csrfProtection";
 import { logHttpRequest, logger } from "./src/server/logger";
 import {
   resolveCatalogLicenseCheckout,
@@ -332,6 +333,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         "X-Requested-With",
         "X-Webhook-Secret",
         "X-Webhook-Signature",
+        "X-CSRF-Token",
       ],
       credentials: true,
     })
@@ -395,6 +397,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   });
 
   applySensitiveRateLimits(app);
+  applyCsrfProtection(app, corsOrigins);
 
   app.get("/health", (_req, res) => {
     res.status(200).json({
@@ -409,6 +412,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         saasBridgeApiKey: Boolean(process.env.SAAS_BRIDGE_API_KEY?.trim()),
         corsOrigin: Boolean(appEnv.http.corsOriginRaw),
         googleClientId: Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim()),
+        rateLimitEnabled: isRateLimitEnabled(),
       },
     });
   });

@@ -1,0 +1,4 @@
+# Snyk (https://docs.snyk.io/scan-with-snyk/snyk-open-source/manage-vulnerabilities/snyk-policy-file)
+version: v1.25.0
+ignore: {}
+patch: {}

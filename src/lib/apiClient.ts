@@ -19,6 +19,8 @@ export class ApiHttpError extends Error {
 }
 
 const AUTH_TOKEN_KEY = "ic_auth_token";
+const CSRF_COOKIE_NAME = "ic_csrf";
+const CSRF_HEADER_NAME = "X-CSRF-Token";
 const USE_LEGACY_BEARER =
   typeof process !== "undefined" &&
   !!process.env &&
@@ -74,6 +76,17 @@ export function getAuthToken(): string | null {
   return localStorage.getItem(AUTH_TOKEN_KEY);
 }
 
+function getCsrfTokenFromCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${CSRF_COOKIE_NAME}=([^;]*)`));
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
+}
+
 export function setAuthToken(token: string | null) {
   if (typeof window === "undefined") return;
   if (!clientStoresAuthToken()) return;
@@ -101,6 +114,10 @@ async function fetchAndParse<T>(url: string, init: RequestInit, fetchSignal: Abo
     headers.set("Content-Type", "application/json");
   }
   if (token) headers.set("Authorization", `Bearer ${token}`);
+  const csrfToken = getCsrfTokenFromCookie();
+  if (csrfToken && !headers.has(CSRF_HEADER_NAME)) {
+    headers.set(CSRF_HEADER_NAME, csrfToken);
+  }
 
   const response = await fetch(url, {
     ...init,

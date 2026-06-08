@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import type { PrismaClient } from "@prisma/client";
 import { randomUUID } from "crypto";
 import type { QueryFilter, QueryOrder } from "./mongo/dataQueryTypes";
+import { logAuditDataChange } from "@/server/auditLog";
 import {
   assertSafeDocumentPayload,
   containsMongoOperatorKeys,
@@ -288,6 +289,15 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
         : deps.coerceRecord(legacyCurrent?.data);
       await deps.upsertDataDocument(collectionPath, docId, incoming, merge);
       await upsertSplitDoc(collectionPath, docId, incoming, merge, fallbackCurrent);
+      logAuditDataChange({
+        action: merge ? "data.doc.update" : "data.doc.create",
+        req,
+        auth,
+        collectionPath,
+        docId,
+        merge,
+        payload: incoming,
+      });
       return res.status(200).json({ success: true, docId });
     } catch (error) {
       console.error("[data/doc:post]", error);
@@ -342,6 +352,15 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       });
       await upsertSplitDoc(collectionPath, docId, next, false);
 
+      logAuditDataChange({
+        action: "data.doc.patch",
+        req,
+        auth,
+        collectionPath,
+        docId,
+        payload: updates,
+      });
+
       return res.status(200).json({ success: true });
     } catch (error) {
       console.error("[data/doc:patch]", error);
@@ -365,6 +384,13 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
         where: { collectionPath, docId },
       });
       await deleteSplitDoc(collectionPath, docId);
+      logAuditDataChange({
+        action: "data.doc.delete",
+        req,
+        auth,
+        collectionPath,
+        docId,
+      });
       return res.status(200).json({ success: true });
     } catch (error) {
       console.error("[data/doc:delete]", error);

@@ -37,9 +37,9 @@ describe('sécurité — contournement 2FA e2e', () => {
     expect(shouldSkipLoginVerificationForE2e('admin.test@infinitecore.local')).toBe(false);
   });
 
-  it('force le bypass si E2E_SKIP_LOGIN_VERIFICATION=1', () => {
-    vi.stubEnv('NODE_ENV', 'production');
-    process.env.E2E_SKIP_LOGIN_VERIFICATION = '1';
-    expect(shouldSkipLoginVerificationForE2e('admin.test@infinitecore.local')).toBe(true);
+  it("n’active jamais le bypass 2FA en production, même avec E2E_SKIP_LOGIN_VERIFICATION=1", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    process.env.E2E_SKIP_LOGIN_VERIFICATION = "1";
+    expect(shouldSkipLoginVerificationForE2e("admin.test@infinitecore.local")).toBe(false);
   });
 });

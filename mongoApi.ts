@@ -11,6 +11,12 @@ import { registerDataRoutes } from "./src/api/dataRoutes";
 import type { QueryFilter, QueryOrder } from "./src/api/mongo/dataQueryTypes";
 import { sanitizeFilters, sanitizeOrders } from "./src/api/mongo/sanitizeDataQuery";
 import { AuthRegisterSchema, UserProfileSchema } from "./src/lib/schemas";
+import {
+  bindAuditLogPersistence,
+  logAuditAuth,
+  type AuditAuthAction,
+} from "./src/server/auditLog";
+import { clearCsrfCookie, setCsrfCookie } from "./src/server/csrfProtection";
 
 export type AuthPayload = {
   uid: string;
@@ -274,11 +280,11 @@ export function isE2eTestAccountEmail(email: string): boolean {
 
 export function shouldSkipLoginVerificationForE2e(email: string): boolean {
   if (!isE2eTestAccountEmail(email)) return false;
+  if (appEnv.node.isProduction) return false;
   if (process.env.E2E_DISABLE_TEST_LOGIN_BYPASS === "1") return false;
   if (process.env.E2E_SKIP_LOGIN_VERIFICATION === "1") return true;
-  // Dev / test : comptes seed Playwright (`*@infinitecore.local`) sur http://localhost.
   if (isLocalHttpDevApp()) return true;
-  return !appEnv.node.isProduction;
+  return true;
 }
 
 function isStrongPassword(password: string) {
@@ -878,10 +884,25 @@ function buildAuthLoginUserResponse(account: Pick<UserAccountForAuth, "uid" | "e
   };
 }
 
-async function respondWithAuthenticatedLogin(res: Response, account: UserAccountForAuth) {
+async function respondWithAuthenticatedLogin(
+  res: Response,
+  account: UserAccountForAuth,
+  options?: { req?: Request; auditAction?: AuditAuthAction }
+) {
   await ensureUserDocumentFromAccount(account);
   const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
   setAuthCookie(res, token);
+  setCsrfCookie(res);
+  if (options?.auditAction) {
+    logAuditAuth({
+      action: options.auditAction,
+      success: true,
+      req: options.req,
+      actorUid: account.uid,
+      actorEmail: account.email,
+      actorRole: account.role,
+    });
+  }
   return res.status(200).json({
     success: true,
     token,
@@ -917,6 +938,7 @@ async function ensureUserDocumentFromAccount(account: UserAccountForAuth) {
 }
 
 export function registerMongoApi(app: Express) {
+  bindAuditLogPersistence(prisma);
   const dbUrl = appEnv.database.url;
   const dbMasked = dbUrl ? `${dbUrl.slice(0, 15)}...${dbUrl.slice(-10)}` : "NON_DEFINIE";
   console.log(`[mongoApi] Initialisation. DB: ${dbMasked}. CORS: ${appEnv.http.corsOriginRaw}`);
@@ -998,6 +1020,15 @@ export function registerMongoApi(app: Express) {
       });
 
       await ensureUserDocumentFromAccount(account);
+
+      logAuditAuth({
+        action: "auth.profile.update",
+        success: true,
+        req,
+        actorUid: auth.uid,
+        actorEmail: auth.email,
+        actorRole: auth.role,
+      });
 
       return res.status(200).json({
         success: true,
@@ -1110,6 +1141,13 @@ export function registerMongoApi(app: Express) {
       }
 
       await clearAuthFailures(authKey);
+
+      logAuditAuth({
+        action: "auth.register.started",
+        success: true,
+        req,
+        targetEmail: email,
+      });
 
       return res.status(201).json({
         success: true,
@@ -1231,6 +1269,16 @@ export function registerMongoApi(app: Express) {
 
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
       setAuthCookie(res, token);
+      setCsrfCookie(res);
+
+      logAuditAuth({
+        action: "auth.register.success",
+        success: true,
+        req,
+        actorUid: account.uid,
+        actorEmail: account.email,
+        actorRole: account.role,
+      });
 
       return res.status(200).json({
         success: true,
@@ -1489,6 +1537,13 @@ export function registerMongoApi(app: Express) {
       // #endregion
       if (!account || !account.passwordHash) {
         await registerAuthFailure(authKey);
+        logAuditAuth({
+          action: "auth.login.failure",
+          success: false,
+          req,
+          targetEmail: email,
+          reason: "unknown_account",
+        });
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
 
@@ -1509,12 +1564,22 @@ export function registerMongoApi(app: Express) {
       // #endregion
       if (!valid) {
         await registerAuthFailure(authKey);
+        logAuditAuth({
+          action: "auth.login.failure",
+          success: false,
+          req,
+          targetEmail: email,
+          reason: "invalid_password",
+        });
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
 
       if (shouldSkipLoginVerificationForE2e(email)) {
         await clearAuthFailures(authKey);
-        return respondWithAuthenticatedLogin(res, account);
+        return respondWithAuthenticatedLogin(res, account, {
+          req,
+          auditAction: "auth.login.success",
+        });
       }
 
       const challengeId = randomUUID().replace(/-/g, "");
@@ -1552,6 +1617,15 @@ export function registerMongoApi(app: Express) {
 
       await clearAuthFailures(authKey);
 
+      logAuditAuth({
+        action: "auth.login.verification_required",
+        success: true,
+        req,
+        actorUid: account.uid,
+        actorEmail: account.email,
+        actorRole: account.role,
+      });
+
       return res.status(200).json({
         success: true,
         verificationRequired: true,
@@ -1574,8 +1648,18 @@ export function registerMongoApi(app: Express) {
     }
   });
 
-  app.post("/api/auth/logout", async (_req: Request, res: Response) => {
+  app.post("/api/auth/logout", async (req: Request, res: Response) => {
+    const auth = parseAuthFromRequest(req);
+    logAuditAuth({
+      action: "auth.logout",
+      success: true,
+      req,
+      actorUid: auth?.uid,
+      actorEmail: auth?.email,
+      actorRole: auth?.role,
+    });
     clearAuthCookie(res);
+    clearCsrfCookie(res);
     return res.status(200).json({ success: true });
   });
 
@@ -1840,6 +1924,16 @@ export function registerMongoApi(app: Express) {
 
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
       setAuthCookie(res, token);
+      setCsrfCookie(res);
+
+      logAuditAuth({
+        action: "auth.login.verify.success",
+        success: true,
+        req,
+        actorUid: account.uid,
+        actorEmail: account.email,
+        actorRole: account.role,
+      });
 
       return res.status(200).json({
         success: true,
@@ -1874,6 +1968,12 @@ export function registerMongoApi(app: Express) {
           googlePicture = prof.picture;
           googleDisplayHint = prof.displayNameHint;
         } catch {
+          logAuditAuth({
+            action: "auth.google.failure",
+            success: false,
+            req,
+            reason: "invalid_google_token",
+          });
           return res.status(401).json({
             success: false,
             error: "Impossible de vérifier le compte Google (jeton invalide ou email non vérifié).",
@@ -1983,8 +2083,17 @@ export function registerMongoApi(app: Express) {
         await clearAuthFailures(authKey);
         const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
         setAuthCookie(res, token);
+        setCsrfCookie(res);
         const displayNameOut =
           [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email;
+        logAuditAuth({
+          action: "auth.google.success",
+          success: true,
+          req,
+          actorUid: account.uid,
+          actorEmail: account.email,
+          actorRole: account.role,
+        });
         return res.status(200).json({
           success: true,
           user: {
@@ -2120,6 +2229,17 @@ export function registerMongoApi(app: Express) {
         },
         true
       );
+
+      logAuditAuth({
+        action: "auth.admin_role.change",
+        success: true,
+        req,
+        actorUid: auth.uid,
+        actorEmail: auth.email,
+        actorRole: auth.role,
+        targetEmail: updatedAccount.email,
+        reason: `${target.role}->${requestedRoleRaw}`,
+      });
 
       return res.status(200).json({
         success: true,
@@ -2261,6 +2381,13 @@ export function registerMongoApi(app: Express) {
 
       const mailResult = await sendResetPasswordEmail({ to: account.email, token: resetToken });
 
+      logAuditAuth({
+        action: "auth.password_reset.request",
+        success: true,
+        req,
+        targetEmail: email,
+      });
+
       return res.status(200).json({
         success: true,
         message: "Si ce compte existe, les instructions de réinitialisation ont été enregistrées.",
@@ -2323,6 +2450,14 @@ export function registerMongoApi(app: Express) {
         },
         false
       );
+
+      logAuditAuth({
+        action: "auth.password_reset.confirm",
+        success: true,
+        req,
+        actorUid: account.uid,
+        actorEmail: account.email,
+      });
 
       return res.status(200).json({ success: true, message: "Mot de passe réinitialisé avec succès." });
     } catch (error) {

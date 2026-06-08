@@ -70,6 +70,21 @@ const CHECKOUT_MAX = Number(process.env.RATE_LIMIT_CHECKOUT_MAX) || 25;
 const DATA_WINDOW_MS = Number(process.env.RATE_LIMIT_DATA_WINDOW_MS) || 60 * 1000;
 const DATA_MAX = Number(process.env.RATE_LIMIT_DATA_MAX) || 180;
 
+function rateLimitDisabledByEnv(): boolean {
+  const raw = String(process.env.RATE_LIMIT_DISABLED || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
+/** Toujours actif en production — `RATE_LIMIT_DISABLED` n’est pris en compte qu’en dev/test. */
+export function isRateLimitEnabled(): boolean {
+  if (!rateLimitDisabledByEnv()) return true;
+  if ((process.env.NODE_ENV || "development") === "production") {
+    console.warn("[rate-limit] RATE_LIMIT_DISABLED ignoré en production.");
+    return true;
+  }
+  return false;
+}
+
 export const authRateLimiter = createRateLimiter({
   scope: "auth",
   windowMs: AUTH_WINDOW_MS,
@@ -114,6 +129,10 @@ export const dataApiRateLimiter = createRateLimiter({
 
 /** Applique des limites sur les préfixes d’API sensibles. */
 export function applySensitiveRateLimits(app: Express) {
+  if (!isRateLimitEnabled()) {
+    console.warn("[rate-limit] Limites désactivées (environnement non production).");
+    return;
+  }
   app.use("/api/auth", authRateLimiter);
   app.use("/api/files/upload", uploadRateLimiter);
   app.use("/api/webhooks", webhookRateLimiter);

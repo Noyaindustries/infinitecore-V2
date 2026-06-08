@@ -4,6 +4,7 @@ import {
   buildStrictCorsOrigins,
 } from "@/config/corsPolicy";
 import { formatProductionSecretsErrors, validateProductionSecrets } from "@/config/secretPolicy";
+import { isRateLimitEnabled } from "@/server/rateLimit";
 
 export type ProductionConfigFlags = {
   databaseUrl: boolean;
@@ -13,6 +14,7 @@ export type ProductionConfigFlags = {
   paddeWebhookSecret: boolean;
   googleClientId: boolean;
   saasBridgeApiKey: boolean;
+  rateLimitEnabled: boolean;
 };
 
 export type ProductionConfigCheckResult = {
@@ -31,6 +33,7 @@ export function runProductionConfigCheck(): ProductionConfigCheckResult {
     paddeWebhookSecret: Boolean(appEnv.webhooks.paddeWebhookSecret),
     googleClientId: Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim()),
     saasBridgeApiKey: Boolean(process.env.SAAS_BRIDGE_API_KEY?.trim()),
+    rateLimitEnabled: isRateLimitEnabled(),
   };
 
   const errors: string[] = [];

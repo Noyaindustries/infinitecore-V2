@@ -1,6 +1,13 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import type { Request, Response } from "express";
-import { createRateLimiter, resetRateLimitBucketsForTests } from "../../src/server/rateLimit";
+import {
+  applySensitiveRateLimits,
+  createRateLimiter,
+  isRateLimitEnabled,
+  resetRateLimitBucketsForTests,
+} from "../../src/server/rateLimit";
+import express from "express";
+import http from "node:http";
 
 function mockReq(ip = "127.0.0.1"): Request {
   return {
@@ -51,5 +58,52 @@ describe("createRateLimiter", () => {
     limiter(mockReq(), res3, next);
     expect(getStatus()).toBe(429);
     expect(getBody()).toEqual({ success: false, error: "Trop de requêtes. Réessayez plus tard." });
+  });
+});
+
+describe("isRateLimitEnabled", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("reste actif en production même si RATE_LIMIT_DISABLED=1", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("RATE_LIMIT_DISABLED", "1");
+    expect(isRateLimitEnabled()).toBe(true);
+  });
+
+  it("peut être désactivé en développement", () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubEnv("RATE_LIMIT_DISABLED", "1");
+    expect(isRateLimitEnabled()).toBe(false);
+  });
+});
+
+describe("applySensitiveRateLimits", () => {
+  beforeEach(() => {
+    resetRateLimitBucketsForTests();
+    vi.unstubAllEnvs();
+    vi.stubEnv("NODE_ENV", "test");
+  });
+
+  it("monte le middleware auth en production", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const app = express();
+    app.use(express.json());
+    applySensitiveRateLimits(app);
+    app.post("/api/auth/login", (_req, res) => res.status(200).json({ ok: true }));
+
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, resolve));
+    const port = (server.address() as { port: number }).port;
+
+    let lastStatus = 0;
+    for (let i = 0; i < 45; i++) {
+      const res = await fetch(`http://127.0.0.1:${port}/api/auth/login`, { method: "POST" });
+      lastStatus = res.status;
+      if (lastStatus === 429) break;
+    }
+    server.close();
+    expect(lastStatus).toBe(429);
   });
 });

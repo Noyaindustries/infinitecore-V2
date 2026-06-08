@@ -66,7 +66,7 @@ function agentSessionLog(payload) {
 }
 
 // server.ts
-var import_crypto6 = require("crypto");
+var import_crypto8 = require("crypto");
 var import_client_s32 = require("@aws-sdk/client-s3");
 var import_s3_request_presigner2 = require("@aws-sdk/s3-request-presigner");
 var import_stripe = __toESM(require("stripe"), 1);
@@ -197,6 +197,7 @@ function secretErrors(name, value, required) {
     if (required) errors.push(`${name} est requis.`);
     return errors;
   }
+  if (name === "DATABASE_URL") return errors;
   if (value.length < 32) {
     errors.push(`${name} : minimum 32 caract\xE8res (actuel ${value.length}).`);
   }
@@ -280,10 +281,7 @@ if (envValidationReport.warnings.length) {
 if (!envValidationReport.ok) {
   const message = `Variables d'environnement invalides:
 ${formatEnvValidationReport(envValidationReport)}`;
-  if ((process.env.NODE_ENV || "development") === "production") {
-    throw new Error(message);
-  }
-  console.warn(message);
+  console.error(message);
 }
 function str(key, fallback = "") {
   const v = process.env[key];
@@ -706,7 +704,7 @@ function mimeFromStorageKey(keyOrPath) {
 // mongoApi.ts
 var import_bcryptjs = __toESM(require("bcryptjs"), 1);
 var import_jsonwebtoken = __toESM(require("jsonwebtoken"), 1);
-var import_crypto3 = require("crypto");
+var import_crypto5 = require("crypto");
 
 // src/server/smtpTransport.ts
 var import_nodemailer = __toESM(require("nodemailer"), 1);
@@ -785,7 +783,166 @@ async function sendStaffNotifyEmail(input) {
 }
 
 // src/api/dataRoutes.ts
+var import_crypto3 = require("crypto");
+
+// src/server/auditLog.ts
 var import_crypto2 = require("crypto");
+
+// src/server/logger.ts
+var LEVEL_RANK = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  debug: 3
+};
+function currentNodeEnv2() {
+  return process.env.NODE_ENV || "development";
+}
+function resolveMinLevel() {
+  const raw = String(process.env.LOG_LEVEL || "").trim().toLowerCase();
+  if (raw === "error" || raw === "warn" || raw === "info" || raw === "debug") return raw;
+  return currentNodeEnv2() === "production" ? "info" : "debug";
+}
+var minLevel = resolveMinLevel();
+function shouldLog(level) {
+  return LEVEL_RANK[level] <= LEVEL_RANK[minLevel];
+}
+function serializeError(error) {
+  if (!error) return void 0;
+  if (error instanceof Error) {
+    return { errorName: error.name, errorMessage: error.message, stack: error.stack };
+  }
+  return { errorValue: String(error) };
+}
+function write(level, message, context) {
+  if (!shouldLog(level)) return;
+  const entry = {
+    ts: (/* @__PURE__ */ new Date()).toISOString(),
+    level,
+    msg: message,
+    service: "infinitecore-api",
+    env: currentNodeEnv2(),
+    ...context
+  };
+  const line = JSON.stringify(entry);
+  if (level === "error") console.error(line);
+  else if (level === "warn") console.warn(line);
+  else console.log(line);
+}
+function createLogger(bindings = {}) {
+  const withBindings = (context) => {
+    if (!bindings || !Object.keys(bindings).length) return context;
+    if (!context) return { ...bindings };
+    return { ...bindings, ...context };
+  };
+  return {
+    error(message, context) {
+      write("error", message, withBindings(context));
+    },
+    warn(message, context) {
+      write("warn", message, withBindings(context));
+    },
+    info(message, context) {
+      write("info", message, withBindings(context));
+    },
+    debug(message, context) {
+      write("debug", message, withBindings(context));
+    },
+    child(extra) {
+      return createLogger({ ...bindings, ...extra });
+    }
+  };
+}
+var logger = createLogger();
+function logHttpRequest(input) {
+  const level = input.statusCode >= 500 ? "error" : input.statusCode >= 400 ? "warn" : "info";
+  write(level, "http_request", input);
+}
+function logServerError(message, error, context) {
+  write("error", message, { ...context, ...serializeError(error) });
+}
+
+// src/server/auditLog.ts
+var SENSITIVE_KEY = /password|secret|token|hash|smtp|stripe|authorization|cookie/i;
+var AUDIT_COLLECTION = "security_audit_logs";
+var persistClient = null;
+function bindAuditLogPersistence(prisma2) {
+  persistClient = prisma2;
+}
+function normalizeIp(raw) {
+  return raw.trim().replace(/^::ffff:/, "") || "unknown";
+}
+function auditRequestMeta(req) {
+  if (!req) return { requestId: "", ip: "unknown" };
+  const xff = req.headers["x-forwarded-for"];
+  let ip = normalizeIp(req.socket.remoteAddress || "");
+  if (typeof xff === "string" && xff.trim()) {
+    ip = normalizeIp(xff.split(",")[0] || "");
+  } else if (Array.isArray(xff) && xff[0]) {
+    ip = normalizeIp(String(xff[0]));
+  }
+  return {
+    requestId: String(req.headers["x-request-id"] || ""),
+    ip
+  };
+}
+function summarizeDataFields(data, max = 12) {
+  return Object.keys(data).filter((k) => !SENSITIVE_KEY.test(k)).slice(0, max);
+}
+function writeAudit(entry) {
+  logger.info("audit_event", {
+    audit: true,
+    ...entry
+  });
+  if (process.env.AUDIT_LOG_PERSIST !== "1" || !persistClient) return;
+  const docId = `audit_${Date.now()}_${(0, import_crypto2.randomUUID)().replace(/-/g, "").slice(0, 10)}`;
+  void persistClient.dataDocument.create({
+    data: {
+      collectionPath: AUDIT_COLLECTION,
+      docId,
+      data: {
+        ...entry,
+        createdAt: (/* @__PURE__ */ new Date()).toISOString()
+      }
+    }
+  }).catch((error) => {
+    logger.warn("audit_persist_failed", {
+      action: entry.action,
+      errorMessage: error instanceof Error ? error.message : String(error)
+    });
+  });
+}
+function logAuditAuth(input) {
+  const meta = auditRequestMeta(input.req);
+  writeAudit({
+    action: input.action,
+    success: input.success,
+    actorUid: input.actorUid,
+    actorEmail: input.targetEmail ? void 0 : input.actorEmail,
+    actorRole: input.actorRole,
+    targetEmail: input.targetEmail || input.actorEmail,
+    reason: input.reason,
+    requestId: meta.requestId,
+    ip: meta.ip
+  });
+}
+function logAuditDataChange(input) {
+  if (input.collectionPath === AUDIT_COLLECTION) return;
+  const meta = auditRequestMeta(input.req);
+  writeAudit({
+    action: input.action,
+    success: true,
+    actorUid: input.auth.uid,
+    actorEmail: input.auth.email,
+    actorRole: input.auth.role,
+    collectionPath: input.collectionPath,
+    docId: input.docId,
+    merge: input.merge,
+    fieldsChanged: input.payload ? summarizeDataFields(input.payload) : void 0,
+    requestId: meta.requestId,
+    ip: meta.ip
+  });
+}
 
 // src/api/mongo/noSqlInjectionGuard.ts
 var MONGO_OPERATOR_KEY = /^\$/;
@@ -1041,7 +1198,7 @@ function registerDataRoutes(app2, deps) {
       if (payloadCheck.ok === false) {
         return res.status(400).json({ success: false, error: payloadCheck.error });
       }
-      const docId = String(req.body?.docId || "").trim() || (0, import_crypto2.randomUUID)().replace(/-/g, "");
+      const docId = String(req.body?.docId || "").trim() || (0, import_crypto3.randomUUID)().replace(/-/g, "");
       if (!collectionPath || !deps.isSafeCollectionPath(collectionPath) || !deps.isSafeDocId(docId)) {
         return res.status(400).json({ success: false, error: "collectionPath ou docId invalides." });
       }
@@ -1055,6 +1212,15 @@ function registerDataRoutes(app2, deps) {
       const fallbackCurrent = splitCurrent ? deps.coerceRecord(splitCurrent.data) : deps.coerceRecord(legacyCurrent?.data);
       await deps.upsertDataDocument(collectionPath, docId, incoming, merge);
       await upsertSplitDoc(collectionPath, docId, incoming, merge, fallbackCurrent);
+      logAuditDataChange({
+        action: merge ? "data.doc.update" : "data.doc.create",
+        req,
+        auth,
+        collectionPath,
+        docId,
+        merge,
+        payload: incoming
+      });
       return res.status(200).json({ success: true, docId });
     } catch (error) {
       console.error("[data/doc:post]", error);
@@ -1098,6 +1264,14 @@ function registerDataRoutes(app2, deps) {
         update: { data: next }
       });
       await upsertSplitDoc(collectionPath, docId, next, false);
+      logAuditDataChange({
+        action: "data.doc.patch",
+        req,
+        auth,
+        collectionPath,
+        docId,
+        payload: updates
+      });
       return res.status(200).json({ success: true });
     } catch (error) {
       console.error("[data/doc:patch]", error);
@@ -1119,6 +1293,13 @@ function registerDataRoutes(app2, deps) {
         where: { collectionPath, docId }
       });
       await deleteSplitDoc(collectionPath, docId);
+      logAuditDataChange({
+        action: "data.doc.delete",
+        req,
+        auth,
+        collectionPath,
+        docId
+      });
       return res.status(200).json({ success: true });
     } catch (error) {
       console.error("[data/doc:delete]", error);
@@ -1185,22 +1366,28 @@ var billingCycleSchema = import_zod2.z.preprocess(
   },
   import_zod2.z.enum(["month", "year"])
 );
+var optionalNote = import_zod2.z.preprocess(
+  (val) => val === null || val === void 0 || val === "" ? void 0 : String(val),
+  import_zod2.z.string().optional()
+);
 var OrderSchema = import_zod2.z.object({
   serviceId: import_zod2.z.string().min(1),
-  serviceName: import_zod2.z.string().min(1),
-  amount: import_zod2.z.number().positive(),
+  serviceName: import_zod2.z.string().min(1).optional(),
+  /** Ignoré côté serveur (prix catalogue) — conservé pour compatibilité client. */
+  amount: import_zod2.z.coerce.number().positive().optional(),
   billingCycle: billingCycleSchema,
   moduleKey: import_zod2.z.string().optional(),
-  note: import_zod2.z.string().optional()
+  note: optionalNote
 });
 var LicenseCheckoutSchema = import_zod2.z.object({
   appId: import_zod2.z.string().min(1),
-  appName: import_zod2.z.string().min(1),
-  moduleKey: import_zod2.z.string().min(1),
-  amount: import_zod2.z.number().positive(),
+  appName: import_zod2.z.string().min(1).optional(),
+  moduleKey: import_zod2.z.string().min(1).optional(),
+  /** Ignoré côté serveur (prix catalogue) — conservé pour compatibilité client. */
+  amount: import_zod2.z.coerce.number().positive().optional(),
   /** 0 = licence à vie ; > 0 = durée limitée en jours. */
-  licenseDurationDays: import_zod2.z.number().int().min(0).optional(),
-  note: import_zod2.z.string().optional()
+  licenseDurationDays: import_zod2.z.coerce.number().int().min(0).optional(),
+  note: optionalNote
 });
 var PaddeAuditPayloadSchema = import_zod2.z.record(import_zod2.z.string(), import_zod2.z.unknown()).and(
   import_zod2.z.object({
@@ -1224,6 +1411,153 @@ var AuthRegisterSchema = import_zod2.z.object({
   referredByPartnerId: import_zod2.z.string().optional(),
   referredByPartnerName: import_zod2.z.string().optional()
 });
+
+// src/server/csrfProtection.ts
+var import_crypto4 = require("crypto");
+var CSRF_COOKIE_NAME = "ic_csrf";
+var CSRF_HEADER_NAME = "X-CSRF-Token";
+var MUTATING_METHODS = /* @__PURE__ */ new Set(["POST", "PUT", "PATCH", "DELETE"]);
+var SKIP_PATH_PREFIXES = ["/api/stripe/webhook", "/api/webhooks/", "/health"];
+function authUsesSecureCookies2() {
+  return appEnv.node.isProduction || appEnv.auth.nextAuthUrl.startsWith("https://");
+}
+function normalizeOrigin(value) {
+  return value.trim().replace(/\/$/, "");
+}
+function requestPath(req) {
+  return (req.path || req.url?.split("?")[0] || "").split("?")[0] || "";
+}
+function shouldSkipCsrfPath(path4) {
+  return SKIP_PATH_PREFIXES.some((prefix) => path4.startsWith(prefix));
+}
+function isCsrfProtectionEnabled() {
+  if (process.env.CSRF_PROTECTION === "0") return false;
+  return appEnv.node.isProduction;
+}
+function hasBearerAuthorization(req) {
+  const raw = req.headers.authorization;
+  return typeof raw === "string" && raw.startsWith("Bearer ");
+}
+function hasAuthCookie(req) {
+  const cookie = typeof req.headers.cookie === "string" ? req.headers.cookie : "";
+  return cookie.includes("ic_auth_token=");
+}
+function parseCookieValue(header, key) {
+  if (!header) return null;
+  for (const chunk of header.split(";")) {
+    const [namePart, ...valueParts] = chunk.split("=");
+    if (String(namePart || "").trim() !== key) continue;
+    const rawValue = valueParts.join("=").trim();
+    if (!rawValue) return null;
+    try {
+      return decodeURIComponent(rawValue);
+    } catch {
+      return rawValue;
+    }
+  }
+  return null;
+}
+function secureTokenEquals(a, b) {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  if (left.length !== right.length) return false;
+  return (0, import_crypto4.timingSafeEqual)(left, right);
+}
+function resolveTrustedOrigins(corsOrigins) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  const candidates = [
+    ...corsOrigins,
+    appEnv.auth.nextAuthUrl,
+    appEnv.auth.appBaseUrl || ""
+  ];
+  for (const raw of candidates) {
+    const normalized = normalizeOrigin(raw);
+    if (!normalized || !/^https?:\/\//i.test(normalized) || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+function originAllowedForRequest(req, trustedOrigins) {
+  const origin = req.headers.origin;
+  if (typeof origin === "string" && origin.trim()) {
+    return trustedOrigins.includes(normalizeOrigin(origin));
+  }
+  const referer = req.headers.referer;
+  if (typeof referer === "string" && referer.trim()) {
+    try {
+      const url = new URL(referer);
+      return trustedOrigins.includes(normalizeOrigin(`${url.protocol}//${url.host}`));
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+function generateCsrfToken() {
+  return (0, import_crypto4.randomBytes)(32).toString("hex");
+}
+function csrfCookieOptions() {
+  const domain = appEnv.node.isDevelopment ? void 0 : appEnv.auth.cookieDomain;
+  return {
+    httpOnly: false,
+    sameSite: "lax",
+    secure: authUsesSecureCookies2(),
+    path: "/",
+    maxAge: 7 * 24 * 60 * 60 * 1e3,
+    ...domain ? { domain } : {}
+  };
+}
+function setCsrfCookie(res, token) {
+  const value = token || generateCsrfToken();
+  res.cookie(CSRF_COOKIE_NAME, value, csrfCookieOptions());
+  return value;
+}
+function clearCsrfCookie(res) {
+  const domain = appEnv.node.isDevelopment ? void 0 : appEnv.auth.cookieDomain;
+  res.clearCookie(CSRF_COOKIE_NAME, {
+    httpOnly: false,
+    sameSite: "lax",
+    secure: authUsesSecureCookies2(),
+    path: "/",
+    ...domain ? { domain } : {}
+  });
+}
+function csrfTokenValid(req) {
+  const header = req.headers[CSRF_HEADER_NAME.toLowerCase()];
+  const headerToken = typeof header === "string" ? header.trim() : "";
+  const cookieToken = parseCookieValue(
+    typeof req.headers.cookie === "string" ? req.headers.cookie : void 0,
+    CSRF_COOKIE_NAME
+  );
+  if (!headerToken || !cookieToken) return false;
+  return secureTokenEquals(headerToken, cookieToken);
+}
+function applyCsrfProtection(app2, corsOrigins) {
+  const trustedOrigins = resolveTrustedOrigins(corsOrigins);
+  app2.use((req, res, next) => {
+    if (!isCsrfProtectionEnabled()) return next();
+    if (!MUTATING_METHODS.has(String(req.method || "GET").toUpperCase())) return next();
+    const path4 = requestPath(req);
+    if (shouldSkipCsrfPath(path4)) return next();
+    if (hasBearerAuthorization(req)) return next();
+    if (!hasAuthCookie(req)) return next();
+    if (!originAllowedForRequest(req, trustedOrigins)) {
+      return res.status(403).json({
+        success: false,
+        error: "Requ\xEAte refus\xE9e (origine non autoris\xE9e)."
+      });
+    }
+    if (!csrfTokenValid(req)) {
+      return res.status(403).json({
+        success: false,
+        error: "Jeton CSRF manquant ou invalide."
+      });
+    }
+    return next();
+  });
+}
 
 // mongoApi.ts
 var AUTH_HEADER_PREFIX = "Bearer ";
@@ -1388,7 +1722,7 @@ function clearAuthCookie(res) {
     ...domain ? { domain } : {}
   });
 }
-function parseCookieValue(header, key) {
+function parseCookieValue2(header, key) {
   if (!header) return null;
   const cookies = header.split(";");
   for (const cookie of cookies) {
@@ -1411,7 +1745,7 @@ function readAuthToken(req) {
     return raw.slice(AUTH_HEADER_PREFIX.length).trim();
   }
   const cookieHeader = typeof req.headers.cookie === "string" ? req.headers.cookie : void 0;
-  return parseCookieValue(cookieHeader, AUTH_COOKIE_NAME);
+  return parseCookieValue2(cookieHeader, AUTH_COOKIE_NAME);
 }
 function parseAuth(req) {
   const token = readAuthToken(req);
@@ -1443,10 +1777,11 @@ function isE2eTestAccountEmail(email) {
 }
 function shouldSkipLoginVerificationForE2e(email) {
   if (!isE2eTestAccountEmail(email)) return false;
+  if (appEnv.node.isProduction) return false;
   if (process.env.E2E_DISABLE_TEST_LOGIN_BYPASS === "1") return false;
   if (process.env.E2E_SKIP_LOGIN_VERIFICATION === "1") return true;
   if (isLocalHttpDevApp()) return true;
-  return !appEnv.node.isProduction;
+  return true;
 }
 function isStrongPassword(password) {
   if (password.length < 8 || password.length > 128) return false;
@@ -1475,6 +1810,7 @@ function sendAuthPrismaError(res, logLabel, error) {
   if (/NEXTAUTH_SECRET|JWT_SECRET|invalid/i.test(msg)) {
     return res.status(503).json({
       success: false,
+      code: "AUTH_CONFIG_INVALID",
       error: "Configuration d'authentification invalide c\xF4t\xE9 serveur."
     });
   }
@@ -1485,26 +1821,27 @@ function sendAuthPrismaError(res, logLabel, error) {
   if (dbUnreachable) {
     return res.status(503).json({
       success: false,
+      code: "DB_UNREACHABLE",
       error: "Connexion \xE0 MongoDB impossible. V\xE9rifiez DATABASE_URL, le r\xE9seau \xAB Network Access \xBB sur Atlas (IP autoris\xE9es), et tout proxy ou antivirus qui intercepte TLS."
     });
   }
   return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
 }
 function sha256Hex(input) {
-  return (0, import_crypto3.createHash)("sha256").update(input).digest("hex");
+  return (0, import_crypto5.createHash)("sha256").update(input).digest("hex");
 }
-function normalizeIp(raw) {
+function normalizeIp2(raw) {
   return raw.trim().replace(/^::ffff:/, "") || "unknown";
 }
 function getClientIp(req) {
   const xff = req.headers["x-forwarded-for"];
   if (typeof xff === "string" && xff.trim()) {
-    return normalizeIp(xff.split(",")[0] || "");
+    return normalizeIp2(xff.split(",")[0] || "");
   }
   if (Array.isArray(xff) && xff[0]) {
-    return normalizeIp(String(xff[0]));
+    return normalizeIp2(String(xff[0]));
   }
-  return normalizeIp(req.socket.remoteAddress || "");
+  return normalizeIp2(req.socket.remoteAddress || "");
 }
 function authBucketKey(req, email) {
   return `${getClientIp(req)}|${email || "unknown"}`;
@@ -1915,10 +2252,21 @@ function buildAuthLoginUserResponse(account) {
     displayName: [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email
   };
 }
-async function respondWithAuthenticatedLogin(res, account) {
+async function respondWithAuthenticatedLogin(res, account, options) {
   await ensureUserDocumentFromAccount(account);
   const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
   setAuthCookie(res, token);
+  setCsrfCookie(res);
+  if (options?.auditAction) {
+    logAuditAuth({
+      action: options.auditAction,
+      success: true,
+      req: options.req,
+      actorUid: account.uid,
+      actorEmail: account.email,
+      actorRole: account.role
+    });
+  }
   return res.status(200).json({
     success: true,
     token,
@@ -1952,6 +2300,7 @@ async function ensureUserDocumentFromAccount(account) {
   );
 }
 function registerMongoApi(app2) {
+  bindAuditLogPersistence(prisma);
   const dbUrl = appEnv.database.url;
   const dbMasked = dbUrl ? `${dbUrl.slice(0, 15)}...${dbUrl.slice(-10)}` : "NON_DEFINIE";
   console.log(`[mongoApi] Initialisation. DB: ${dbMasked}. CORS: ${appEnv.http.corsOriginRaw}`);
@@ -2024,6 +2373,14 @@ function registerMongoApi(app2) {
         }
       });
       await ensureUserDocumentFromAccount(account);
+      logAuditAuth({
+        action: "auth.profile.update",
+        success: true,
+        req,
+        actorUid: auth.uid,
+        actorEmail: auth.email,
+        actorRole: auth.role
+      });
       return res.status(200).json({
         success: true,
         user: {
@@ -2086,7 +2443,7 @@ function registerMongoApi(app2) {
         await registerAuthFailure(authKey);
         return res.status(409).json({ success: false, error: "Cet email existe d\xE9j\xE0." });
       }
-      const challengeId = (0, import_crypto3.randomUUID)().replace(/-/g, "");
+      const challengeId = (0, import_crypto5.randomUUID)().replace(/-/g, "");
       const verificationCode = generateNumericCode(6);
       const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
       const passwordHash = await import_bcryptjs.default.hash(password, 10);
@@ -2129,6 +2486,12 @@ function registerMongoApi(app2) {
         });
       }
       await clearAuthFailures(authKey);
+      logAuditAuth({
+        action: "auth.register.started",
+        success: true,
+        req,
+        targetEmail: email
+      });
       return res.status(201).json({
         success: true,
         verificationRequired: true,
@@ -2194,7 +2557,7 @@ function registerMongoApi(app2) {
       if (existing) {
         return res.status(409).json({ success: false, error: "Cet email existe d\xE9j\xE0." });
       }
-      const uid = `usr_${(0, import_crypto3.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
+      const uid = `usr_${(0, import_crypto5.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
       const account = await prisma.userAccount.create({
         data: {
           uid,
@@ -2231,6 +2594,15 @@ function registerMongoApi(app2) {
       });
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
       setAuthCookie(res, token);
+      setCsrfCookie(res);
+      logAuditAuth({
+        action: "auth.register.success",
+        success: true,
+        req,
+        actorUid: account.uid,
+        actorEmail: account.email,
+        actorRole: account.role
+      });
       return res.status(200).json({
         success: true,
         user: {
@@ -2333,7 +2705,7 @@ function registerMongoApi(app2) {
         finalRecipients.map(
           (recipientId) => upsertDataDocument(
             "notifications",
-            (0, import_crypto3.randomUUID)().replace(/-/g, ""),
+            (0, import_crypto5.randomUUID)().replace(/-/g, ""),
             {
               userId: recipientId,
               title: "Nouveau formulaire parrainage",
@@ -2369,7 +2741,7 @@ Code parrainage : ${referralCode}`
         });
         const alreadyExists = Boolean(existingDedup);
         if (!alreadyExists) {
-          const leadId = (0, import_crypto3.randomUUID)().replace(/-/g, "");
+          const leadId = (0, import_crypto5.randomUUID)().replace(/-/g, "");
           const leadNoteParts = [
             `Inscription via lien de parrainage (${referralCode}).`,
             companyDescription ? `Description: ${companyDescription}` : ""
@@ -2467,6 +2839,13 @@ Code parrainage : ${referralCode}`
       });
       if (!account || !account.passwordHash) {
         await registerAuthFailure(authKey);
+        logAuditAuth({
+          action: "auth.login.failure",
+          success: false,
+          req,
+          targetEmail: email,
+          reason: "unknown_account"
+        });
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
       const bcryptT0 = Date.now();
@@ -2484,13 +2863,23 @@ Code parrainage : ${referralCode}`
       });
       if (!valid) {
         await registerAuthFailure(authKey);
+        logAuditAuth({
+          action: "auth.login.failure",
+          success: false,
+          req,
+          targetEmail: email,
+          reason: "invalid_password"
+        });
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
       if (shouldSkipLoginVerificationForE2e(email)) {
         await clearAuthFailures(authKey);
-        return respondWithAuthenticatedLogin(res, account);
+        return respondWithAuthenticatedLogin(res, account, {
+          req,
+          auditAction: "auth.login.success"
+        });
       }
-      const challengeId = (0, import_crypto3.randomUUID)().replace(/-/g, "");
+      const challengeId = (0, import_crypto5.randomUUID)().replace(/-/g, "");
       const verificationCode = loginVerificationCodeForEmail(email);
       const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
       await upsertDataDocument(
@@ -2521,6 +2910,14 @@ Code parrainage : ${referralCode}`
         });
       }
       await clearAuthFailures(authKey);
+      logAuditAuth({
+        action: "auth.login.verification_required",
+        success: true,
+        req,
+        actorUid: account.uid,
+        actorEmail: account.email,
+        actorRole: account.role
+      });
       return res.status(200).json({
         success: true,
         verificationRequired: true,
@@ -2540,8 +2937,18 @@ Code parrainage : ${referralCode}`
       return sendAuthPrismaError(res, "[auth/login]", error);
     }
   });
-  app2.post("/api/auth/logout", async (_req, res) => {
+  app2.post("/api/auth/logout", async (req, res) => {
+    const auth = parseAuthFromRequest(req);
+    logAuditAuth({
+      action: "auth.logout",
+      success: true,
+      req,
+      actorUid: auth?.uid,
+      actorEmail: auth?.email,
+      actorRole: auth?.role
+    });
     clearAuthCookie(res);
+    clearCsrfCookie(res);
     return res.status(200).json({ success: true });
   });
   app2.post("/api/chats/staff-notify", async (req, res) => {
@@ -2575,7 +2982,7 @@ Code parrainage : ${referralCode}`
       let notified = 0;
       await Promise.all(
         teamIds.map(async (uid) => {
-          const notifId = (0, import_crypto3.randomUUID)().replace(/-/g, "");
+          const notifId = (0, import_crypto5.randomUUID)().replace(/-/g, "");
           await upsertDataDocument(
             "notifications",
             notifId,
@@ -2760,6 +3167,15 @@ Code parrainage : ${referralCode}`
       });
       const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
       setAuthCookie(res, token);
+      setCsrfCookie(res);
+      logAuditAuth({
+        action: "auth.login.verify.success",
+        success: true,
+        req,
+        actorUid: account.uid,
+        actorEmail: account.email,
+        actorRole: account.role
+      });
       return res.status(200).json({
         success: true,
         token,
@@ -2790,6 +3206,12 @@ Code parrainage : ${referralCode}`
           googlePicture = prof.picture;
           googleDisplayHint = prof.displayNameHint;
         } catch {
+          logAuditAuth({
+            action: "auth.google.failure",
+            success: false,
+            req,
+            reason: "invalid_google_token"
+          });
           return res.status(401).json({
             success: false,
             error: "Impossible de v\xE9rifier le compte Google (jeton invalide ou email non v\xE9rifi\xE9)."
@@ -2831,7 +3253,7 @@ Code parrainage : ${referralCode}`
       const isNew = !account;
       if (!account) {
         const [firstName = "", ...last] = displayName.split(" ");
-        const uid = `usr_${(0, import_crypto3.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
+        const uid = `usr_${(0, import_crypto5.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
         let companyId = null;
         if (companyName) {
           companyId = `comp_${Date.now()}`;
@@ -2885,7 +3307,16 @@ Code parrainage : ${referralCode}`
         await clearAuthFailures(authKey);
         const token = signAuthToken({ uid: account.uid, email: account.email, role: account.role });
         setAuthCookie(res, token);
+        setCsrfCookie(res);
         const displayNameOut = [account.firstName, account.lastName].filter(Boolean).join(" ").trim() || account.email;
+        logAuditAuth({
+          action: "auth.google.success",
+          success: true,
+          req,
+          actorUid: account.uid,
+          actorEmail: account.email,
+          actorRole: account.role
+        });
         return res.status(200).json({
           success: true,
           user: {
@@ -2898,7 +3329,7 @@ Code parrainage : ${referralCode}`
           isNew
         });
       }
-      const challengeId = (0, import_crypto3.randomUUID)().replace(/-/g, "");
+      const challengeId = (0, import_crypto5.randomUUID)().replace(/-/g, "");
       const verificationCode = generateNumericCode(6);
       const expiresAtIso = new Date(Date.now() + LOGIN_VERIFICATION_TTL_MS).toISOString();
       await upsertDataDocument(
@@ -3006,6 +3437,16 @@ Code parrainage : ${referralCode}`
         },
         true
       );
+      logAuditAuth({
+        action: "auth.admin_role.change",
+        success: true,
+        req,
+        actorUid: auth.uid,
+        actorEmail: auth.email,
+        actorRole: auth.role,
+        targetEmail: updatedAccount.email,
+        reason: `${target.role}->${requestedRoleRaw}`
+      });
       return res.status(200).json({
         success: true,
         uid: updatedAccount.uid,
@@ -3028,7 +3469,7 @@ Code parrainage : ${referralCode}`
       const requestedRole = String(req.body?.role || "client").trim().toLowerCase();
       const role = VALID_ROLES.has(requestedRole) ? requestedRole : "client";
       if (!email || !isValidEmail(email)) return res.status(400).json({ success: false, error: "Email requis." });
-      const generatedPassword = password || (0, import_crypto3.randomUUID)().replace(/-/g, "").slice(0, 16);
+      const generatedPassword = password || (0, import_crypto5.randomUUID)().replace(/-/g, "").slice(0, 16);
       if (password && !isStrongPassword(password)) {
         return res.status(400).json({
           success: false,
@@ -3039,7 +3480,7 @@ Code parrainage : ${referralCode}`
       if (existing) {
         return res.status(409).json({ success: false, error: "Cet email est d\xE9j\xE0 utilis\xE9." });
       }
-      const uid = `usr_${(0, import_crypto3.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
+      const uid = `usr_${(0, import_crypto5.randomUUID)().replace(/-/g, "").slice(0, 20)}`;
       const passwordHash = await import_bcryptjs.default.hash(generatedPassword, 10);
       const account = await prisma.userAccount.create({
         data: {
@@ -3052,7 +3493,7 @@ Code parrainage : ${referralCode}`
         }
       });
       await ensureUserDocumentFromAccount(account);
-      const resetToken = (0, import_crypto3.randomBytes)(32).toString("hex");
+      const resetToken = (0, import_crypto5.randomBytes)(32).toString("hex");
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       const expiresAtIso = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
       await upsertDataDocument(
@@ -3113,7 +3554,7 @@ Code parrainage : ${referralCode}`
           message: "Si ce compte existe, les instructions de r\xE9initialisation ont \xE9t\xE9 enregistr\xE9es."
         });
       }
-      const resetToken = (0, import_crypto3.randomBytes)(32).toString("hex");
+      const resetToken = (0, import_crypto5.randomBytes)(32).toString("hex");
       const resetDocId = account.uid;
       const nowIso = (/* @__PURE__ */ new Date()).toISOString();
       const expiresAtIso = new Date(Date.now() + RESET_TOKEN_TTL_MS).toISOString();
@@ -3131,6 +3572,12 @@ Code parrainage : ${referralCode}`
         false
       );
       const mailResult = await sendResetPasswordEmail({ to: account.email, token: resetToken });
+      logAuditAuth({
+        action: "auth.password_reset.request",
+        success: true,
+        req,
+        targetEmail: email
+      });
       return res.status(200).json({
         success: true,
         message: "Si ce compte existe, les instructions de r\xE9initialisation ont \xE9t\xE9 enregistr\xE9es.",
@@ -3189,6 +3636,13 @@ Code parrainage : ${referralCode}`
         },
         false
       );
+      logAuditAuth({
+        action: "auth.password_reset.confirm",
+        success: true,
+        req,
+        actorUid: account.uid,
+        actorEmail: account.email
+      });
       return res.status(200).json({ success: true, message: "Mot de passe r\xE9initialis\xE9 avec succ\xE8s." });
     } catch (error) {
       console.error("[auth/password-reset/confirm]", error);
@@ -3796,7 +4250,7 @@ function parseAppointmentBody(body) {
 }
 
 // src/server/licenseActivation.ts
-var import_crypto5 = require("crypto");
+var import_crypto7 = require("crypto");
 
 // src/lib/licenses.ts
 function licenseDocId(userId, appId) {
@@ -3904,7 +4358,7 @@ function initialSaasStateForSubscription(catalogApp, userId, appId) {
 }
 
 // src/server/saasAppBridge.ts
-var import_crypto4 = require("crypto");
+var import_crypto6 = require("crypto");
 function bridgeApiKey() {
   return String(process.env.SAAS_BRIDGE_API_KEY || "").trim();
 }
@@ -3912,7 +4366,7 @@ function secureEquals(expected, provided) {
   const a = Buffer.from(expected);
   const b = Buffer.from(provided);
   if (a.length !== b.length) return false;
-  return (0, import_crypto4.timingSafeEqual)(a, b);
+  return (0, import_crypto6.timingSafeEqual)(a, b);
 }
 function verifySaasBridgeAuth(headerValue) {
   const expected = bridgeApiKey();
@@ -4084,7 +4538,7 @@ async function resolveClientChatProfile(userId) {
 async function postWelcomeDeliveryMessage(input) {
   const { clientName, clientEmail } = await resolveClientChatProfile(input.userId);
   const now = (/* @__PURE__ */ new Date()).toISOString();
-  const msgId = (0, import_crypto5.randomUUID)();
+  const msgId = (0, import_crypto7.randomUUID)();
   const text = buildWelcomeMessage(input.licenseType, input.guide);
   const preview = text.split("\n")[0]?.slice(0, 120) || "Votre application est pr\xEAte";
   const existingChat = await prisma.dataDocument.findUnique({
@@ -4168,7 +4622,7 @@ async function activateLicenseFromCheckoutSession(meta) {
     installGuideUrl: null
   };
   const activationNotice = buildActivationNotification(meta.licenseType, meta.appName);
-  const notifId = (0, import_crypto5.randomUUID)();
+  const notifId = (0, import_crypto7.randomUUID)();
   await prisma.dataDocument.create({
     data: {
       collectionPath: "notifications",
@@ -4312,7 +4766,7 @@ async function provisionSaasLicense(input) {
     },
     data: { data }
   });
-  const notifId = (0, import_crypto5.randomUUID)();
+  const notifId = (0, import_crypto7.randomUUID)();
   await prisma.dataDocument.create({
     data: {
       collectionPath: "notifications",
@@ -4377,82 +4831,6 @@ function verifySaasAccessToken(token) {
 
 // src/server/multerUpload.ts
 var import_multer = __toESM(require("multer"), 1);
-
-// src/server/logger.ts
-var LEVEL_RANK = {
-  error: 0,
-  warn: 1,
-  info: 2,
-  debug: 3
-};
-function currentNodeEnv2() {
-  return process.env.NODE_ENV || "development";
-}
-function resolveMinLevel() {
-  const raw = String(process.env.LOG_LEVEL || "").trim().toLowerCase();
-  if (raw === "error" || raw === "warn" || raw === "info" || raw === "debug") return raw;
-  return currentNodeEnv2() === "production" ? "info" : "debug";
-}
-var minLevel = resolveMinLevel();
-function shouldLog(level) {
-  return LEVEL_RANK[level] <= LEVEL_RANK[minLevel];
-}
-function serializeError(error) {
-  if (!error) return void 0;
-  if (error instanceof Error) {
-    return { errorName: error.name, errorMessage: error.message, stack: error.stack };
-  }
-  return { errorValue: String(error) };
-}
-function write(level, message, context) {
-  if (!shouldLog(level)) return;
-  const entry = {
-    ts: (/* @__PURE__ */ new Date()).toISOString(),
-    level,
-    msg: message,
-    service: "infinitecore-api",
-    env: currentNodeEnv2(),
-    ...context
-  };
-  const line = JSON.stringify(entry);
-  if (level === "error") console.error(line);
-  else if (level === "warn") console.warn(line);
-  else console.log(line);
-}
-function createLogger(bindings = {}) {
-  const withBindings = (context) => {
-    if (!bindings || !Object.keys(bindings).length) return context;
-    if (!context) return { ...bindings };
-    return { ...bindings, ...context };
-  };
-  return {
-    error(message, context) {
-      write("error", message, withBindings(context));
-    },
-    warn(message, context) {
-      write("warn", message, withBindings(context));
-    },
-    info(message, context) {
-      write("info", message, withBindings(context));
-    },
-    debug(message, context) {
-      write("debug", message, withBindings(context));
-    },
-    child(extra) {
-      return createLogger({ ...bindings, ...extra });
-    }
-  };
-}
-var logger = createLogger();
-function logHttpRequest(input) {
-  const level = input.statusCode >= 500 ? "error" : input.statusCode >= 400 ? "warn" : "info";
-  write(level, "http_request", input);
-}
-function logServerError(message, error, context) {
-  write("error", message, { ...context, ...serializeError(error) });
-}
-
-// src/server/multerUpload.ts
 var ALLOWED_UPLOAD_MIME_TYPES = /* @__PURE__ */ new Set([
   "application/pdf",
   "application/msword",
@@ -4593,6 +4971,18 @@ var CHECKOUT_WINDOW_MS = Number(process.env.RATE_LIMIT_CHECKOUT_WINDOW_MS) || 15
 var CHECKOUT_MAX = Number(process.env.RATE_LIMIT_CHECKOUT_MAX) || 25;
 var DATA_WINDOW_MS = Number(process.env.RATE_LIMIT_DATA_WINDOW_MS) || 60 * 1e3;
 var DATA_MAX = Number(process.env.RATE_LIMIT_DATA_MAX) || 180;
+function rateLimitDisabledByEnv() {
+  const raw = String(process.env.RATE_LIMIT_DISABLED || "").trim().toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+function isRateLimitEnabled() {
+  if (!rateLimitDisabledByEnv()) return true;
+  if ((process.env.NODE_ENV || "development") === "production") {
+    console.warn("[rate-limit] RATE_LIMIT_DISABLED ignor\xE9 en production.");
+    return true;
+  }
+  return false;
+}
 var authRateLimiter = createRateLimiter({
   scope: "auth",
   windowMs: AUTH_WINDOW_MS,
@@ -4630,6 +5020,10 @@ var dataApiRateLimiter = createRateLimiter({
   message: "Trop de requ\xEAtes de donn\xE9es. R\xE9essayez plus tard."
 });
 function applySensitiveRateLimits(app2) {
+  if (!isRateLimitEnabled()) {
+    console.warn("[rate-limit] Limites d\xE9sactiv\xE9es (environnement non production).");
+    return;
+  }
   app2.use("/api/auth", authRateLimiter);
   app2.use("/api/files/upload", uploadRateLimiter);
   app2.use("/api/webhooks", webhookRateLimiter);
@@ -4670,10 +5064,62 @@ var import_helmet = __toESM(require("helmet"), 1);
 function isProduction() {
   return (process.env.NODE_ENV || "development") === "production";
 }
+function buildApiContentSecurityPolicyDirectives() {
+  return {
+    defaultSrc: ["'none'"],
+    baseUri: ["'none'"],
+    formAction: ["'none'"],
+    frameAncestors: ["'none'"]
+  };
+}
+function buildWebContentSecurityPolicyDirectives(prod = isProduction()) {
+  const directives = {
+    defaultSrc: ["'self'"],
+    baseUri: ["'self'"],
+    objectSrc: ["'none'"],
+    frameAncestors: ["'none'"],
+    formAction: ["'self'", "https://checkout.stripe.com", "https://billing.stripe.com"],
+    scriptSrc: [
+      "'self'",
+      "'unsafe-inline'",
+      ...prod ? [] : ["'unsafe-eval'"],
+      "https://accounts.google.com",
+      "https://www.googletagmanager.com",
+      "https://va.vercel-scripts.com"
+    ],
+    connectSrc: [
+      "'self'",
+      "https://accounts.google.com",
+      "https://www.googleapis.com",
+      "https://oauth2.googleapis.com",
+      "https://vitals.vercel-insights.com",
+      "https://www.google-analytics.com",
+      "https://region1.google-analytics.com"
+    ],
+    frameSrc: ["'self'", "https://accounts.google.com", "https://checkout.stripe.com"],
+    imgSrc: ["'self'", "data:", "blob:", "https:"],
+    styleSrc: ["'self'", "'unsafe-inline'"],
+    fontSrc: ["'self'", "data:"],
+    workerSrc: ["'self'", "blob:"]
+  };
+  if (prod) {
+    directives.upgradeInsecureRequests = [];
+  }
+  return directives;
+}
+function formatCspHeader(directives) {
+  return Object.entries(directives).map(([key, values]) => {
+    const name = key.replace(/([a-z])([A-Z])/g, "$1-$2").toLowerCase();
+    return values.length === 0 ? name : `${name} ${values.join(" ")}`;
+  }).join("; ");
+}
 function applySecurityHeaders(app2) {
   app2.use(
     (0, import_helmet.default)({
-      contentSecurityPolicy: false,
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: buildApiContentSecurityPolicyDirectives()
+      },
       crossOriginEmbedderPolicy: false,
       crossOriginResourcePolicy: { policy: "cross-origin" },
       hsts: isProduction() ? { maxAge: 31536e3, includeSubDomains: true, preload: false } : false
@@ -4694,7 +5140,13 @@ var nextSecurityHeaders = [
   { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
   { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(), payment=()" },
   { key: "X-DNS-Prefetch-Control", value: "off" },
-  ...process.env.NODE_ENV === "production" ? [{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" }] : []
+  ...process.env.NODE_ENV === "production" ? [
+    { key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+    {
+      key: "Content-Security-Policy",
+      value: formatCspHeader(buildWebContentSecurityPolicyDirectives(true))
+    }
+  ] : []
 ];
 
 // src/server/catalogCheckoutPricing.ts
@@ -5079,7 +5531,8 @@ async function createExpressApplication() {
         "Authorization",
         "X-Requested-With",
         "X-Webhook-Secret",
-        "X-Webhook-Signature"
+        "X-Webhook-Signature",
+        "X-CSRF-Token"
       ],
       credentials: true
     })
@@ -5103,7 +5556,7 @@ async function createExpressApplication() {
     })
   );
   app2.use((req, res, next) => {
-    const requestId = (0, import_crypto6.randomUUID)();
+    const requestId = (0, import_crypto8.randomUUID)();
     req.headers["x-request-id"] = requestId;
     res.setHeader("X-Request-Id", requestId);
     next();
@@ -5137,12 +5590,22 @@ async function createExpressApplication() {
     next();
   });
   applySensitiveRateLimits(app2);
+  applyCsrfProtection(app2, corsOrigins);
   app2.get("/health", (_req, res) => {
     res.status(200).json({
       ok: true,
       nodeEnv: appEnv.node.env,
       localHttpDev: !resetAppBaseUrl().startsWith("https://"),
-      e2eSkipLoginVerification: process.env.E2E_SKIP_LOGIN_VERIFICATION === "1"
+      e2eSkipLoginVerification: process.env.E2E_SKIP_LOGIN_VERIFICATION === "1",
+      config: {
+        databaseUrl: Boolean(appEnv.database.url),
+        jwtSecret: Boolean(process.env.NEXTAUTH_SECRET?.trim() || process.env.JWT_SECRET?.trim()),
+        paddeWebhookSecret: Boolean(appEnv.webhooks.paddeWebhookSecret),
+        saasBridgeApiKey: Boolean(process.env.SAAS_BRIDGE_API_KEY?.trim()),
+        corsOrigin: Boolean(appEnv.http.corsOriginRaw),
+        googleClientId: Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim()),
+        rateLimitEnabled: isRateLimitEnabled()
+      }
     });
   });
   app2.get("/api/apps/catalog", async (_req, res) => {
@@ -5192,7 +5655,7 @@ async function createExpressApplication() {
         message
       } = parsed.data;
       const createdAt = (/* @__PURE__ */ new Date()).toISOString();
-      const leadId = (0, import_crypto6.randomUUID)().replace(/-/g, "");
+      const leadId = (0, import_crypto8.randomUUID)().replace(/-/g, "");
       const noteParts = [
         `Demande RDV \u2014 ${appTitle || appId}`,
         preferredDate ? `Date souhait\xE9e : ${preferredDate}` : "",
@@ -5238,7 +5701,7 @@ async function createExpressApplication() {
           (uid) => prisma.dataDocument.create({
             data: {
               collectionPath: NOTIFICATIONS_COLLECTION_PATH,
-              docId: (0, import_crypto6.randomUUID)().replace(/-/g, ""),
+              docId: (0, import_crypto8.randomUUID)().replace(/-/g, ""),
               data: {
                 userId: uid,
                 title,
@@ -5288,7 +5751,7 @@ async function createExpressApplication() {
         return res.status(400).json({ success: false, error: priced.error });
       }
       const { unitAmount, serviceName, moduleKey } = priced;
-      const orderId = `CMD-${(0, import_crypto6.randomUUID)().split("-")[0].toUpperCase()}`;
+      const orderId = `CMD-${(0, import_crypto8.randomUUID)().split("-")[0].toUpperCase()}`;
       const customerId = await resolveStripeCustomerId({ uid: auth.uid, email: auth.email });
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
@@ -5416,7 +5879,7 @@ async function createExpressApplication() {
         return res.status(400).json({ success: false, error: priced.error });
       }
       const { unitAmount, appName, moduleKey, licenseDurationDays: durationDays } = priced;
-      const orderId = `CMD-${(0, import_crypto6.randomUUID)().split("-")[0].toUpperCase()}`;
+      const orderId = `CMD-${(0, import_crypto8.randomUUID)().split("-")[0].toUpperCase()}`;
       const customerId = await resolveStripeCustomerId({ uid: auth.uid, email: auth.email });
       const session = await stripe.checkout.sessions.create({
         mode: "payment",
@@ -5553,7 +6016,7 @@ async function createExpressApplication() {
       let created = 0;
       await Promise.all(
         teamIds.map(async (uid) => {
-          const notifId = (0, import_crypto6.randomUUID)();
+          const notifId = (0, import_crypto8.randomUUID)();
           await prisma.dataDocument.create({
             data: {
               collectionPath: NOTIFICATIONS_COLLECTION_PATH,
@@ -5967,7 +6430,7 @@ async function createExpressApplication() {
       const folderRaw = typeof req.body?.folder === "string" ? req.body.folder : "misc";
       const folder = sanitizeFolder(folderRaw);
       const safeOriginal = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-      const objectKey = `${folder}/${Date.now()}-${(0, import_crypto6.randomUUID)()}-${safeOriginal}`;
+      const objectKey = `${folder}/${Date.now()}-${(0, import_crypto8.randomUUID)()}-${safeOriginal}`;
       if (canUseR2 && s3) {
         await s3.send(
           new import_client_s32.PutObjectCommand({
@@ -6201,7 +6664,7 @@ async function createExpressApplication() {
       console.warn("[padde-ci] payload invalide (Zod):", validated.error.format());
     }
     const payload = data && typeof data === "object" ? data : {};
-    const auditId = options.existingAuditId?.trim() || `PADDE-${(0, import_crypto6.randomUUID)().replace(/-/g, "")}`;
+    const auditId = options.existingAuditId?.trim() || `PADDE-${(0, import_crypto8.randomUUID)().replace(/-/g, "")}`;
     const auditType = String(payload.type_audit || payload.type || payload.auditType || "Audit PADDE-CI").trim();
     const lowerKeyPayload = {};
     for (const [key, value] of Object.entries(payload)) {
@@ -6382,7 +6845,7 @@ async function createExpressApplication() {
           (recipientId) => prisma.dataDocument.create({
             data: {
               collectionPath: "notifications",
-              docId: (0, import_crypto6.randomUUID)().replace(/-/g, ""),
+              docId: (0, import_crypto8.randomUUID)().replace(/-/g, ""),
               data: {
                 userId: recipientId,
                 title: "Nouveau flux PADDE-CI",
@@ -6523,7 +6986,7 @@ async function createExpressApplication() {
         });
       }
       const createdAt = (/* @__PURE__ */ new Date()).toISOString();
-      const leadId = (0, import_crypto6.randomUUID)().replace(/-/g, "");
+      const leadId = (0, import_crypto8.randomUUID)().replace(/-/g, "");
       const configuredPartnerId = appEnv.webhooks.noyaRecrutementPartnerId.trim();
       const configuredPartnerLabel = appEnv.webhooks.noyaRecrutementPartnerLabel.trim() || "Noya Partenaire";
       const partnerId = configuredPartnerId || "noya-recrutement";
@@ -6565,7 +7028,7 @@ async function createExpressApplication() {
           (recipientId) => prisma.dataDocument.create({
             data: {
               collectionPath: "notifications",
-              docId: (0, import_crypto6.randomUUID)().replace(/-/g, ""),
+              docId: (0, import_crypto8.randomUUID)().replace(/-/g, ""),
               data: {
                 userId: recipientId,
                 title,
