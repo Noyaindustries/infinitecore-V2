@@ -1,6 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { appEnv } from "@/config/env";
 import { agentSessionLog } from "@/debug/agentSessionLog";
+import { runProductionConfigCheck } from "@/lib/runProductionConfigCheck";
 
 export type DatabaseHealthBody = Record<string, unknown>;
 
@@ -21,10 +22,13 @@ export async function runDatabaseHealthCheck(prisma: PrismaClient): Promise<{
     ]);
 
     const duration = Date.now() - start;
+    const configCheck = runProductionConfigCheck();
     const payload: DatabaseHealthBody = {
       status: "DATABASE_CONNECTED",
       durationMs: duration,
       message: "La connexion à MongoDB est opérationnelle.",
+      config: configCheck.config,
+      startupOk: configCheck.startupOk,
     };
 
     if (appEnv.node.isProduction) {
@@ -58,10 +62,15 @@ export async function runDatabaseHealthCheck(prisma: PrismaClient): Promise<{
       },
     });
 
+    const configCheck = runProductionConfigCheck();
     const payload: DatabaseHealthBody = {
       status: "DATABASE_ERROR",
+      code: "DB_UNREACHABLE",
       durationMs: duration,
       message: "Échec de la connexion à MongoDB. Vérifiez DATABASE_URL et l'IP Whitelist d'Atlas.",
+      config: configCheck.config,
+      startupOk: configCheck.startupOk,
+      configErrors: configCheck.errors.length ? configCheck.errors : undefined,
     };
 
     if (appEnv.node.isProduction) {

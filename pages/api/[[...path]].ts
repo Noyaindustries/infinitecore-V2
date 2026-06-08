@@ -82,6 +82,7 @@ export default async function apiGateway(req: NextApiRequest, res: NextApiRespon
     if (!res.headersSent) {
       return res.status(503).json({
         success: false,
+        code: "API_STARTUP_FAILED",
         error: "Configuration serveur invalide ou API indisponible.",
         hint: "Vérifiez DATABASE_URL, NEXTAUTH_SECRET, PADDE_WEBHOOK_SECRET et CORS_ORIGIN sur Vercel.",
         detail: process.env.VERCEL ? message.split("\n").slice(0, 8) : undefined,

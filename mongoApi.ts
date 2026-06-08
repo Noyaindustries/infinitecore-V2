@@ -312,6 +312,7 @@ function sendAuthPrismaError(res: Response, logLabel: string, error: unknown) {
   if (/NEXTAUTH_SECRET|JWT_SECRET|invalid/i.test(msg)) {
     return res.status(503).json({
       success: false,
+      code: "AUTH_CONFIG_INVALID",
       error: "Configuration d'authentification invalide côté serveur.",
     });
   }
@@ -323,6 +324,7 @@ function sendAuthPrismaError(res: Response, logLabel: string, error: unknown) {
   if (dbUnreachable) {
     return res.status(503).json({
       success: false,
+      code: "DB_UNREACHABLE",
       error:
         "Connexion à MongoDB impossible. Vérifiez DATABASE_URL, le réseau « Network Access » sur Atlas (IP autorisées), et tout proxy ou antivirus qui intercepte TLS.",
     });
