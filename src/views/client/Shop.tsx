@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -110,6 +111,14 @@ export default function ClientShop() {
       selectedCatalogApp.saasExternalCheckoutUrl?.trim()
   );
 
+  const closeOrderModal = useCallback(() => {
+    if (isSubmitting) return;
+    setSelectedService(null);
+    setSelectedPricing(null);
+    setNote('');
+    setOrderSent(false);
+  }, [isSubmitting]);
+
   const handleOrderClick = (service: ShopSelection, pricing?: AppPricing) => {
     if (!auth.currentUser) {
       toast.error('Vous devez être connecté pour passer une commande.');
@@ -120,6 +129,15 @@ export default function ClientShop() {
     setNote('');
     setOrderSent(false);
   };
+
+  useEffect(() => {
+    if (!selectedService) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeOrderModal();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedService, closeOrderModal]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -552,31 +570,41 @@ export default function ClientShop() {
         </section>
       </div>
 
-      {/* Modale commande — services payants uniquement */}
-      <AnimatePresence>
-        {selectedService && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 20 }}
-              className="bg-[#0D1320] rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] border border-white/10 w-full max-w-md overflow-hidden"
-            >
-              <div className="p-4 md:p-6 border-b border-border flex justify-between items-center bg-noya-black/50">
-                <h3 className="text-xl font-bold text-text-primary">
-                  {selectedService.onlineCheckout ? 'Choisir votre offre' : 'Confirmer la demande'}
-                </h3>
-                <button
-                  onClick={() => setSelectedService(null)}
-                  title="Fermer la fenêtre"
-                  aria-label="Fermer la fenêtre"
-                  className="text-text-secondary hover:text-text-primary transition-colors"
+      {/* Modale commande — portal + z-index au-dessus des barres d’espace */}
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <AnimatePresence>
+            {selectedService ? (
+              <div
+                className="fixed inset-0 z-[10050] flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center sm:p-4"
+                role="presentation"
+                onClick={(e) => e.target === e.currentTarget && closeOrderModal()}
+              >
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.96, y: 16 }}
+                  animate={{ opacity: 1, scale: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.96, y: 16 }}
+                  className="flex max-h-[min(92dvh,820px)] w-full max-w-md flex-col overflow-hidden rounded-3xl border border-white/10 bg-[#0D1320] shadow-[0_10px_40px_rgba(0,0,0,0.5)]"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="shop-order-modal-title"
                 >
-                  <X size={24} />
-                </button>
-              </div>
+                  <div className="sticky top-0 z-10 flex shrink-0 items-center justify-between gap-3 border-b border-border bg-noya-black/90 px-4 py-4 backdrop-blur-md md:px-6">
+                    <h3 id="shop-order-modal-title" className="text-lg font-bold text-text-primary md:text-xl">
+                      {selectedService.onlineCheckout ? 'Choisir votre formule' : 'Confirmer la demande'}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={closeOrderModal}
+                      title="Fermer"
+                      aria-label="Fermer"
+                      className="shrink-0 rounded-xl border border-border p-2 text-text-secondary transition-colors hover:bg-white/5 hover:text-text-primary"
+                    >
+                      <X size={20} aria-hidden />
+                    </button>
+                  </div>
 
-              <div className="p-4 md:p-8">
+                  <div className="flex-1 overflow-y-auto p-4 md:p-6">
                 {!orderSent ? (
                   <div className="space-y-6">
                     <div className="bg-noya-blue/10 p-4 rounded-2xl border border-noya-blue/20">
@@ -645,17 +673,28 @@ export default function ClientShop() {
                       />
                     </div>
 
-                    <button
-                      onClick={handleConfirmOrder}
-                      disabled={isSubmitting}
-                      className="w-full py-4 bg-noya-blue text-noya-black rounded-2xl font-bold text-lg shadow-[0_0_15px_rgba(110,167,234,0.3)] hover:scale-[1.02] transition-all flex items-center justify-center gap-3 disabled:opacity-70"
-                    >
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={closeOrderModal}
+                        disabled={isSubmitting}
+                        className="w-full rounded-2xl border border-border py-3 text-sm font-semibold text-text-secondary transition-colors hover:bg-white/5 disabled:opacity-50 sm:flex-1"
+                      >
+                        Annuler
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleConfirmOrder}
+                        disabled={isSubmitting}
+                        className="flex w-full items-center justify-center gap-3 rounded-2xl bg-noya-blue py-4 text-lg font-bold text-noya-black shadow-[0_0_15px_rgba(110,167,234,0.3)] transition-all hover:scale-[1.02] disabled:opacity-70 sm:flex-[2]"
+                      >
                       {isSubmitting ? (
                         <div className="w-5 h-5 border-2 border-black/30 border-t-black rounded-full animate-spin" />
                       ) : (
                         <><Send size={20} /> {usesExternalSubscriptionCheckout ? 'Payer sur le site de l\'app' : selectedService.onlineCheckout ? 'Payer en ligne' : 'Envoyer la demande'}</>
                       )}
-                    </button>
+                      </button>
+                    </div>
                     <p className="text-center text-xs text-text-muted">
                       {usesExternalSubscriptionCheckout
                         ? 'Vous serez redirigé vers la page d’abonnement de l’application.'
@@ -674,18 +713,21 @@ export default function ClientShop() {
                       <p className="text-text-secondary mt-2">Notre équipe va traiter votre demande et vous recontactera dans la <strong>Messagerie</strong> très prochainement.</p>
                     </div>
                     <button
-                      onClick={() => setSelectedService(null)}
-                      className="w-full py-4 bg-text-primary/5 text-text-primary hover:bg-text-primary/10 border border-border rounded-2xl font-bold transition-all"
+                      type="button"
+                      onClick={closeOrderModal}
+                      className="w-full rounded-2xl border border-border bg-text-primary/5 py-4 font-bold text-text-primary transition-all hover:bg-text-primary/10"
                     >
                       Retour à la boutique
                     </button>
                   </div>
                 )}
+                  </div>
+                </motion.div>
               </div>
-            </motion.div>
-          </div>
+            ) : null}
+          </AnimatePresence>,
+          document.body,
         )}
-      </AnimatePresence>
     </div>
   );
 }

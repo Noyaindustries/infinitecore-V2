@@ -30,6 +30,7 @@ import { useAuth } from '../../components/AuthProvider';
 import toast from 'react-hot-toast';
 import { formatFileSize } from '../../lib/formatFileSize';
 import { formatTimeShort } from '../../lib/formatTimeShort';
+import { apiRequest } from '../../lib/apiClient';
 
 interface Message {
   id: string;
@@ -116,6 +117,22 @@ export default function ClientChat() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  const notifyStaff = useCallback(
+    (preview: string, messageType: Message['type']) => {
+      if (!user) return;
+      void apiRequest('/api/chats/staff-notify', {
+        method: 'POST',
+        body: JSON.stringify({
+          clientId: user.uid,
+          clientName,
+          messagePreview: preview,
+          messageType,
+        }),
+      }).catch((err) => console.warn('[Chat] staff-notify:', err));
+    },
+    [user, clientName],
+  );
+
   const sendMessage = useCallback(
     async (msg: Partial<Message>) => {
       if (!user) return;
@@ -142,8 +159,9 @@ export default function ClientChat() {
         },
         { merge: true },
       );
+      notifyStaff(msg.text || msg.fileName || 'Pièce jointe', msg.type || 'text');
     },
-    [user, clientName],
+    [user, clientName, notifyStaff],
   );
 
   const handleSendText = async (e?: FormEvent<HTMLFormElement>) => {
@@ -337,7 +355,9 @@ export default function ClientChat() {
               </div>
               <h1 className="font-display text-2xl font-medium tracking-[0.01em] text-text-primary sm:text-3xl">Équipe Infinite Core</h1>
               <p className="mt-2 max-w-xl text-sm text-text-secondary">
-                Canal direct avec votre interlocuteur : questions, pièces jointes, suivi de commandes et réponses centralisés ici.
+                Vos messages sont enregistrés ici et transmis à l&apos;équipe Infinite Core (Commando) dans{' '}
+                <strong className="font-medium text-text-primary">Messagerie Clients</strong>. Les commandes boutique
+                et demandes de service arrivent aussi dans ce fil.
               </p>
             </div>
           </div>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, User, Phone, Building2, Send, Search, Trash2, Clock, Briefcase, Sparkles, ShieldCheck } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Plus, User, Phone, Building2, Send, Search, Trash2, Clock, Briefcase, Sparkles, ShieldCheck, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../../components/AuthProvider';
 import { leadService, Lead, LeadStatus } from '../../services/leadService';
@@ -163,6 +164,15 @@ export default function PartnerClients() {
     setIsModalOpen(false);
     resetForm();
   };
+
+  useEffect(() => {
+    if (!isModalOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') attemptCloseForm();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isModalOpen]);
 
   const handleFormKeyDown = (e: React.KeyboardEvent<HTMLFormElement>) => {
     if (e.key !== 'Enter') return;
@@ -550,31 +560,58 @@ export default function PartnerClients() {
         </div>
       )}
 
-      {/* Submit modal */}
-      <AnimatePresence>
-        {isModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-1 backdrop-blur-[3px] sm:p-2">
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.95 }}
-              className="relative w-full max-w-xl overflow-hidden rounded-3xl border border-white/15 bg-linear-to-br from-[#0D1320] via-[#0F1728] to-[#111C2F] shadow-[0_35px_90px_rgba(0,0,0,0.65)]"
-            >
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-linear-to-r from-noya-blue/25 via-noya-purple/15 to-noya-green/20" />
-              <div className="pointer-events-none absolute -left-20 top-10 h-40 w-40 rounded-full bg-noya-blue/15 blur-3xl" />
-              <div className="pointer-events-none absolute -right-20 top-12 h-44 w-44 rounded-full bg-noya-green/10 blur-3xl" />
-              <div className="relative border-b border-white/10 bg-black/20 px-4 py-3">
-                <div>
-                  <span className="inline-flex items-center gap-2 rounded-full border border-noya-blue/40 bg-noya-blue/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-noya-blue">
-                    <Sparkles size={12} />
-                    Lead Prestige
-                  </span>
-                  <h2 className="mt-1.5 text-lg font-black tracking-tight text-text-primary">Nouveau contact PME</h2>
-                  <p className="mt-0.5 text-[10px] text-text-secondary">Formulaire qualifie pour prise en charge prioritaire Commando.</p>
-                </div>
-              </div>
+      {/* Submit modal — portal pour éviter que le header d’espace masque le bouton fermer */}
+      {typeof document !== 'undefined' &&
+        createPortal(
+          <AnimatePresence>
+            {isModalOpen ? (
+              <div
+                className="fixed inset-0 z-[10050] flex items-end justify-center bg-black/70 p-2 backdrop-blur-[3px] sm:items-center sm:p-4"
+                role="presentation"
+                onClick={(e) => e.target === e.currentTarget && attemptCloseForm()}
+              >
+                <motion.div
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  className="relative flex max-h-[min(92dvh,780px)] w-full max-w-xl flex-col overflow-hidden rounded-3xl border border-white/15 bg-linear-to-br from-[#0D1320] via-[#0F1728] to-[#111C2F] shadow-[0_35px_90px_rgba(0,0,0,0.65)]"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="partner-lead-modal-title"
+                >
+                  <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-linear-to-r from-noya-blue/25 via-noya-purple/15 to-noya-green/20" />
+                  <div className="pointer-events-none absolute -left-20 top-10 h-40 w-40 rounded-full bg-noya-blue/15 blur-3xl" />
+                  <div className="pointer-events-none absolute -right-20 top-12 h-44 w-44 rounded-full bg-noya-green/10 blur-3xl" />
+                  <div className="relative flex shrink-0 items-start justify-between gap-3 border-b border-white/10 bg-black/40 px-4 py-3 backdrop-blur-sm">
+                    <div>
+                      <span className="inline-flex items-center gap-2 rounded-full border border-noya-blue/40 bg-noya-blue/15 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-noya-blue">
+                        <Sparkles size={12} />
+                        Lead Prestige
+                      </span>
+                      <h2 id="partner-lead-modal-title" className="mt-1.5 text-lg font-black tracking-tight text-text-primary">
+                        Nouveau contact PME
+                      </h2>
+                      <p className="mt-0.5 text-[10px] text-text-secondary">
+                        Formulaire qualifié pour prise en charge prioritaire Commando.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={attemptCloseForm}
+                      title="Fermer"
+                      aria-label="Fermer le formulaire"
+                      className="shrink-0 rounded-xl border border-white/10 p-2 text-text-secondary transition-colors hover:bg-white/10 hover:text-text-primary"
+                    >
+                      <X size={18} aria-hidden />
+                    </button>
+                  </div>
 
-              <form onSubmit={handleSubmit} onKeyDown={handleFormKeyDown} className="relative space-y-2.5 p-3">
+                  <form
+                    onSubmit={handleSubmit}
+                    onKeyDown={handleFormKeyDown}
+                    className="relative flex min-h-0 flex-1 flex-col overflow-hidden"
+                  >
+                    <div className="flex-1 space-y-2.5 overflow-y-auto p-3">
                 <div className="grid grid-cols-3 gap-1 rounded-xl border border-white/10 bg-white/5 p-1">
                   {FORM_STEPS.map((step) => (
                     <button
@@ -708,10 +745,11 @@ export default function PartnerClients() {
 
                 <div className="flex items-center gap-2 rounded-xl border border-noya-green/25 bg-noya-green/10 px-3 py-1 text-xs text-noya-green">
                   <ShieldCheck size={14} />
-                  Vos donnees sont reservees au traitement commercial interne.
+                  Vos données sont réservées au traitement commercial interne.
                 </div>
+                    </div>
 
-                <div className="flex gap-2 pt-1">
+                    <div className="flex shrink-0 gap-2 border-t border-white/10 bg-black/30 p-3">
                   <button
                     type="button"
                     onClick={attemptCloseForm}
@@ -752,12 +790,14 @@ export default function PartnerClients() {
                       )}
                     </button>
                   )}
-                </div>
-              </form>
-            </motion.div>
-          </div>
+                    </div>
+                  </form>
+                </motion.div>
+              </div>
+            ) : null}
+          </AnimatePresence>,
+          document.body,
         )}
-      </AnimatePresence>
     </div>
   );
 }

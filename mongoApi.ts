@@ -115,6 +115,7 @@ async function sendLoginVerificationEmail(input: { to: string; code: string }) {
 }
 
 const CLIENT_CHAT_EMAIL_THROTTLE_MS = 10 * 60 * 1000;
+const STAFF_CHAT_NOTIFY_EMAIL_THROTTLE_MS = 3 * 60 * 1000;
 
 async function sendClientChatMessageEmail(input: {
   to: string;
@@ -1567,6 +1568,113 @@ export function registerMongoApi(app: Express) {
   app.post("/api/auth/logout", async (_req: Request, res: Response) => {
     clearAuthCookie(res);
     return res.status(200).json({ success: true });
+  });
+
+  app.post("/api/chats/staff-notify", async (req: Request, res: Response) => {
+    try {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+
+      const messagePreviewRaw = String(req.body?.messagePreview || "").trim();
+      if (!messagePreviewRaw) {
+        return res.status(400).json({ success: false, error: "messagePreview requis." });
+      }
+
+      const clientId = String(req.body?.clientId || auth.uid).trim();
+      if (!isSafeDocId(clientId) || clientId !== auth.uid) {
+        return res.status(403).json({ success: false, error: "Accès refusé." });
+      }
+
+      const clientName = String(req.body?.clientName || auth.email || "Client").trim();
+      const messageType = String(req.body?.messageType || "text").trim();
+      const preview =
+        messagePreviewRaw.length > 200 ? `${messagePreviewRaw.slice(0, 200)}...` : messagePreviewRaw;
+      const title = "Nouveau message client";
+      const message = `${clientName} : ${preview}`;
+      const now = new Date().toISOString();
+
+      const teamRows = await prisma.dataDocument.findMany({
+        where: { collectionPath: "users" },
+      });
+      const teamIds = teamRows
+        .map((row) => {
+          const data = coerceRecord(row.data);
+          const role = String(data.role || "").toLowerCase();
+          if (role !== "commando" && role !== "admin") return null;
+          const uid = String(data.uid || row.docId || "").trim();
+          return uid || null;
+        })
+        .filter((v): v is string => Boolean(v));
+
+      let notified = 0;
+      await Promise.all(
+        teamIds.map(async (uid) => {
+          const notifId = randomUUID().replace(/-/g, "");
+          await upsertDataDocument(
+            "notifications",
+            notifId,
+            {
+              id: notifId,
+              userId: uid,
+              title,
+              message,
+              type: "message",
+              read: false,
+              createdAt: now,
+              metadata: { clientId, messageType },
+            },
+            false
+          );
+          notified += 1;
+        })
+      );
+
+      const throttleDocId = `chat_staff_mail_${clientId}`;
+      const throttleRow = await prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath: "chat_email_rate_limits", docId: throttleDocId } },
+        select: { data: true },
+      });
+      const throttleData = coerceRecord(throttleRow?.data);
+      const lastStaffMailAt = Number(throttleData.lastStaffMailAt || 0);
+      const nowMs = Date.now();
+      const shouldEmail =
+        !Number.isFinite(lastStaffMailAt) ||
+        lastStaffMailAt <= 0 ||
+        nowMs - lastStaffMailAt >= STAFF_CHAT_NOTIFY_EMAIL_THROTTLE_MS;
+
+      if (shouldEmail) {
+        void sendStaffNotifyEmail({
+          subject: `[Infinite Core] ${title}`,
+          text: [
+            message,
+            "",
+            `Client : ${clientName}`,
+            `Espace messagerie : /admin/messagerie`,
+            `Fil : chats/${clientId}`,
+          ].join("\n"),
+        })
+          .then(async (result) => {
+            if (!result.sent) return;
+            await upsertDataDocument(
+              "chat_email_rate_limits",
+              throttleDocId,
+              {
+                clientId,
+                lastStaffMailAt: nowMs,
+                lastPreview: preview,
+                updatedAt: now,
+              },
+              false
+            );
+          })
+          .catch((err) => console.warn("[chats/staff-notify] staff email:", err));
+      }
+
+      return res.status(200).json({ success: true, notified });
+    } catch (error) {
+      console.error("[chats/staff-notify]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
   });
 
   app.post("/api/chats/client-email-notify", async (req: Request, res: Response) => {
