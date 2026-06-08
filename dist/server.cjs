@@ -3039,6 +3039,16 @@ function monthly(price) {
 function lifetimeLicense(price) {
   return { type: "license", price, durationDays: 0, label: "Licence \xE0 vie (auto-h\xE9berg\xE9e)" };
 }
+function normalizeLicensePricing(pricing) {
+  return {
+    ...pricing,
+    durationDays: 0,
+    label: pricing.label?.trim() || "Licence \xE0 vie (auto-h\xE9berg\xE9e)"
+  };
+}
+function normalizeEntryPricing(pricing) {
+  return pricing.map((p) => p.type === "license" ? normalizeLicensePricing(p) : p);
+}
 function app(id, title, desc, licensePrice, monthlyPrice, deliveryLabel = "5-7 jours") {
   return {
     id,
@@ -3148,7 +3158,7 @@ function mergeStoredWithDefault(def, found) {
     ...found,
     moduleKey: found.moduleKey || def.moduleKey,
     imageUrl: found.imageUrl?.trim() ? found.imageUrl : def.imageUrl,
-    pricing: found.pricing?.length ? found.pricing : def.pricing,
+    pricing: normalizeEntryPricing(found.pricing?.length ? found.pricing : def.pricing),
     advantages: found.advantages !== void 0 ? found.advantages : def.advantages,
     features: found.features !== void 0 ? found.features : def.features,
     galleryImages: found.galleryImages?.length ? found.galleryImages : def.galleryImages
@@ -3161,7 +3171,7 @@ function mergeCatalogWithDefaults(remote) {
   const defaults = INFINITE_APP_CATALOG.map(
     (def) => mergeStoredWithDefault(def, remoteById.get(def.id))
   );
-  const customs = remote.filter((r) => !defaultIds.has(r.id)).map((r) => mergeDetailFields(r));
+  const customs = remote.filter((r) => !defaultIds.has(r.id)).map((r) => mergeDetailFields({ ...r, pricing: normalizeEntryPricing(r.pricing || []) }));
   return enrichCatalogSaasDefaults([...defaults, ...customs]);
 }
 function parseAppCatalogEntries(raw) {
@@ -3183,13 +3193,14 @@ function parseAppCatalogEntries(raw) {
         const price = Number(pr.price);
         if (!Number.isFinite(price) || price <= 0) continue;
         if (type === "license") {
-          const durationDays = Number(pr.durationDays);
-          pricing.push({
-            type: "license",
-            price: Math.round(price),
-            durationDays: Number.isFinite(durationDays) && durationDays >= 0 ? Math.round(durationDays) : 0,
-            label: typeof pr.label === "string" ? pr.label : void 0
-          });
+          pricing.push(
+            normalizeLicensePricing({
+              type: "license",
+              price: Math.round(price),
+              durationDays: 0,
+              label: typeof pr.label === "string" ? pr.label : void 0
+            })
+          );
         } else if (type === "subscription") {
           const cycle = String(pr.billingCycle || "month") === "year" ? "year" : "month";
           pricing.push({

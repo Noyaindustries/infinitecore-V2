@@ -291,7 +291,7 @@ export default function ClientShop() {
               appName: selectedService.title,
               moduleKey: selectedService.moduleKey || selectedService.id,
               amount: pricing.price,
-              licenseDurationDays: pricing.durationDays,
+              licenseDurationDays: 0,
               note: note.trim() || null,
             });
             return;

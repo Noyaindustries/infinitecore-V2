@@ -113,13 +113,25 @@ function lifetimeLicense(price: number): AppLicensePricing {
   return { type: 'license', price, durationDays: 0, label: 'Licence à vie (auto-hébergée)' };
 }
 
-export function formatLicenseValidityLabel(pricing: AppLicensePricing): string {
-  if (pricing.durationDays === 0) return 'À vie — hébergement client';
-  return `Validité ${pricing.durationDays} jours`;
+/** Toutes les licences catalogue sont à vie — ignore toute durée stockée (ex. 365 jours). */
+export function normalizeLicensePricing(pricing: AppLicensePricing): AppLicensePricing {
+  return {
+    ...pricing,
+    durationDays: 0,
+    label: pricing.label?.trim() || 'Licence à vie (auto-hébergée)',
+  };
+}
+
+function normalizeEntryPricing(pricing: AppPricing[]): AppPricing[] {
+  return pricing.map((p) => (p.type === 'license' ? normalizeLicensePricing(p) : p));
+}
+
+export function formatLicenseValidityLabel(_pricing: AppLicensePricing): string {
+  return 'À vie — hébergement client';
 }
 
 export function formatLicensePricingLabel(pricing: AppLicensePricing): string {
-  return pricing.label ?? (pricing.durationDays === 0 ? 'Licence à vie (auto-hébergée)' : `Licence ${pricing.durationDays} jours`);
+  return pricing.label?.trim() || 'Licence à vie (auto-hébergée)';
 }
 
 function app(
@@ -300,7 +312,7 @@ function mergeStoredWithDefault(def: AppCatalogEntry, found?: AppCatalogEntry): 
     ...found,
     moduleKey: found.moduleKey || def.moduleKey,
     imageUrl: found.imageUrl?.trim() ? found.imageUrl : def.imageUrl,
-    pricing: found.pricing?.length ? found.pricing : def.pricing,
+    pricing: normalizeEntryPricing(found.pricing?.length ? found.pricing : def.pricing),
     advantages: found.advantages !== undefined ? found.advantages : def.advantages,
     features: found.features !== undefined ? found.features : def.features,
     galleryImages: found.galleryImages?.length ? found.galleryImages : def.galleryImages,
@@ -319,7 +331,7 @@ export function mergeCatalogWithDefaults(remote: AppCatalogEntry[]): AppCatalogE
 
   const customs = remote
     .filter((r) => !defaultIds.has(r.id))
-    .map((r) => mergeDetailFields(r));
+    .map((r) => mergeDetailFields({ ...r, pricing: normalizeEntryPricing(r.pricing || []) }));
 
   return enrichCatalogSaasDefaults([...defaults, ...customs]);
 }
@@ -343,13 +355,14 @@ export function parseAppCatalogEntries(raw: unknown): AppCatalogEntry[] {
         const price = Number(pr.price);
         if (!Number.isFinite(price) || price <= 0) continue;
         if (type === 'license') {
-          const durationDays = Number(pr.durationDays);
-          pricing.push({
-            type: 'license',
-            price: Math.round(price),
-            durationDays: Number.isFinite(durationDays) && durationDays >= 0 ? Math.round(durationDays) : 0,
-            label: typeof pr.label === 'string' ? pr.label : undefined,
-          });
+          pricing.push(
+            normalizeLicensePricing({
+              type: 'license',
+              price: Math.round(price),
+              durationDays: 0,
+              label: typeof pr.label === 'string' ? pr.label : undefined,
+            })
+          );
         } else if (type === 'subscription') {
           const cycle = String(pr.billingCycle || 'month') === 'year' ? 'year' : 'month';
           pricing.push({

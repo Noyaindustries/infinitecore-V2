@@ -118,6 +118,25 @@ describe('licence à vie', () => {
     }
   });
 
+  it('parse ignore durationDays > 0 (ex. 365) — licence à vie uniquement', () => {
+    const parsed = parseAppCatalogEntries([
+      {
+        id: 'old-365',
+        moduleKey: 'old-365',
+        title: 'Old 365',
+        desc: '',
+        deliveryLabel: '5 jours',
+        pricing: [{ type: 'license', price: 50_000, durationDays: 365 }],
+      },
+    ]);
+    const license = parsed.find((a) => a.id === 'old-365')?.pricing[0];
+    expect(license?.type).toBe('license');
+    if (license?.type === 'license') {
+      expect(license.durationDays).toBe(0);
+      expect(formatLicenseValidityLabel(license)).toBe('À vie — hébergement client');
+    }
+  });
+
   it('parse durationDays 0 sans expiration', () => {
     const parsed = parseAppCatalogEntries([
       {

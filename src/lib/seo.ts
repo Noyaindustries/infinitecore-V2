@@ -81,6 +81,12 @@ export const STATIC_SEO_ROUTES: Record<string, Omit<SeoPayload, 'path'>> = {
       'Découvrez nos ERP, CRM et outils sectoriels pour digitaliser votre entreprise en Afrique.',
     image: '/infinite-core-logo-v2.png',
   },
+  '/boutique': {
+    title: 'Boutique Infinite Core — Licences & abonnements',
+    description:
+      'ERP, CRM, caisse et applications métier en FCFA. Licence à vie auto-hébergée ou abonnement SaaS hébergé par Infinite Core.',
+    image: '/infinite-core-logo-v2.png',
+  },
   '/tarifs': {
     title: 'Tarifs Infinite Core — Licences et abonnements',
     description: 'Tarifs en FCFA : licence à vie (auto-hébergée) ou abonnement mensuel SaaS Infinite Core.',

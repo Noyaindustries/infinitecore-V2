@@ -17,7 +17,6 @@ import { useLicenses } from '../../hooks/useLicenses';
 import {
   formatFcfa,
   formatLicenseHostingLabel,
-  formatLicenseValidityLabel,
   formatSubscriptionHostingLabel,
   getAppImageUrl,
   type AppLicensePricing,
@@ -47,7 +46,7 @@ export default function AppDetailPage() {
   }
 
   const app = apps.find((a) => a.id === appId);
-  if (!app) return <Navigate to="/#boutique" replace />;
+  if (!app) return <Navigate to="/boutique" replace />;
 
   const license = app.pricing.find((p): p is AppLicensePricing => p.type === 'license');
   const subscription = app.pricing.find((p): p is AppSubscriptionPricing => p.type === 'subscription');
@@ -82,7 +81,7 @@ export default function AppDetailPage() {
       <section className="border-b border-white/5 bg-[#06080D] py-10 md:py-14">
         <div className="container mx-auto max-w-[1100px] px-6">
           <Link
-            to="/#boutique"
+            to="/boutique"
             className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-[#8D98AA] transition hover:text-[#F2F4F8]"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -232,7 +231,6 @@ export default function AppDetailPage() {
                   <div className="rounded-2xl border border-white/10 bg-[#0D1320] p-5">
                     <p className="text-xs font-bold uppercase tracking-wider text-[#6EA7EA]">Licence à vie</p>
                     <p className="mt-2 text-2xl font-black text-[#F2F4F8]">{formatFcfa(license.price)}</p>
-                    <p className="mt-1 text-xs text-[#8D98AA]">{formatLicenseValidityLabel(license)}</p>
                     <p className="mt-2 text-xs text-[#8D98AA]">{formatLicenseHostingLabel()}</p>
                   </div>
                 )}

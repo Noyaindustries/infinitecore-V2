@@ -158,7 +158,7 @@ export default function MarketingLayout() {
               </div>
             </div>
             {[
-              { to: '/#boutique', label: 'Boutique' },
+              { to: '/boutique', label: 'Boutique' },
               { to: '/a-propos', label: 'À propos' },
               { to: '/tarifs', label: 'Tarifs' },
               { to: '/faq', label: 'FAQ' },
@@ -277,7 +277,7 @@ export default function MarketingLayout() {
                 </div>
               </div>
               {[
-                { to: '/#boutique', label: 'Boutique' },
+                { to: '/boutique', label: 'Boutique' },
                 { to: '/a-propos', label: 'À propos' },
                 { to: '/tarifs', label: 'Tarifs' },
                 { to: '/faq', label: 'FAQ' },
@@ -421,7 +421,7 @@ export default function MarketingLayout() {
               </h4>
               <ul className="flex flex-col items-center gap-1 lg:items-start">
                 {[
-                  { to: '/#boutique', label: 'Boutique' },
+                  { to: '/boutique', label: 'Boutique' },
                   { to: '/#system', label: 'Infinite System' },
                   { to: '/a-propos', label: 'À propos' },
                   { to: '/tarifs', label: 'Tarifs' },

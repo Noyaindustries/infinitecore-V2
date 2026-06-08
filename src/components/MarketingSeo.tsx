@@ -22,7 +22,7 @@ export default function MarketingSeo() {
         '@type': 'BreadcrumbList',
         itemListElement: [
           { '@type': 'ListItem', position: 1, name: 'Accueil', item: `${siteUrl()}/` },
-          { '@type': 'ListItem', position: 2, name: 'Boutique', item: `${siteUrl()}/#boutique` },
+          { '@type': 'ListItem', position: 2, name: 'Boutique', item: `${siteUrl()}/boutique` },
           { '@type': 'ListItem', position: 3, name: app.title },
         ],
       },

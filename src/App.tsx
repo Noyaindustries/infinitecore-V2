@@ -34,6 +34,7 @@ const Signup = lazy(() => import('./views/auth/Signup'));
 const ResetPassword = lazy(() => import('./views/auth/ResetPassword'));
 const MarketingPage = lazy(() => import('./views/marketing/MarketingPage'));
 const AppDetailPage = lazy(() => import('./views/marketing/AppDetailPage'));
+const Boutique = lazy(() => import('./views/marketing/Boutique'));
 const AdminDashboard = lazy(() => import('./views/admin/Dashboard'));
 const KanbanPipeline = lazy(() => import('./views/admin/KanbanPipeline'));
 const Operations = lazy(() => import('./views/admin/Operations'));
@@ -121,6 +122,7 @@ function AnimatedRoutes() {
             <Route path="/comms" element={<MarketingPage />} />
             <Route path="/store" element={<MarketingPage />} />
             <Route path="/applications/:appId" element={<AppDetailPage />} />
+            <Route path="/boutique" element={<Boutique />} />
             <Route path="/tarifs" element={<Pricing />} />
             <Route path="/contact" element={<Navigate to="/signup" replace />} />
             <Route path="/a-propos" element={<About />} />
