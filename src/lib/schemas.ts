@@ -19,23 +19,30 @@ const billingCycleSchema = z.preprocess(
   z.enum(['month', 'year'])
 );
 
+const optionalNote = z.preprocess(
+  (val) => (val === null || val === undefined || val === "" ? undefined : String(val)),
+  z.string().optional()
+);
+
 export const OrderSchema = z.object({
   serviceId: z.string().min(1),
-  serviceName: z.string().min(1),
-  amount: z.number().positive(),
+  serviceName: z.string().min(1).optional(),
+  /** Ignoré côté serveur (prix catalogue) — conservé pour compatibilité client. */
+  amount: z.coerce.number().positive().optional(),
   billingCycle: billingCycleSchema,
   moduleKey: z.string().optional(),
-  note: z.string().optional(),
+  note: optionalNote,
 });
 
 export const LicenseCheckoutSchema = z.object({
   appId: z.string().min(1),
-  appName: z.string().min(1),
-  moduleKey: z.string().min(1),
-  amount: z.number().positive(),
+  appName: z.string().min(1).optional(),
+  moduleKey: z.string().min(1).optional(),
+  /** Ignoré côté serveur (prix catalogue) — conservé pour compatibilité client. */
+  amount: z.coerce.number().positive().optional(),
   /** 0 = licence à vie ; > 0 = durée limitée en jours. */
-  licenseDurationDays: z.number().int().min(0).optional(),
-  note: z.string().optional(),
+  licenseDurationDays: z.coerce.number().int().min(0).optional(),
+  note: optionalNote,
 });
 
 /** Clés = champs formulaire (string) ; valeurs libres — Zod 4 : `record` exige (clé, valeur). */

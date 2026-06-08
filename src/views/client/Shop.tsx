@@ -291,8 +291,8 @@ export default function ClientShop() {
               appName: selectedService.title,
               moduleKey: selectedService.moduleKey || selectedService.id,
               amount: pricing.price,
-              licenseDurationDays: 0,
-              note: note.trim() || null,
+              licenseDurationDays: pricing.type === 'license' ? pricing.durationDays : 0,
+              ...(note.trim() ? { note: note.trim() } : {}),
             });
             return;
           }
@@ -302,7 +302,7 @@ export default function ClientShop() {
             moduleKey: selectedService.moduleKey || selectedService.id,
             amount: pricing.price,
             billingCycle: pricing.billingCycle,
-            note: note.trim() || null,
+            ...(note.trim() ? { note: note.trim() } : {}),
           });
           return;
         } catch (stripeError) {
@@ -324,7 +324,7 @@ export default function ClientShop() {
             serviceName: selectedService.title,
             amount: selectedService.price,
             billingCycle: selectedService.billingCycle || 'mensuel',
-            note: note.trim() || null,
+            ...(note.trim() ? { note: note.trim() } : {}),
           });
           return;
         } catch (stripeError) {
