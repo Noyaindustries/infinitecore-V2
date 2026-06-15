@@ -26,14 +26,33 @@ export function findCatalogAppByPackagePublicId(
   return catalog.find((app) => app.licensePackagePublicId?.trim() === normalized);
 }
 
+export type FileStorageBackend = "blob" | "r2" | "local" | "db";
+
+export type FileRegistryMeta = {
+  storageBackend?: FileStorageBackend;
+  storageUrl?: string;
+  publicAccess?: boolean;
+};
+
 export async function registerUploadedFile(
   publicId: string,
   ownerUid: string,
   folder: string,
+  meta: FileRegistryMeta = {},
   db: PrismaClient = defaultPrisma
 ): Promise<void> {
   const docId = publicId.trim();
   if (!docId || !ownerUid) return;
+  const payload: Record<string, unknown> = {
+    publicId: docId,
+    ownerUid,
+    folder: folder.trim() || "misc",
+    updatedAt: new Date().toISOString(),
+  };
+  if (meta.storageBackend) payload.storageBackend = meta.storageBackend;
+  if (meta.storageUrl) payload.storageUrl = meta.storageUrl;
+  if (meta.publicAccess !== undefined) payload.publicAccess = meta.publicAccess;
+
   await db.dataDocument.upsert({
     where: {
       collectionPath_docId: { collectionPath: FILE_REGISTRY_COLLECTION, docId },
@@ -41,22 +60,40 @@ export async function registerUploadedFile(
     create: {
       collectionPath: FILE_REGISTRY_COLLECTION,
       docId,
-      data: {
-        publicId: docId,
-        ownerUid,
-        folder: folder.trim() || "misc",
-        createdAt: new Date().toISOString(),
-      } as never,
+      data: { ...payload, createdAt: new Date().toISOString() } as never,
     },
     update: {
-      data: {
-        publicId: docId,
-        ownerUid,
-        folder: folder.trim() || "misc",
-        updatedAt: new Date().toISOString(),
-      } as never,
+      data: payload as never,
     },
   });
+}
+
+export async function getFileRegistryEntry(
+  publicId: string,
+  db: PrismaClient = defaultPrisma
+): Promise<(FileRegistryMeta & { ownerUid?: string; folder?: string }) | null> {
+  const docId = publicId.trim();
+  if (!docId) return null;
+  const row = await db.dataDocument.findUnique({
+    where: {
+      collectionPath_docId: { collectionPath: FILE_REGISTRY_COLLECTION, docId },
+    },
+  });
+  if (!row?.data || typeof row.data !== "object") return null;
+  const data = row.data as Record<string, unknown>;
+  return {
+    ownerUid: typeof data.ownerUid === "string" ? data.ownerUid : undefined,
+    folder: typeof data.folder === "string" ? data.folder : undefined,
+    storageBackend:
+      data.storageBackend === "blob" ||
+      data.storageBackend === "r2" ||
+      data.storageBackend === "local" ||
+      data.storageBackend === "db"
+        ? data.storageBackend
+        : undefined,
+    storageUrl: typeof data.storageUrl === "string" ? data.storageUrl : undefined,
+    publicAccess: data.publicAccess === true,
+  };
 }
 
 export async function removeFileRegistryEntry(

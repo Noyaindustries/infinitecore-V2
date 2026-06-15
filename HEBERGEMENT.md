@@ -12,7 +12,7 @@ Ce document décrit les **prérequis, contraintes et options d’hébergement** 
 | **API métier** | Express 5, Prisma, JWT | **Même** runtime que le front sur Vercel (`pages/api/...`) ; sinon **`npm start`** ou **`start:api`** (`node dist/server.cjs`) sur un autre hôte |
 | **Base de données** | MongoDB (Prisma) | **Sur tout hôte qui exécute Prisma** — y compris **Vercel** en mode tout-en-un (`DATABASE_URL` sur le projet) |
 | **Auth** | JWT (`Authorization: Bearer`), `localStorage` | Signé sur l’**API** avec `NEXTAUTH_SECRET` / `JWT_SECRET` |
-| **Fichiers** | R2 (S3) ou `.local-uploads/` en dev | Config **R2_*** sur l’hôte qui exécute l’API |
+| **Fichiers** | **Vercel Blob** (prioritaire), R2 (secours), ou `.local-uploads/` en dev | **`BLOB_READ_WRITE_TOKEN`** sur Vercel, ou **R2_*** |
 | **Clients externes** | Webhooks, app mobile éventuelle | URL **HTTPS** publique de l’**API** ; **CORS** (`CORS_ORIGIN`) si origine différente |
 
 ---

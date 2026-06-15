@@ -399,6 +399,10 @@ var appEnv = {
       return str("SMTP_FROM") || str("SMTP_USER") || "no-reply@infinitecore.local";
     }
   },
+  blob: {
+    /** Token Vercel Blob (auto-injecté quand un Blob store est lié au projet). */
+    readWriteToken: str("BLOB_READ_WRITE_TOKEN")
+  },
   r2: {
     accountId: str("R2_ACCOUNT_ID"),
     accessKeyId: str("R2_ACCESS_KEY_ID"),
@@ -664,6 +668,49 @@ function buildFileUrl(publicId) {
     return `${apiPublicBase}/api/files/download${q}`;
   }
   return `/api/files/download${q}`;
+}
+
+// _blob.ts
+var import_blob = require("@vercel/blob");
+var import_node_stream = require("node:stream");
+function readBlobToken() {
+  return (process.env.BLOB_READ_WRITE_TOKEN || "").trim();
+}
+function hasBlobConfig() {
+  return Boolean(readBlobToken());
+}
+function blobFolderIsPublic(folder) {
+  const normalized = folder.trim().toLowerCase();
+  return normalized === "app-catalog" || normalized.startsWith("app-catalog/");
+}
+function blobToken() {
+  const token = readBlobToken();
+  if (!token) throw new Error("Vercel Blob non configur\xE9 (BLOB_READ_WRITE_TOKEN).");
+  return token;
+}
+async function putBlobObject(params) {
+  const body = Buffer.isBuffer(params.body) ? params.body : Buffer.from(params.body);
+  const blob = await (0, import_blob.put)(params.pathname, body, {
+    access: params.publicAccess ? "public" : "private",
+    token: blobToken(),
+    contentType: params.contentType || "application/octet-stream",
+    addRandomSuffix: false
+  });
+  return { url: blob.url, pathname: blob.pathname };
+}
+async function deleteBlobObject(url) {
+  await (0, import_blob.del)(url, { token: blobToken() });
+}
+async function streamBlobObject(url) {
+  const result = await (0, import_blob.get)(url, { access: "private", token: blobToken() });
+  if (!result) {
+    throw new Error("Fichier Blob introuvable.");
+  }
+  const webStream = result.stream;
+  return {
+    stream: import_node_stream.Readable.fromWeb(webStream),
+    contentType: result.blob.contentType || "application/octet-stream"
+  };
 }
 
 // storageUtils.ts
@@ -5241,9 +5288,18 @@ function findCatalogAppByPackagePublicId(catalog, publicId) {
   if (!normalized) return void 0;
   return catalog.find((app2) => app2.licensePackagePublicId?.trim() === normalized);
 }
-async function registerUploadedFile(publicId, ownerUid, folder, db = prisma) {
+async function registerUploadedFile(publicId, ownerUid, folder, meta = {}, db = prisma) {
   const docId = publicId.trim();
   if (!docId || !ownerUid) return;
+  const payload = {
+    publicId: docId,
+    ownerUid,
+    folder: folder.trim() || "misc",
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (meta.storageBackend) payload.storageBackend = meta.storageBackend;
+  if (meta.storageUrl) payload.storageUrl = meta.storageUrl;
+  if (meta.publicAccess !== void 0) payload.publicAccess = meta.publicAccess;
   await db.dataDocument.upsert({
     where: {
       collectionPath_docId: { collectionPath: FILE_REGISTRY_COLLECTION, docId }
@@ -5251,22 +5307,30 @@ async function registerUploadedFile(publicId, ownerUid, folder, db = prisma) {
     create: {
       collectionPath: FILE_REGISTRY_COLLECTION,
       docId,
-      data: {
-        publicId: docId,
-        ownerUid,
-        folder: folder.trim() || "misc",
-        createdAt: (/* @__PURE__ */ new Date()).toISOString()
-      }
+      data: { ...payload, createdAt: (/* @__PURE__ */ new Date()).toISOString() }
     },
     update: {
-      data: {
-        publicId: docId,
-        ownerUid,
-        folder: folder.trim() || "misc",
-        updatedAt: (/* @__PURE__ */ new Date()).toISOString()
-      }
+      data: payload
     }
   });
+}
+async function getFileRegistryEntry(publicId, db = prisma) {
+  const docId = publicId.trim();
+  if (!docId) return null;
+  const row = await db.dataDocument.findUnique({
+    where: {
+      collectionPath_docId: { collectionPath: FILE_REGISTRY_COLLECTION, docId }
+    }
+  });
+  if (!row?.data || typeof row.data !== "object") return null;
+  const data = row.data;
+  return {
+    ownerUid: typeof data.ownerUid === "string" ? data.ownerUid : void 0,
+    folder: typeof data.folder === "string" ? data.folder : void 0,
+    storageBackend: data.storageBackend === "blob" || data.storageBackend === "r2" || data.storageBackend === "local" || data.storageBackend === "db" ? data.storageBackend : void 0,
+    storageUrl: typeof data.storageUrl === "string" ? data.storageUrl : void 0,
+    publicAccess: data.publicAccess === true
+  };
 }
 async function removeFileRegistryEntry(publicId, db = prisma) {
   const docId = publicId.trim();
@@ -5472,11 +5536,14 @@ async function createExpressApplication() {
   const r2PublicBaseUrl = appEnv.r2.publicBaseUrl;
   const r2Endpoint = appEnv.r2.endpointRaw || (r2AccountId ? `https://${r2AccountId}.r2.cloudflarestorage.com` : "");
   const canUseR2 = Boolean(r2Endpoint && r2AccessKeyId && r2SecretAccessKey && r2Bucket);
+  const canUseBlob = hasBlobConfig();
   const isServerlessRuntime = Boolean(process.env.VERCEL || process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME);
   const canUseLocalDiskFallback = !isServerlessRuntime;
-  if (!canUseR2) {
+  if (canUseBlob) {
+    console.log("[upload] Vercel Blob actif (prioritaire sur R2).");
+  } else if (!canUseR2) {
     console.warn(
-      "[upload] Variables R2 absentes \u2014 mode d\xE9veloppement : fichiers dans .local-uploads/ (non utilis\xE9 en prod sans R2)."
+      "[upload] Variables R2 absentes \u2014 mode d\xE9veloppement : fichiers dans .local-uploads/ (non utilis\xE9 en prod sans R2 ni Blob)."
     );
   }
   const stripe = stripeSecretKey ? new import_stripe.default(stripeSecretKey, {
@@ -6454,6 +6521,29 @@ async function createExpressApplication() {
       const folder = sanitizeFolder(folderRaw);
       const safeOriginal = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
       const objectKey = `${folder}/${Date.now()}-${(0, import_crypto8.randomUUID)()}-${safeOriginal}`;
+      if (canUseBlob) {
+        const publicAccess = blobFolderIsPublic(folder);
+        const { url: blobUrl, pathname } = await putBlobObject({
+          pathname: objectKey,
+          body: req.file.buffer,
+          contentType: req.file.mimetype || "application/octet-stream",
+          publicAccess
+        });
+        await registerUploadedFile(pathname, auth.uid, folder, {
+          storageBackend: "blob",
+          storageUrl: blobUrl,
+          publicAccess
+        });
+        const fileUrl2 = publicAccess ? blobUrl : buildFileUrl(pathname);
+        return res.status(200).json({
+          success: true,
+          url: fileUrl2,
+          publicId: pathname,
+          name: req.file.originalname,
+          size: req.file.size,
+          mimetype: req.file.mimetype
+        });
+      }
       if (canUseR2 && s3) {
         await s3.send(
           new import_client_s32.PutObjectCommand({
@@ -6465,7 +6555,7 @@ async function createExpressApplication() {
           })
         );
         const fileUrl2 = r2PublicBaseUrl ? `${r2PublicBaseUrl.replace(/\/$/, "")}/${objectKey}` : buildFileUrl(objectKey);
-        await registerUploadedFile(objectKey, auth.uid, folder);
+        await registerUploadedFile(objectKey, auth.uid, folder, { storageBackend: "r2" });
         return res.status(200).json({
           success: true,
           url: fileUrl2,
@@ -6508,7 +6598,7 @@ async function createExpressApplication() {
             }
           }
         });
-        await registerUploadedFile(dbPublicId, auth.uid, folder);
+        await registerUploadedFile(dbPublicId, auth.uid, folder, { storageBackend: "db" });
         return res.status(200).json({
           success: true,
           url: buildFileUrl(dbPublicId),
@@ -6524,7 +6614,7 @@ async function createExpressApplication() {
       }
       await import_fs.promises.mkdir(import_path2.default.dirname(absPath), { recursive: true });
       await import_fs.promises.writeFile(absPath, req.file.buffer);
-      await registerUploadedFile(objectKey, auth.uid, folder);
+      await registerUploadedFile(objectKey, auth.uid, folder, { storageBackend: "local" });
       const fileUrl = buildFileUrl(objectKey);
       return res.status(200).json({
         success: true,
@@ -6560,6 +6650,12 @@ async function createExpressApplication() {
         await prisma.dataDocument.deleteMany({
           where: { collectionPath: DB_FILE_COLLECTION_PATH, docId }
         });
+        await removeFileRegistryEntry(safePath);
+        return res.status(200).json({ success: true });
+      }
+      const registryEntry = await getFileRegistryEntry(safePath);
+      if (registryEntry?.storageBackend === "blob" && registryEntry.storageUrl) {
+        await deleteBlobObject(registryEntry.storageUrl);
         await removeFileRegistryEntry(safePath);
         return res.status(200).json({ success: true });
       }
@@ -6632,6 +6728,31 @@ async function createExpressApplication() {
         );
         res.setHeader("Cache-Control", "private, max-age=3600");
         return res.status(200).send(buffer);
+      }
+      const registryEntry = await getFileRegistryEntry(safePath);
+      if (registryEntry?.storageBackend === "blob" && registryEntry.storageUrl) {
+        if (registryEntry.publicAccess) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          return res.redirect(302, registryEntry.storageUrl);
+        }
+        const { stream, contentType } = await streamBlobObject(registryEntry.storageUrl);
+        const filename = import_path2.default.basename(safePath).replace(/"/g, "");
+        res.setHeader("Content-Type", contentType);
+        res.setHeader(
+          "Content-Disposition",
+          contentDispositionForDownload(safePath, filename, contentType)
+        );
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        stream.on("error", (err) => {
+          console.error("[api/files/download] lecture Blob:", registryEntry.storageUrl, err?.message);
+          if (!res.headersSent) {
+            res.status(404).json({ success: false, error: "Fichier introuvable." });
+          } else {
+            res.destroy(err);
+          }
+        });
+        stream.pipe(res);
+        return;
       }
       if (!canUseR2 || !s3) {
         if (!canUseLocalDiskFallback) {

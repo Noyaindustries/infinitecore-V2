@@ -22,7 +22,8 @@ Ce document décrit où vivent les secrets, comment les générer, les valider e
 | `SAAS_BRIDGE_API_KEY` | Bridge apps SaaS (optionnel) | Tous les 6–12 mois |
 | `STRIPE_SECRET_KEY` | API Stripe | Rolling keys dans le Dashboard Stripe |
 | `STRIPE_WEBHOOK_SECRET` | Signature webhooks Stripe | À chaque endpoint webhook recréé |
-| `R2_*` | Stockage fichiers Cloudflare | Rotation clés API R2 |
+| `BLOB_READ_WRITE_TOKEN` | Stockage fichiers Vercel Blob | Rotation via dashboard Vercel → Storage → Blob |
+| `R2_*` | Stockage fichiers Cloudflare (secours si Blob absent) | Rotation clés API R2 |
 | `SMTP_*` | Envoi d’e-mails | Mot de passe d’application Gmail / provider |
 
 Templates sans secrets : `.env.example`, `.env.vercel.example`, `.env.netlify.example`.

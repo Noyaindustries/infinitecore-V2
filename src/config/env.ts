@@ -155,6 +155,10 @@ export const appEnv = {
       return str("SMTP_FROM") || str("SMTP_USER") || "no-reply@infinitecore.local";
     },
   },
+  blob: {
+    /** Token Vercel Blob (auto-injecté quand un Blob store est lié au projet). */
+    readWriteToken: str("BLOB_READ_WRITE_TOKEN"),
+  },
   r2: {
     accountId: str("R2_ACCOUNT_ID"),
     accessKeyId: str("R2_ACCESS_KEY_ID"),

@@ -1,6 +1,7 @@
 import { Handler } from "@netlify/functions";
 import { randomUUID } from "crypto";
 import { parseMultipartLambdaEvent } from "./multipart-netlify";
+import { blobFolderIsPublic, hasBlobConfig, putBlobObject } from "./_blob";
 import { buildFileUrl, hasR2Config, putObject, sanitizeFolder } from "./_r2";
 import { writeLocalObject } from "./_localUploads";
 
@@ -32,6 +33,24 @@ export const handler: Handler = async (event) => {
       : Buffer.from(String(file.content), "binary");
     const contentType = file.contentType || "application/octet-stream";
 
+    if (hasBlobConfig()) {
+      const publicAccess = blobFolderIsPublic(folder);
+      const { url, pathname } = await putBlobObject({
+        pathname: objectKey,
+        body: bodyBuffer,
+        contentType,
+        publicAccess,
+      });
+      return json(200, {
+        success: true,
+        url: publicAccess ? url : buildFileUrl(pathname),
+        publicId: pathname,
+        name: safeOriginal,
+        size: bodyBuffer.length,
+        mimetype: contentType,
+      });
+    }
+
     if (hasR2Config) {
       await putObject({
         key: objectKey,
@@ -47,8 +66,8 @@ export const handler: Handler = async (event) => {
         return json(503, {
           success: false,
           error:
-            "R2 non configuré et écriture disque impossible (souvent le cas sur Netlify en prod). " +
-            "Soit définissez les variables R2, soit en local lancez `npm run dev` (serveur Express) plutôt que seulement Vite / Netlify Dev sans disque projet.",
+            "Blob/R2 non configuré et écriture disque impossible (souvent le cas sur Netlify en prod). " +
+            "Définissez BLOB_READ_WRITE_TOKEN ou les variables R2, ou lancez `npm run dev` en local.",
         });
       }
     }

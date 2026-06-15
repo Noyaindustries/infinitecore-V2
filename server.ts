@@ -24,6 +24,13 @@ import {
 } from "@/server/webhookHmac";
 import { prisma } from "./prismaClient";
 import { buildFileUrl, sanitizeFolder } from "./_r2";
+import {
+  blobFolderIsPublic,
+  deleteBlobObject,
+  hasBlobConfig,
+  putBlobObject,
+  streamBlobObject,
+} from "./_blob";
 import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } from "./storageUtils";
 import { parseAuthFromRequest, registerMongoApi, resolveAuthPayload, type AuthPayload } from "./mongoApi";
 import { sendStaffNotifyEmail } from "./src/server/staffNotifyEmail";
@@ -61,6 +68,7 @@ import {
 } from "./src/server/catalogCheckoutPricing";
 import {
   assertFileAccess,
+  getFileRegistryEntry,
   registerUploadedFile,
   removeFileRegistryEntry,
 } from "./src/server/fileRegistry";
@@ -241,12 +249,15 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   const r2Endpoint =
     appEnv.r2.endpointRaw || (r2AccountId ? `https://${r2AccountId}.r2.cloudflarestorage.com` : "");
   const canUseR2 = Boolean(r2Endpoint && r2AccessKeyId && r2SecretAccessKey && r2Bucket);
+  const canUseBlob = hasBlobConfig();
   const isServerlessRuntime = Boolean(process.env.VERCEL || process.env.NETLIFY || process.env.AWS_LAMBDA_FUNCTION_NAME);
   const canUseLocalDiskFallback = !isServerlessRuntime;
 
-  if (!canUseR2) {
+  if (canUseBlob) {
+    console.log("[upload] Vercel Blob actif (prioritaire sur R2).");
+  } else if (!canUseR2) {
     console.warn(
-      "[upload] Variables R2 absentes — mode développement : fichiers dans .local-uploads/ (non utilisé en prod sans R2)."
+      "[upload] Variables R2 absentes — mode développement : fichiers dans .local-uploads/ (non utilisé en prod sans R2 ni Blob)."
     );
   }
   const stripe = stripeSecretKey
@@ -1328,6 +1339,30 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       const safeOriginal = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
       const objectKey = `${folder}/${Date.now()}-${randomUUID()}-${safeOriginal}`;
 
+      if (canUseBlob) {
+        const publicAccess = blobFolderIsPublic(folder);
+        const { url: blobUrl, pathname } = await putBlobObject({
+          pathname: objectKey,
+          body: req.file.buffer,
+          contentType: req.file.mimetype || "application/octet-stream",
+          publicAccess,
+        });
+        await registerUploadedFile(pathname, auth.uid, folder, {
+          storageBackend: "blob",
+          storageUrl: blobUrl,
+          publicAccess,
+        });
+        const fileUrl = publicAccess ? blobUrl : buildFileUrl(pathname);
+        return res.status(200).json({
+          success: true,
+          url: fileUrl,
+          publicId: pathname,
+          name: req.file.originalname,
+          size: req.file.size,
+          mimetype: req.file.mimetype,
+        });
+      }
+
       if (canUseR2 && s3) {
         await s3.send(
           new PutObjectCommand({
@@ -1341,9 +1376,9 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
 
         const fileUrl = r2PublicBaseUrl
           ? `${r2PublicBaseUrl.replace(/\/$/, "")}/${objectKey}`
-          : buildFileUrl(objectKey        );
+          : buildFileUrl(objectKey);
 
-        await registerUploadedFile(objectKey, auth.uid, folder);
+        await registerUploadedFile(objectKey, auth.uid, folder, { storageBackend: "r2" });
 
         return res.status(200).json({
           success: true,
@@ -1390,7 +1425,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
             } as never,
           },
         });
-        await registerUploadedFile(dbPublicId, auth.uid, folder);
+        await registerUploadedFile(dbPublicId, auth.uid, folder, { storageBackend: "db" });
         return res.status(200).json({
           success: true,
           url: buildFileUrl(dbPublicId),
@@ -1408,7 +1443,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       }
       await fs.mkdir(path.dirname(absPath), { recursive: true });
       await fs.writeFile(absPath, req.file.buffer);
-      await registerUploadedFile(objectKey, auth.uid, folder);
+      await registerUploadedFile(objectKey, auth.uid, folder, { storageBackend: "local" });
 
       const fileUrl = buildFileUrl(objectKey);
       return res.status(200).json({
@@ -1449,6 +1484,13 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         await prisma.dataDocument.deleteMany({
           where: { collectionPath: DB_FILE_COLLECTION_PATH, docId },
         });
+        await removeFileRegistryEntry(safePath);
+        return res.status(200).json({ success: true });
+      }
+
+      const registryEntry = await getFileRegistryEntry(safePath);
+      if (registryEntry?.storageBackend === "blob" && registryEntry.storageUrl) {
+        await deleteBlobObject(registryEntry.storageUrl);
         await removeFileRegistryEntry(safePath);
         return res.status(200).json({ success: true });
       }
@@ -1530,6 +1572,32 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         );
         res.setHeader("Cache-Control", "private, max-age=3600");
         return res.status(200).send(buffer);
+      }
+
+      const registryEntry = await getFileRegistryEntry(safePath);
+      if (registryEntry?.storageBackend === "blob" && registryEntry.storageUrl) {
+        if (registryEntry.publicAccess) {
+          res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+          return res.redirect(302, registryEntry.storageUrl);
+        }
+        const { stream, contentType } = await streamBlobObject(registryEntry.storageUrl);
+        const filename = path.basename(safePath).replace(/"/g, "");
+        res.setHeader("Content-Type", contentType);
+        res.setHeader(
+          "Content-Disposition",
+          contentDispositionForDownload(safePath, filename, contentType)
+        );
+        res.setHeader("Cache-Control", "private, max-age=3600");
+        stream.on("error", (err) => {
+          console.error("[api/files/download] lecture Blob:", registryEntry.storageUrl, err?.message);
+          if (!res.headersSent) {
+            res.status(404).json({ success: false, error: "Fichier introuvable." });
+          } else {
+            res.destroy(err);
+          }
+        });
+        stream.pipe(res);
+        return;
       }
 
       if (!canUseR2 || !s3) {
