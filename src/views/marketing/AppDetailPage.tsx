@@ -24,8 +24,10 @@ import {
 } from '../../data/appCatalog';
 import AppCatalogCardImage from '../../components/AppCatalogCardImage';
 import AppDetailGallery from '../../components/AppDetailGallery';
+import AppDetailDemoLink from '../../components/AppDetailDemoLink';
 import AppAppointmentForm from '../../components/AppAppointmentForm';
 import { buildAppGallery } from '../../lib/appGallery';
+import { resolveAppDemoUrl } from '../../lib/appDemoUrl';
 import { buildWhatsAppUrl } from '../../lib/whatsapp';
 import AppHowToGetAppGuide from '../../components/AppHowToGetAppGuide';
 import { defaultSaasTenantId } from '../../lib/saasAccess';
@@ -69,6 +71,7 @@ export default function AppDetailPage() {
         })
       : null;
   const gallery = buildAppGallery(app);
+  const demoUrl = resolveAppDemoUrl(app);
   const heroApp = { ...app, imageUrl: gallery[0] || getAppImageUrl(app) };
   const waUrl = buildWhatsAppUrl(
     app.whatsappNumber || '2250103015467',
@@ -126,9 +129,9 @@ export default function AppDetailPage() {
                     {isClient ? 'Acheter' : 'Créer un compte'}
                   </Link>
                 )}
-                {app.demoUrl ? (
+                {demoUrl ? (
                   <a
-                    href={app.demoUrl}
+                    href={demoUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 rounded-xl border border-white/15 px-5 py-3 text-sm font-bold text-[#F2F4F8] transition hover:border-[#6EA7EA]/50"
@@ -157,6 +160,8 @@ export default function AppDetailPage() {
       </section>
 
       <AppDetailGallery images={gallery} title={app.title} />
+
+      {demoUrl ? <AppDetailDemoLink demoUrl={demoUrl} appTitle={app.title} /> : null}
 
       {/* Problème */}
       {app.problem && (

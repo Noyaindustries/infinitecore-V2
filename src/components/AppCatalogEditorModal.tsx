@@ -526,9 +526,12 @@ export default function AppCatalogEditorModal({ mode, draft, onChange, onClose, 
                   id="editor-demo"
                   value={draft.demoUrl ?? ''}
                   onChange={(e) => onChange(patchDraft(draft, { demoUrl: e.target.value }))}
-                  placeholder="https://…"
+                  placeholder="https://… (vide = URL SaaS par défaut)"
                   className="w-full rounded-xl border border-border bg-noya-black px-3 py-2 text-sm text-text-primary"
                 />
+                <p className="mt-1 text-[10px] text-text-muted">
+                  Affiché sur la page détail. Si vide, l&apos;URL SaaS multi-tenant est proposée comme démo.
+                </p>
               </div>
               <div>
                 <label htmlFor="editor-whatsapp" className="mb-1 block text-xs font-semibold uppercase text-text-muted">

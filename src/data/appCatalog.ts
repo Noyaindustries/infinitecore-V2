@@ -339,7 +339,7 @@ function mergeDetailFields(entry: AppCatalogEntry): AppCatalogEntry {
     advantages: entry.advantages !== undefined ? entry.advantages : details.advantages,
     features: entry.features !== undefined ? entry.features : details.features,
     galleryImages: gallery,
-    demoUrl: entry.demoUrl ?? details.demoUrl,
+    demoUrl: entry.demoUrl?.trim() || details.demoUrl?.trim() || undefined,
     whatsappNumber: entry.whatsappNumber || details.whatsappNumber,
     whatsappMessage: entry.whatsappMessage || details.whatsappMessage,
   };
