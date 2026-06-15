@@ -37,10 +37,27 @@ export default function AppDetailDemoLink({ demoUrl, appTitle }: Props) {
                 </h2>
               </div>
               <p className="text-sm leading-relaxed text-[#8D98AA] md:text-[15px]">
-                Explorez <strong className="font-semibold text-[#C8D0E0]">{appTitle}</strong> dans un
-                environnement de démonstration. Données fictives — accès libre sans engagement.
+                Explorez{' '}
+                <a
+                  href={demoUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-[#6EA7EA] underline-offset-2 transition hover:text-[#9fc4f5] hover:underline"
+                >
+                  {appTitle}
+                </a>{' '}
+                dans un environnement de démonstration. Données fictives — accès libre sans engagement.
               </p>
-              <p className="mt-4 break-all font-mono text-xs text-[#6EA7EA]/90 md:text-sm">{label}</p>
+              <a
+                href={demoUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={demoUrl}
+                className="mt-4 inline-flex max-w-full items-center gap-1.5 break-all font-mono text-xs text-[#6EA7EA] underline-offset-2 transition hover:text-[#9fc4f5] hover:underline md:text-sm"
+              >
+                <span>{label}</span>
+                <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+              </a>
             </div>
             <div className="flex shrink-0 flex-col gap-3 sm:flex-row md:flex-col lg:flex-row">
               <a
