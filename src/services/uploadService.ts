@@ -1,5 +1,5 @@
 import { apiUrl } from "../lib/apiBase";
-import { getAuthToken } from "../lib/apiClient";
+import { mutationAuthHeaderEntries } from "../lib/apiClient";
 
 export interface UploadResult {
   url: string;
@@ -22,9 +22,8 @@ export function uploadFile(
     const xhr = new XMLHttpRequest();
     xhr.open("POST", apiUrl("/api/files/upload"));
     xhr.withCredentials = true;
-    const token = getAuthToken();
-    if (token) {
-      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    for (const [name, value] of mutationAuthHeaderEntries()) {
+      xhr.setRequestHeader(name, value);
     }
 
     xhr.upload.onprogress = (event) => {
@@ -43,6 +42,14 @@ export function uploadFile(
       if (xhr.status < 200 || xhr.status >= 300) {
         if (xhr.status === 401) {
           reject(new Error("Session expirée. Reconnectez-vous puis réessayez l'upload."));
+          return;
+        }
+        if (xhr.status === 403 && /csrf/i.test(String(errBody?.error || ""))) {
+          reject(
+            new Error(
+              "Upload refusé (jeton CSRF). Rechargez la page ou reconnectez-vous, puis réessayez."
+            )
+          );
           return;
         }
         const detail = errBody?.error ? ` ${errBody.error}` : "";
@@ -75,8 +82,14 @@ export function uploadFile(
 
 export async function deleteUploadedFile(publicId: string): Promise<void> {
   if (!publicId) return;
+  const headers = new Headers();
+  for (const [name, value] of mutationAuthHeaderEntries()) {
+    headers.set(name, value);
+  }
   const response = await fetch(apiUrl(`/api/files?publicId=${encodeURIComponent(publicId)}`), {
     method: "DELETE",
+    credentials: "include",
+    headers,
   });
   if (!response.ok) {
     throw new Error("Suppression du fichier impossible.");

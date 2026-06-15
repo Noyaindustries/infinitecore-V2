@@ -87,6 +87,16 @@ function getCsrfTokenFromCookie(): string | null {
   }
 }
 
+/** Bearer legacy + jeton CSRF pour POST/PUT/PATCH/DELETE (fetch, XHR, FormData). */
+export function mutationAuthHeaderEntries(): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  const token = getAuthToken();
+  if (token) out.push(["Authorization", `Bearer ${token}`]);
+  const csrfToken = getCsrfTokenFromCookie();
+  if (csrfToken) out.push([CSRF_HEADER_NAME, csrfToken]);
+  return out;
+}
+
 export function setAuthToken(token: string | null) {
   if (typeof window === "undefined") return;
   if (!clientStoresAuthToken()) return;
@@ -113,10 +123,8 @@ async function fetchAndParse<T>(url: string, init: RequestInit, fetchSignal: Abo
   if (!headers.has("Content-Type") && init.body && !(init.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
-  if (token) headers.set("Authorization", `Bearer ${token}`);
-  const csrfToken = getCsrfTokenFromCookie();
-  if (csrfToken && !headers.has(CSRF_HEADER_NAME)) {
-    headers.set(CSRF_HEADER_NAME, csrfToken);
+  for (const [name, value] of mutationAuthHeaderEntries()) {
+    if (!headers.has(name)) headers.set(name, value);
   }
 
   const response = await fetch(url, {
