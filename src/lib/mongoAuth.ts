@@ -298,6 +298,7 @@ export async function signInWithEmailAndPassword(_auth: Auth, email: string, pas
     token?: string;
     verificationRequired?: boolean;
     challengeId?: string;
+    devVerificationCode?: string;
     user?: { uid: string; email: string; role: string; displayName?: string | null; photoURL?: string | null };
   }>("/api/auth/login", {
     method: "POST",
@@ -308,6 +309,7 @@ export async function signInWithEmailAndPassword(_auth: Auth, email: string, pas
       verificationRequired: true as const,
       challengeId: data.challengeId || "",
       email: String(email || "").trim().toLowerCase(),
+      devVerificationCode: data.devVerificationCode,
     };
   }
   if (!data.user) {

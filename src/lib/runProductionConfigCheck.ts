@@ -5,6 +5,7 @@ import {
 } from "@/config/corsPolicy";
 import { formatProductionSecretsErrors, validateProductionSecrets } from "@/config/secretPolicy";
 import { isRateLimitEnabled } from "@/server/rateLimit";
+import { isSmtpConfigured } from "@/server/smtpTransport";
 
 export type ProductionConfigFlags = {
   databaseUrl: boolean;
@@ -15,12 +16,14 @@ export type ProductionConfigFlags = {
   googleClientId: boolean;
   saasBridgeApiKey: boolean;
   rateLimitEnabled: boolean;
+  smtpConfigured: boolean;
 };
 
 export type ProductionConfigCheckResult = {
   startupOk: boolean;
   config: ProductionConfigFlags;
   errors: string[];
+  warnings: string[];
 };
 
 /** Vérifie la config prod sans démarrer Express (diagnostic Vercel). */
@@ -34,9 +37,17 @@ export function runProductionConfigCheck(): ProductionConfigCheckResult {
     googleClientId: Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim()),
     saasBridgeApiKey: Boolean(process.env.SAAS_BRIDGE_API_KEY?.trim()),
     rateLimitEnabled: isRateLimitEnabled(),
+    smtpConfigured: isSmtpConfigured(),
   };
 
   const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (appEnv.node.isProduction && !config.smtpConfigured) {
+    warnings.push(
+      "SMTP non configuré : la connexion par mot de passe renverra 503 après validation du mot de passe (code email). Définissez SMTP_HOST, SMTP_USER, SMTP_PASS sur Vercel."
+    );
+  }
 
   try {
     appEnv.auth.getJwtSecret();
@@ -72,5 +83,5 @@ export function runProductionConfigCheck(): ProductionConfigCheckResult {
     errors.push(...formatProductionSecretsErrors(secretsReport).split("\n").filter(Boolean));
   }
 
-  return { startupOk: errors.length === 0, config, errors };
+  return { startupOk: errors.length === 0, config, errors, warnings };
 }

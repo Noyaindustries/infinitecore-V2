@@ -9,5 +9,6 @@ export default async function configCheck(_req: NextApiRequest, res: NextApiResp
     code: result.startupOk ? "CONFIG_OK" : "CONFIG_INVALID",
     config: result.config,
     errors: result.errors.length ? result.errors : undefined,
+    warnings: result.warnings.length ? result.warnings : undefined,
   });
 }

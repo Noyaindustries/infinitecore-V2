@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { __authE2eTestUtils } from '../../mongoApi';
 
-const { isE2eTestAccountEmail, shouldSkipLoginVerificationForE2e } = __authE2eTestUtils;
+const { isE2eTestAccountEmail, shouldSkipLoginVerification } = __authE2eTestUtils;
 
 describe('sécurité — contournement 2FA e2e', () => {
   const prevSkip = process.env.E2E_SKIP_LOGIN_VERIFICATION;
@@ -28,18 +28,24 @@ describe('sécurité — contournement 2FA e2e', () => {
   });
 
   it('contourne la 2FA en dev pour les comptes seed', () => {
-    expect(shouldSkipLoginVerificationForE2e('admin.test@infinitecore.local')).toBe(true);
-    expect(shouldSkipLoginVerificationForE2e('admin@company.com')).toBe(false);
+    expect(shouldSkipLoginVerification('admin.test@infinitecore.local')).toBe(true);
+    expect(shouldSkipLoginVerification('admin@company.com')).toBe(false);
+  });
+
+  it('contourne la 2FA en dev pour tout compte si E2E_SKIP_LOGIN_VERIFICATION=1', () => {
+    process.env.E2E_SKIP_LOGIN_VERIFICATION = '1';
+    expect(shouldSkipLoginVerification('admin@company.com')).toBe(true);
   });
 
   it('respecte E2E_DISABLE_TEST_LOGIN_BYPASS=1', () => {
     process.env.E2E_DISABLE_TEST_LOGIN_BYPASS = '1';
-    expect(shouldSkipLoginVerificationForE2e('admin.test@infinitecore.local')).toBe(false);
+    expect(shouldSkipLoginVerification('admin.test@infinitecore.local')).toBe(false);
   });
 
   it("n’active jamais le bypass 2FA en production, même avec E2E_SKIP_LOGIN_VERIFICATION=1", () => {
     vi.stubEnv("NODE_ENV", "production");
     process.env.E2E_SKIP_LOGIN_VERIFICATION = "1";
-    expect(shouldSkipLoginVerificationForE2e("admin.test@infinitecore.local")).toBe(false);
+    expect(shouldSkipLoginVerification("admin.test@infinitecore.local")).toBe(false);
+    expect(shouldSkipLoginVerification("admin@company.com")).toBe(false);
   });
 });

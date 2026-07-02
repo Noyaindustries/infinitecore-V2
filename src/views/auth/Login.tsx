@@ -9,7 +9,7 @@ import {
   signInWithPopup,
   verifyEmailLoginCode,
 } from '@/lib/mongoAuth';
-import { apiRequest } from '../../lib/apiClient';
+import { apiRequest, ApiHttpError } from '../../lib/apiClient';
 import { auth, db } from '@/lib/clientSdk';
 import { useAuth } from '../../components/AuthProvider';
 import { openGoogleConfirmDialog } from '../../lib/googleConfirmUI';
@@ -213,10 +213,14 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
             throw new Error("Impossible de démarrer la vérification email.");
           }
           setLoginChallengeId(result.challengeId);
-          setVerificationCode('');
+          setVerificationCode(result.devVerificationCode || '');
           setVerificationMethod('password');
           setLoginStep(3);
-          toast.success('Code de vérification envoyé par email.');
+          if (result.devVerificationCode) {
+            toast.success(`Code dev (SMTP indisponible) : ${result.devVerificationCode}`, { duration: 12_000 });
+          } else {
+            toast.success('Code de vérification envoyé par email.');
+          }
         } else {
           toast.success('Connexion réussie');
         }
@@ -231,7 +235,16 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
       }
     } catch (err: unknown) {
       const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : '';
-      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+      if (err instanceof ApiHttpError && err.status === 503) {
+        toast.error(
+          err.message.includes('SMTP')
+            ? err.message
+            : 'Service email indisponible en production. Contactez l’administrateur (SMTP sur Vercel).',
+          { duration: 10_000 }
+        );
+      } else if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+        toast.error('Email ou mot de passe incorrect.');
+      } else if (err instanceof ApiHttpError && err.status === 401) {
         toast.error('Email ou mot de passe incorrect.');
       } else {
         const msg = err instanceof Error ? err.message : '';

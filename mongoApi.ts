@@ -101,23 +101,28 @@ async function sendLoginVerificationEmail(input: { to: string; code: string }) {
   if (!transporter) {
     return { delivered: false as const, previewCode: input.code };
   }
-  await transporter.sendMail({
-    from: appEnv.smtp.fromOrUser,
-    to: input.to,
-    subject: "Code de verification de connexion",
-    text:
-      `Bonjour,\n\n` +
-      `Voici votre code de verification Infinite Core : ${input.code}\n\n` +
-      `Il expire dans 10 minutes.\n` +
-      `Si vous n'êtes pas a l'origine de cette tentative de connexion, ignorez cet email.\n`,
-    html:
-      `<p>Bonjour,</p>` +
-      `<p>Voici votre code de verification Infinite Core :</p>` +
-      `<p style="font-size: 24px; font-weight: 700; letter-spacing: 0.12em;">${input.code}</p>` +
-      `<p>Il expire dans <strong>10 minutes</strong>.</p>` +
-      `<p>Si vous n'êtes pas a l'origine de cette tentative de connexion, ignorez cet email.</p>`,
-  });
-  return { delivered: true as const };
+  try {
+    await transporter.sendMail({
+      from: appEnv.smtp.fromOrUser,
+      to: input.to,
+      subject: "Code de verification de connexion",
+      text:
+        `Bonjour,\n\n` +
+        `Voici votre code de verification Infinite Core : ${input.code}\n\n` +
+        `Il expire dans 10 minutes.\n` +
+        `Si vous n'êtes pas a l'origine de cette tentative de connexion, ignorez cet email.\n`,
+      html:
+        `<p>Bonjour,</p>` +
+        `<p>Voici votre code de verification Infinite Core :</p>` +
+        `<p style="font-size: 24px; font-weight: 700; letter-spacing: 0.12em;">${input.code}</p>` +
+        `<p>Il expire dans <strong>10 minutes</strong>.</p>` +
+        `<p>Si vous n'êtes pas a l'origine de cette tentative de connexion, ignorez cet email.</p>`,
+    });
+    return { delivered: true as const };
+  } catch (error) {
+    console.error("[smtp] envoi code connexion:", error);
+    return { delivered: false as const, previewCode: input.code };
+  }
 }
 
 const CLIENT_CHAT_EMAIL_THROTTLE_MS = 10 * 60 * 1000;
@@ -278,13 +283,19 @@ export function isE2eTestAccountEmail(email: string): boolean {
     .endsWith(E2E_TEST_EMAIL_SUFFIX);
 }
 
-export function shouldSkipLoginVerificationForE2e(email: string): boolean {
-  if (!isE2eTestAccountEmail(email)) return false;
+/** Contourne l’étape « code par email » (jamais en production). */
+export function shouldSkipLoginVerification(email: string): boolean {
   if (appEnv.node.isProduction) return false;
   if (process.env.E2E_DISABLE_TEST_LOGIN_BYPASS === "1") return false;
   if (process.env.E2E_SKIP_LOGIN_VERIFICATION === "1") return true;
-  if (isLocalHttpDevApp()) return true;
-  return true;
+  if (isE2eTestAccountEmail(email)) return true;
+  if (isLocalHttpDevApp() && !getSmtpTransport()) return true;
+  return false;
+}
+
+/** @deprecated Utiliser {@link shouldSkipLoginVerification} */
+export function shouldSkipLoginVerificationForE2e(email: string): boolean {
+  return shouldSkipLoginVerification(email);
 }
 
 function isStrongPassword(password: string) {
@@ -765,6 +776,7 @@ function assertDataDocAuthorized(
 
 export const __authE2eTestUtils = {
   isE2eTestAccountEmail,
+  shouldSkipLoginVerification,
   shouldSkipLoginVerificationForE2e,
   E2E_FIXED_LOGIN_CODE,
 };
@@ -1576,7 +1588,7 @@ export function registerMongoApi(app: Express) {
         return res.status(401).json({ success: false, error: "Identifiants invalides." });
       }
 
-      if (shouldSkipLoginVerificationForE2e(email)) {
+      if (shouldSkipLoginVerification(email)) {
         await clearAuthFailures(authKey);
         return respondWithAuthenticatedLogin(res, account, {
           req,
@@ -1607,13 +1619,31 @@ export function registerMongoApi(app: Express) {
         to: account.email,
         code: verificationCode,
       });
-      if (!mailResult.delivered && !shouldSkipLoginVerificationForE2e(email)) {
+      if (!mailResult.delivered) {
+        if (!appEnv.node.isProduction && isLocalHttpDevApp()) {
+          await clearAuthFailures(authKey);
+          logAuditAuth({
+            action: "auth.login.verification_required",
+            success: true,
+            req,
+            actorUid: account.uid,
+            actorEmail: account.email,
+            actorRole: account.role,
+          });
+          return res.status(200).json({
+            success: true,
+            verificationRequired: true,
+            challengeId,
+            devVerificationCode: verificationCode,
+          });
+        }
         await prisma.dataDocument.delete({
           where: { collectionPath_docId: { collectionPath: "auth_login_verifications", docId: challengeId } },
         });
         return res.status(503).json({
           success: false,
-          error: "Service email indisponible. Configurez SMTP avant la vérification par code.",
+          error:
+            "Service email indisponible. Vérifiez SMTP_HOST, SMTP_USER et SMTP_PASS (Vercel → Environment Variables).",
         });
       }
 

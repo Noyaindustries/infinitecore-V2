@@ -58,6 +58,7 @@ import { resolveSaasTenantId } from "./src/lib/saasAccess";
 import { signSaasAccessToken, verifySaasAccessToken } from "./src/server/saasAccessToken";
 import { isAllowedUpload, uploadSingleWithHandling } from "./src/server/multerUpload";
 import { applySensitiveRateLimits, isRateLimitEnabled } from "./src/server/rateLimit";
+import { isSmtpConfigured } from "./src/server/smtpTransport";
 import { registerErrorHandlers } from "./src/server/errorHandler";
 import { applySecurityHeaders } from "./src/server/securityHeaders";
 import { applyCsrfProtection } from "./src/server/csrfProtection";
@@ -424,6 +425,7 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         corsOrigin: Boolean(appEnv.http.corsOriginRaw),
         googleClientId: Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim()),
         rateLimitEnabled: isRateLimitEnabled(),
+        smtpConfigured: isSmtpConfigured(),
       },
     });
   });
