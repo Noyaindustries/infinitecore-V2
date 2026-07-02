@@ -4,7 +4,7 @@ import jwt from "jsonwebtoken";
 import { createHash, randomBytes, randomUUID } from "crypto";
 import { prisma } from "./prismaClient";
 import { appEnv, authUsesSecureCookies, getJwtSecret, resetAppBaseUrl } from "@/config/env";
-import { getSmtpTransport } from "@/server/smtpTransport";
+import { getSmtpTransport, smtpDeliveryErrorMessage } from "@/server/smtpTransport";
 import { sendStaffNotifyEmail } from "@/server/staffNotifyEmail";
 import { agentSessionLog } from "./src/debug/agentSessionLog";
 import { registerDataRoutes } from "./src/api/dataRoutes";
@@ -99,7 +99,7 @@ function loginVerificationCodeForEmail(email: string): string {
 async function sendLoginVerificationEmail(input: { to: string; code: string }) {
   const transporter = getSmtpTransport();
   if (!transporter) {
-    return { delivered: false as const, previewCode: input.code };
+    return { delivered: false as const, reason: "not_configured" as const, previewCode: input.code };
   }
   try {
     await transporter.sendMail({
@@ -121,7 +121,7 @@ async function sendLoginVerificationEmail(input: { to: string; code: string }) {
     return { delivered: true as const };
   } catch (error) {
     console.error("[smtp] envoi code connexion:", error);
-    return { delivered: false as const, previewCode: input.code };
+    return { delivered: false as const, reason: "send_failed" as const, previewCode: input.code };
   }
 }
 
@@ -1150,7 +1150,8 @@ export function registerMongoApi(app: Express) {
         });
         return res.status(503).json({
           success: false,
-          error: "Service email indisponible. Configurez SMTP avant la vérification par code.",
+          code: mailResult.reason === "send_failed" ? "SMTP_SEND_FAILED" : "SMTP_NOT_CONFIGURED",
+          error: smtpDeliveryErrorMessage(mailResult.reason ?? "not_configured"),
         });
       }
 
@@ -1642,8 +1643,8 @@ export function registerMongoApi(app: Express) {
         });
         return res.status(503).json({
           success: false,
-          error:
-            "Service email indisponible. Vérifiez SMTP_HOST, SMTP_USER et SMTP_PASS (Vercel → Environment Variables).",
+          code: mailResult.reason === "send_failed" ? "SMTP_SEND_FAILED" : "SMTP_NOT_CONFIGURED",
+          error: smtpDeliveryErrorMessage(mailResult.reason ?? "not_configured"),
         });
       }
 
@@ -2166,7 +2167,8 @@ export function registerMongoApi(app: Express) {
         });
         return res.status(503).json({
           success: false,
-          error: "Service email indisponible. Configurez SMTP avant la vérification par code.",
+          code: mailResult.reason === "send_failed" ? "SMTP_SEND_FAILED" : "SMTP_NOT_CONFIGURED",
+          error: smtpDeliveryErrorMessage(mailResult.reason ?? "not_configured"),
         });
       }
 

@@ -5,7 +5,7 @@ import {
 } from "@/config/corsPolicy";
 import { formatProductionSecretsErrors, validateProductionSecrets } from "@/config/secretPolicy";
 import { isRateLimitEnabled } from "@/server/rateLimit";
-import { isSmtpConfigured } from "@/server/smtpTransport";
+import { getSmtpEnvDiagnostic } from "@/server/smtpTransport";
 
 export type ProductionConfigFlags = {
   databaseUrl: boolean;
@@ -17,6 +17,10 @@ export type ProductionConfigFlags = {
   saasBridgeApiKey: boolean;
   rateLimitEnabled: boolean;
   smtpConfigured: boolean;
+  smtpHostSet: boolean;
+  smtpUserSet: boolean;
+  smtpPassSet: boolean;
+  smtpPassLength: number;
 };
 
 export type ProductionConfigCheckResult = {
@@ -28,6 +32,7 @@ export type ProductionConfigCheckResult = {
 
 /** Vérifie la config prod sans démarrer Express (diagnostic Vercel). */
 export function runProductionConfigCheck(): ProductionConfigCheckResult {
+  const smtpDiag = getSmtpEnvDiagnostic();
   const config: ProductionConfigFlags = {
     databaseUrl: Boolean(appEnv.database.url),
     nextAuthSecret: Boolean(process.env.NEXTAUTH_SECRET?.trim() || process.env.JWT_SECRET?.trim()),
@@ -37,7 +42,11 @@ export function runProductionConfigCheck(): ProductionConfigCheckResult {
     googleClientId: Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID?.trim()),
     saasBridgeApiKey: Boolean(process.env.SAAS_BRIDGE_API_KEY?.trim()),
     rateLimitEnabled: isRateLimitEnabled(),
-    smtpConfigured: isSmtpConfigured(),
+    smtpConfigured: smtpDiag.configured,
+    smtpHostSet: smtpDiag.hostSet,
+    smtpUserSet: smtpDiag.userSet,
+    smtpPassSet: smtpDiag.passSet,
+    smtpPassLength: smtpDiag.passLength,
   };
 
   const errors: string[] = [];
