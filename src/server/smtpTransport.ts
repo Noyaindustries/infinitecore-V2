@@ -58,7 +58,7 @@ export function getSmtpTransport(): Transporter | null {
 
 export type SmtpVerifyResult =
   | { ok: true }
-  | { ok: false; code: "not_configured" | "verify_failed"; message: string };
+  | { ok: false; code: "not_configured" | "verify_failed"; message: string; smtpCode?: string; smtpResponseCode?: number };
 
 /** Teste la connexion SMTP (sans envoyer d’e-mail). */
 export async function verifySmtpConnection(): Promise<SmtpVerifyResult> {
@@ -83,12 +83,20 @@ export async function verifySmtpConnection(): Promise<SmtpVerifyResult> {
     return { ok: true };
   } catch (error) {
     const raw = error instanceof Error ? error.message : String(error);
-    const hint = /invalid login|535|authentication failed/i.test(raw)
-      ? "Authentification refusée : vérifiez SMTP_USER et SMTP_PASS (mot de passe d’application Gmail, 16 caractères sans espaces)."
+    const responseCode = (error as { responseCode?: number }).responseCode;
+    const code = (error as { code?: string }).code;
+    const hint = /invalid login|535|authentication failed|EAUTH/i.test(`${raw} ${code}`)
+      ? "Authentification refusée (Gmail 535) : SMTP_PASS invalide ou expiré. Régénérez un mot de passe d’application Google et mettez à jour Vercel + .env.local."
       : /timeout|ETIMEDOUT|ECONNECTION/i.test(raw)
         ? "Connexion impossible : vérifiez SMTP_HOST, SMTP_PORT et SMTP_SECURE (465 + true pour Gmail)."
         : raw;
-    return { ok: false, code: "verify_failed", message: hint };
+    return {
+      ok: false,
+      code: "verify_failed",
+      message: hint,
+      smtpCode: code,
+      smtpResponseCode: responseCode,
+    };
   }
 }
 

@@ -112,7 +112,11 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
         toast.success('Connexion réussie');
       } catch (err: unknown) {
         const code = err && typeof err === 'object' && 'code' in err ? String((err as { code?: string }).code) : '';
-        if (code === 'auth/popup-blocked') {
+        if (err instanceof ApiHttpError && err.status === 403) {
+          toast.error(err.message || 'Accès refusé.', { duration: 10_000 });
+        } else if (err instanceof ApiHttpError && err.status === 401) {
+          toast.error(err.message || 'Compte Google non reconnu.');
+        } else if (code === 'auth/popup-blocked') {
           toast.error('Le navigateur a bloqué la fenêtre Google. Autorisez les popups pour ce site.');
         } else if (code === 'auth/unauthorized-domain') {
           toast.error('Ce domaine n’est pas autorisé pour la connexion. Contactez l’administrateur.');

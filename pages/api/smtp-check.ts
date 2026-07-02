@@ -12,6 +12,13 @@ export default async function smtpCheck(_req: NextApiRequest, res: NextApiRespon
     ok: verify.ok,
     code: verify.ok ? "SMTP_OK" : verify.code === "not_configured" ? "SMTP_NOT_CONFIGURED" : "SMTP_VERIFY_FAILED",
     env,
-    verify: verify.ok ? { ok: true } : { ok: false, message: verify.message },
+    verify: verify.ok
+      ? { ok: true }
+      : {
+          ok: false,
+          message: verify.message,
+          smtpCode: verify.smtpCode,
+          smtpResponseCode: verify.smtpResponseCode,
+        },
   });
 }

@@ -19,6 +19,7 @@
     "validate:env": "tsx --env-file=.env --env-file=.env.local scripts/validateEnv.ts",
     "verify:git-env": "node scripts/verifyGitEnvHistory.mjs",
     "test:padde-webhook": "node scripts/testPaddeWebhook.mjs",
+    "test:smtp": "tsx --env-file=.env --env-file=.env.local scripts/testSmtpConnection.ts",
     "test:noya-recrutement-webhook": "node --env-file=.env.local scripts/testNoyaRecrutementWebhook.mjs",
     "diagnose:padde": "node scripts/diagnosePadde.mjs",
     "generate:app-covers": "node scripts/generateAppCoverSvgs.mjs",
