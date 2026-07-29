@@ -8,9 +8,11 @@ describe("Vercel Blob storage", () => {
     vi.unstubAllEnvs();
   });
 
-  it("app-catalog est public, le reste privé", () => {
+  it("app-catalog et branding sont publics, le reste privé", () => {
     expect(blobFolderIsPublic("app-catalog")).toBe(true);
     expect(blobFolderIsPublic("app-catalog/erp-multi-ecole")).toBe(true);
+    expect(blobFolderIsPublic("branding")).toBe(true);
+    expect(blobFolderIsPublic("branding/logo.png")).toBe(true);
     expect(blobFolderIsPublic("chats/usr_123")).toBe(false);
     expect(blobFolderIsPublic("misc")).toBe(false);
   });

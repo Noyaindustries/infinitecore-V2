@@ -207,7 +207,8 @@ describe('tarifs licence / abonnement', () => {
   it('conserve le prix licence existant quand on réactive', () => {
     const withoutLicense = setLicensePricingEnabled(base, false);
     const custom = setLicensePricingEnabled(withoutLicense, true, 2_500_000);
-    expect(custom.pricing).toHaveLength(2);
+    expect(custom.pricing.some((p) => p.type === 'subscription')).toBe(true);
+    expect(custom.pricing.filter((p) => p.type === 'license')).toHaveLength(1);
     const license = custom.pricing.find((p) => p.type === 'license');
     expect(license?.type).toBe('license');
     if (license?.type === 'license') {

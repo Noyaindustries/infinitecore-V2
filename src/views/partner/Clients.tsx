@@ -8,7 +8,7 @@ import { notificationService } from '../../services/notificationService';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
-import { collection, getDocs, onSnapshot, query, where } from '@/lib/mongoFirestore';
+import { collection, onSnapshot, query, where } from '@/lib/mongoFirestore';
 import { db } from '@/lib/clientSdk';
 
 type ReferredSignup = {
@@ -215,7 +215,9 @@ export default function PartnerClients() {
       setReferredSignups([]);
       return;
     }
-    const unsub = onSnapshot(collection(db, 'users'), (snapshot) => {
+    const unsub = onSnapshot(
+      query(collection(db, 'users'), where('referredByPartnerId', '==', partnerUid)),
+      (snapshot) => {
       const referralKeys = new Set<string>([
         referralCode,
         normalizePartnerCode(String(userData?.referralCode || '')),
@@ -279,51 +281,21 @@ export default function PartnerClients() {
       });
 
       const notificationTitle = 'Nouveau lead partenaire';
-      const notificationMessage = `${partnerName} a soumis un contact : ${form.firstName.trim()} ${form.lastName.trim()} (${form.companyName.trim()}, ${form.city.trim()}) — Secteur: ${form.sector} — Taille: ${form.employeesRange} — Urgence: ${form.urgency} — WhatsApp: ${form.whatsapp.trim()}${form.email.trim() ? ` — Email: ${form.email.trim()}` : ''}${form.companyDescription.trim() ? ` — Description: ${form.companyDescription.trim()}` : ''}`;
       const notificationMetadata = { partnerId: partnerUid };
 
-      // Diffuse au Commando/Admin pour que les formulaires partenaires arrivent bien dans leur espace.
+      // Le lead est visible côté Admin/Commando via partnerId — pas d’énumération de tous les users.
       let relayToOtherSpacesOk = true;
       try {
-        const usersSnap = await getDocs(collection(db, 'users'));
-        const recipients = new Set<string>();
-
-        for (const d of usersSnap.docs) {
-          const data = d.data() as { uid?: string; role?: string };
-          const role = String(data.role || '').toLowerCase();
-          if (role === 'commando' || role === 'admin') {
-            recipients.add(data.uid || d.id);
-          }
-        }
-
-        if (recipients.size > 0) {
-          await Promise.all(
-            Array.from(recipients).map((recipientId) =>
-              notificationService.createNotification(
-                recipientId,
-                notificationTitle,
-                notificationMessage,
-                'order',
-                notificationMetadata
-              )
-            )
-          );
-        } else {
-          await notificationService.createNotification(
-            'admin_general',
-            notificationTitle,
-            notificationMessage,
-            'order',
-            notificationMetadata
-          );
-        }
-
-        // Pas d'écriture dans `tasks` ici : le rôle partner n'y est pas autorisé.
-        // Le pipeline Commando reçoit déjà ces leads via la collection `leads`
-        // et les notifications envoyées ci-dessus.
+        await notificationService.createNotification(
+          partnerUid,
+          notificationTitle,
+          `Lead enregistré et transmis à l'équipe : ${form.firstName.trim()} ${form.lastName.trim()}`,
+          'order',
+          notificationMetadata
+        );
       } catch (notifyError) {
         relayToOtherSpacesOk = false;
-        console.error('[PartnerClients] notify commando/admin failed:', notifyError);
+        console.error('[PartnerClients] notify partenaire failed:', notifyError);
       }
 
       if (relayToOtherSpacesOk) {

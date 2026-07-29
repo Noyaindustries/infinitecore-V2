@@ -18,7 +18,7 @@ Ce document décrit où vivent les secrets, comment les générer, les valider e
 | `DATABASE_URL` | MongoDB Atlas | Lors d’un changement de mot de passe DB ou cluster |
 | `NEXTAUTH_SECRET` / `JWT_SECRET` | Signature JWT sessions | Tous les 90–180 jours ou après incident |
 | `PADDE_WEBHOOK_SECRET` | HMAC webhooks PADDE-CI | Tous les 6–12 mois ; synchroniser avec padde-ci.com |
-| `NOYA_RECRUTEMENT_WEBHOOK_SECRET` | Webhooks Noya | Idem |
+| `NOYA_RECRUTEMENT_WEBHOOK_SECRET` | Webhooks Noya (obligatoire en prod) | Idem |
 | `SAAS_BRIDGE_API_KEY` | Bridge apps SaaS (optionnel) | Tous les 6–12 mois |
 | `STRIPE_SECRET_KEY` | API Stripe | Rolling keys dans le Dashboard Stripe |
 | `STRIPE_WEBHOOK_SECRET` | Signature webhooks Stripe | À chaque endpoint webhook recréé |

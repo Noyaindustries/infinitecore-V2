@@ -108,6 +108,16 @@ function monthly(price: number): AppSubscriptionPricing {
   };
 }
 
+/** Annuel = 12 × mensuel × 0,8 (−20 %), montant total facturé une fois / an. */
+function yearlyFromMonthly(monthlyPrice: number): AppSubscriptionPricing {
+  return {
+    type: 'subscription',
+    price: Math.round(monthlyPrice * 0.8 * 12),
+    billingCycle: 'year',
+    label: 'Abonnement annuel (SaaS Infinite Core, −20 %)',
+  };
+}
+
 /** `durationDays: 0` = licence à vie (sans date d'expiration). */
 function lifetimeLicense(price: number): AppLicensePricing {
   return { type: 'license', price, durationDays: 0, label: 'Licence à vie (auto-hébergée)' };
@@ -190,7 +200,7 @@ function app(
     deliveryLabel,
     imageUrl: `/apps/${id}.svg`,
     onlineCheckout: true,
-    pricing: [lifetimeLicense(licensePrice), monthly(monthlyPrice)],
+    pricing: [lifetimeLicense(licensePrice), monthly(monthlyPrice), yearlyFromMonthly(monthlyPrice)],
   };
 }
 
@@ -292,7 +302,7 @@ export function createEmptyAppCatalogEntry(): AppCatalogEntry {
     deliveryLabel: '5-7 jours',
     imageUrl: '',
     onlineCheckout: true,
-    pricing: [lifetimeLicense(100_000), monthly(10_000)],
+    pricing: [lifetimeLicense(100_000), monthly(10_000), yearlyFromMonthly(10_000)],
     galleryImages: [],
     advantages: [],
     features: [],

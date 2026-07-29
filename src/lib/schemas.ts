@@ -45,6 +45,12 @@ export const LicenseCheckoutSchema = z.object({
   note: optionalNote,
 });
 
+export const TRIAL_DURATION_DAYS = 14;
+
+export const StartTrialSchema = z.object({
+  appId: z.string().min(1),
+});
+
 /** Clés = champs formulaire (string) ; valeurs libres — Zod 4 : `record` exige (clé, valeur). */
 export const PaddeAuditPayloadSchema = z.record(z.string(), z.unknown()).and(
   z.object({

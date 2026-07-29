@@ -45,6 +45,7 @@ export default function SuperAdminLayout() {
   const { user, userData } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
 
   useEffect(() => {
     if (user) {
@@ -56,8 +57,6 @@ export default function SuperAdminLayout() {
   }, [user]);
 
   const unreadCount = notifications.filter(n => !n.read).length;
-
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
 
   useEffect(() => {
     localStorage.setItem('theme', theme);

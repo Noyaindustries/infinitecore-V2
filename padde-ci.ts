@@ -9,6 +9,11 @@
 import type { Handler } from "@netlify/functions";
 import { randomUUID } from "node:crypto";
 import { appEnv } from "./src/config/env";
+import {
+  WEBHOOK_SIGNATURE_HEADER,
+  computeWebhookHmacSha256,
+  formatWebhookSignature,
+} from "./src/server/webhookHmac";
 
 const ALLOWED_ORIGINS = ["https://padde-ci.com", "https://www.padde-ci.com"];
 
@@ -37,7 +42,7 @@ export const handler: Handler = async (event) => {
 
   const headers: Record<string, string> = {
     "Access-Control-Allow-Origin": corsOrigin,
-    "Access-Control-Allow-Headers": "Content-Type, X-Webhook-Secret",
+    "Access-Control-Allow-Headers": "Content-Type, X-Webhook-Secret, X-Webhook-Signature",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   };
 
@@ -98,13 +103,19 @@ export const handler: Handler = async (event) => {
   const forwardHeaders: Record<string, string> = {
     "Content-Type": "application/json",
   };
-  if (secret) forwardHeaders["X-Webhook-Secret"] = secret;
+  if (secret) {
+    forwardHeaders["X-Webhook-Secret"] = secret;
+  }
 
   try {
     const target = `${base}/api/webhooks/padde-ci`;
 
     if (event.httpMethod === "POST") {
       const body = event.body || "{}";
+      if (secret) {
+        const digest = computeWebhookHmacSha256(secret, body);
+        forwardHeaders[WEBHOOK_SIGNATURE_HEADER] = formatWebhookSignature(digest);
+      }
       const res = await fetch(target, {
         method: "POST",
         headers: forwardHeaders,
@@ -115,7 +126,10 @@ export const handler: Handler = async (event) => {
     }
 
     if (event.httpMethod === "GET") {
-      const res = await fetch(target, { method: "GET", headers: secret ? { "X-Webhook-Secret": secret } : {} });
+      const res = await fetch(target, {
+        method: "GET",
+        headers: secret ? { "X-Webhook-Secret": secret } : {},
+      });
       const text = await res.text();
       let audits: unknown = [];
       try {

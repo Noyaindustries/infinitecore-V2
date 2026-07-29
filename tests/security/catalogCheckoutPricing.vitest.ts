@@ -29,8 +29,20 @@ describe("resolveCatalogSubscriptionCheckout", () => {
     }
   });
 
-  it("rejette un montant catalogue absent pour le cycle", () => {
+  it("dérive l’annuel (−20 %) depuis le mensuel si year absent du catalogue", () => {
     const result = resolveCatalogSubscriptionCheckout([sampleApp], "erp-multi-ecole", "year");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.unitAmount).toBe(Math.round(50_000 * 0.8 * 12));
+    }
+  });
+
+  it("rejette si aucun abonnement mensuel ni annuel n’existe", () => {
+    const licenseOnly: AppCatalogEntry = {
+      ...sampleApp,
+      pricing: [{ type: "license", price: 2_500_000, durationDays: 0 }],
+    };
+    const result = resolveCatalogSubscriptionCheckout([licenseOnly], "erp-multi-ecole", "year");
     expect(result.ok).toBe(false);
   });
 
@@ -52,6 +64,18 @@ describe("resolveCatalogLicenseCheckout", () => {
       expect(result.unitAmount).toBe(2_500_000);
       expect(result.licenseDurationDays).toBe(0);
     }
+  });
+
+  it("rejette une durée absente du catalogue (pas de fallback)", () => {
+    const multi: AppCatalogEntry = {
+      ...sampleApp,
+      pricing: [
+        { type: "license", price: 100_000, durationDays: 30 },
+        { type: "license", price: 2_500_000, durationDays: 0 },
+      ],
+    };
+    const result = resolveCatalogLicenseCheckout([multi], "erp-multi-ecole", 90);
+    expect(result.ok).toBe(false);
   });
 
   it("rejette une application inconnue", () => {

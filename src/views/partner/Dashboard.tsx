@@ -16,7 +16,7 @@ import { format } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { useAuth } from '../../components/AuthProvider';
 import { Lead, LeadStatus, leadService } from '../../services/leadService';
-import { collection, onSnapshot } from '@/lib/mongoFirestore';
+import { collection, onSnapshot, query, where } from '@/lib/mongoFirestore';
 import { db } from '@/lib/clientSdk';
 
 const STATUS_LABELS: Record<LeadStatus, string> = {
@@ -108,7 +108,9 @@ export default function PartnerDashboard() {
       return;
     }
 
-    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'users'), where('referredByPartnerId', '==', partnerUid)),
+      (snapshot) => {
       const referralKeys = new Set<string>([
         referralCode,
         normalizePartnerCode(String(userData?.referralCode || '')),

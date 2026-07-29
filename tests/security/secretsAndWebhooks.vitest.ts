@@ -51,7 +51,7 @@ describe("validateProductionSecrets", () => {
     expect(report.checks.some((c) => c.name === "DATABASE_URL" && !c.ok)).toBe(true);
   });
 
-  it("avertit si SAAS_BRIDGE absent sans bloquer les autres checks", () => {
+  it("exige NOYA_RECRUTEMENT_WEBHOOK_SECRET en production", () => {
     const report = validateProductionSecrets({
       isProduction: true,
       databaseUrl: "mongodb://localhost:27017/test",
@@ -62,6 +62,24 @@ describe("validateProductionSecrets", () => {
       stripeSecretKey: "",
       stripeWebhookSecret: "",
     });
+    expect(report.ok).toBe(false);
+    expect(report.checks.some((c) => c.name === "NOYA_RECRUTEMENT_WEBHOOK_SECRET" && !c.ok)).toBe(
+      true
+    );
+  });
+
+  it("avertit si SAAS_BRIDGE absent sans bloquer les autres checks", () => {
+    const report = validateProductionSecrets({
+      isProduction: true,
+      databaseUrl: "mongodb://localhost:27017/test",
+      jwtSecret: "a".repeat(32),
+      paddeWebhookSecret: "b".repeat(32),
+      noyaWebhookSecret: "c".repeat(32),
+      saasBridgeApiKey: "",
+      stripeSecretKey: "",
+      stripeWebhookSecret: "",
+    });
+    expect(report.ok).toBe(true);
     expect(report.checks.some((c) => c.name === "SAAS_BRIDGE_API_KEY")).toBe(false);
   });
 });

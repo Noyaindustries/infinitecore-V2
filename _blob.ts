@@ -10,10 +10,15 @@ export function hasBlobConfig(): boolean {
   return Boolean(readBlobToken());
 }
 
-/** Visuels catalogue boutique : URL publique directe (CDN Vercel). */
+/** Visuels catalogue / branding : URL publique directe (CDN Vercel). */
 export function blobFolderIsPublic(folder: string): boolean {
   const normalized = folder.trim().toLowerCase();
-  return normalized === "app-catalog" || normalized.startsWith("app-catalog/");
+  return (
+    normalized === "app-catalog" ||
+    normalized.startsWith("app-catalog/") ||
+    normalized === "branding" ||
+    normalized.startsWith("branding/")
+  );
 }
 
 function blobToken(): string {

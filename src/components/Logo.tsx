@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
-
-const LOGO_SRC = '/infinite-core-logo.png';
+import React, { useState, useEffect } from 'react';
+import { useBranding, DEFAULT_LOGO } from './BrandingProvider';
 
 interface LogoProps {
   className?: string;
@@ -79,7 +78,14 @@ export default function Logo({
   blendSurface,
   matchMarketingNav = false,
 }: LogoProps) {
+  const { logoUrl } = useBranding();
+  const logoSrc = logoUrl || DEFAULT_LOGO;
   const [marketingImgFailed, setMarketingImgFailed] = useState(false);
+
+  useEffect(() => {
+    setMarketingImgFailed(false);
+  }, [logoSrc]);
+
   const sizeClass = className.trim() || 'h-14 sm:h-[4.5rem] md:h-[5rem]';
   const blend = Boolean(blendSurface) && !matchMarketingNav;
   const imgBase =
@@ -98,7 +104,7 @@ export default function Logo({
       <MarkSvgFallback monochrome />
     ) : (
       <img
-        src={LOGO_SRC}
+        src={logoSrc}
         alt="Infinite Core"
         className="pointer-events-none block h-full w-auto max-h-full max-w-full object-contain object-left opacity-100"
         onError={() => setMarketingImgFailed(true)}
@@ -107,7 +113,7 @@ export default function Logo({
   ) : (
     <>
       <img
-        src={LOGO_SRC}
+        src={logoSrc}
         alt="Infinite Core"
         className={imgClasses}
         onError={markFallback}

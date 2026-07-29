@@ -145,8 +145,64 @@ export default function ClientShop() {
     if (!preselectApp || !catalogApps.length || !auth.currentUser) return;
     const mod = coreModules.find((m) => m.id === preselectApp);
     if (!mod) return;
-    handleOrderClick(mod);
+
+    const pricingIntent = params.get('pricing');
+    const billingIntent = params.get('billing');
+    const wantTrial = params.get('trial') === '1';
+
+    const pickPricing = (): AppPricing | undefined => {
+      const list = mod.pricing || [];
+      if (pricingIntent === 'license') {
+        return list.find((p) => p.type === 'license');
+      }
+      if (pricingIntent === 'subscription') {
+        const cycle = billingIntent === 'year' ? 'year' : 'month';
+        return (
+          list.find((p) => p.type === 'subscription' && p.billingCycle === cycle) ||
+          list.find((p) => p.type === 'subscription')
+        );
+      }
+      return list[0];
+    };
+
+    if (wantTrial) {
+      void (async () => {
+        try {
+          const payload = await apiRequest<{
+            success: boolean;
+            expiresAt?: string;
+            appName?: string;
+            error?: string;
+          }>('/api/licenses/start-trial', {
+            method: 'POST',
+            body: JSON.stringify({ appId: preselectApp }),
+          });
+          if (!payload.success) {
+            toast.error(payload.error || "Impossible de démarrer l'essai.");
+            handleOrderClick(mod, pickPricing());
+            return;
+          }
+          const until = payload.expiresAt
+            ? new Date(payload.expiresAt).toLocaleDateString('fr-FR')
+            : '';
+          toast.success(
+            `Essai 14 jours activé${payload.appName ? ` — ${payload.appName}` : ''}${until ? ` jusqu'au ${until}` : ''}.`
+          );
+          window.location.assign('/dashboard');
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Impossible de démarrer l'essai.";
+          toast.error(msg);
+          handleOrderClick(mod, pickPricing());
+        }
+      })();
+    } else {
+      handleOrderClick(mod, pickPricing());
+    }
+
     params.delete('app');
+    params.delete('pricing');
+    params.delete('billing');
+    params.delete('trial');
     const next = params.toString();
     window.history.replaceState(
       {},
@@ -653,7 +709,11 @@ export default function ClientShop() {
                             </div>
                             <span className="text-sm font-bold text-noya-orange">
                               {formatFcfa(option.price)}
-                              {option.type === 'subscription' ? '/mois' : ''}
+                              {option.type === 'subscription'
+                                ? option.billingCycle === 'year'
+                                  ? '/an'
+                                  : '/mois'
+                                : ''}
                             </span>
                           </label>
                         ))}

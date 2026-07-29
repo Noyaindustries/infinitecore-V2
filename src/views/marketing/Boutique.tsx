@@ -1,284 +1,708 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import {
-  ArrowRight,
-  Cloud,
-  ExternalLink,
-  Search,
-  Server,
-  ShoppingCart,
-  Sparkles,
-  Zap,
-  Building2,
-} from 'lucide-react';
-import { useAppCatalog } from '../../hooks/useAppCatalog';
 import { useAuth } from '../../components/AuthProvider';
-import AppCatalogBoutiqueCard from '../../components/AppCatalogBoutiqueCard';
-import { PADDE_CI_FREE_AUDITS } from '../../data/paddeCiFreeAudits';
-import { openPaddeCiAuditForm } from '../../utils/openPaddeCiAuditForm';
+import { useAppCatalog } from '../../hooks/useAppCatalog';
+import { resolveBoutiqueCta } from '../../lib/boutiqueCheckout';
+import {
+  BOUTIQUE_FILTERS,
+  BOUTIQUE_SORT_OPTIONS,
+  buildBoutiqueProducts,
+  formatBoutiqueFcfa,
+  sortBoutiqueProducts,
+  type BoutiqueProduct,
+  type BoutiqueSector,
+  type BoutiqueSort,
+} from '../../data/boutiqueProducts';
+import './Boutique.css';
 
-type FilterId = 'all' | 'saas' | 'license';
+type TabId = 'apercu' | 'features' | 'pricing';
 
-const FILTERS: { id: FilterId; label: string }[] = [
-  { id: 'all', label: 'Toutes' },
-  { id: 'saas', label: 'Abonnement SaaS' },
-  { id: 'license', label: 'Licence à vie' },
-];
+const CONTACT_TEL = 'tel:+2250777225185';
+const CONTACT_DISPLAY = '+225 07 77 22 51 85';
 
-const AUDIT_ICONS = {
-  'audit-rapide': Zap,
-  'audit-business': Search,
-  'audit-institutionnel': Building2,
-} as const;
-
-export default function Boutique() {
-  const { apps, loading } = useAppCatalog();
-  const { user, userData } = useAuth();
-  const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<FilterId>('all');
-
-  const role = typeof userData?.role === 'string' ? userData.role : user?.role;
-  const isClient = Boolean(user && role === 'client');
-  const buyTo = (appId: string) =>
-    isClient ? `/dashboard/boutique?app=${appId}` : '/signup';
-  const buyLabel = isClient ? 'Acheter' : 'Créer un compte';
-
-  const purchasable = useMemo(
-    () => apps.filter((a) => a.onlineCheckout && a.pricing.length > 0),
-    [apps],
+function whatsappHref(product: BoutiqueProduct): string | null {
+  const raw = product.whatsappNumber?.replace(/\D/g, '');
+  if (!raw) return null;
+  const text = encodeURIComponent(
+    product.whatsappMessage || `Bonjour, je souhaite une démo de ${product.n}.`
   );
+  return `https://wa.me/${raw}?text=${text}`;
+}
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return purchasable.filter((app) => {
-      const hasSub = app.pricing.some((p) => p.type === 'subscription');
-      const hasLicense = app.pricing.some((p) => p.type === 'license');
-      if (filter === 'saas' && !hasSub) return false;
-      if (filter === 'license' && !hasLicense) return false;
-      if (!q) return true;
-      return (
-        app.title.toLowerCase().includes(q) ||
-        app.desc.toLowerCase().includes(q) ||
-        app.id.toLowerCase().includes(q)
-      );
-    });
-  }, [purchasable, query, filter]);
+function demoHref(product: BoutiqueProduct): string {
+  return product.demoUrl || whatsappHref(product) || CONTACT_TEL;
+}
 
+function stars(rating: number): string {
+  let s = '';
+  for (let i = 0; i < 5; i++) {
+    s += i < Math.floor(rating) ? '★' : '☆';
+  }
+  return s;
+}
+
+function stopCardToggle(e: MouseEvent) {
+  e.stopPropagation();
+}
+
+function DashPreview({ product }: { product: BoutiqueProduct }) {
+  const { dash, c } = product;
+  const bmax = Math.max(...dash.bars, 1);
   return (
-    <div className="relative z-10 pb-24">
-      {/* Hero */}
-      <section className="border-b border-white/5 bg-[#06080D] py-14 md:py-20">
-        <div className="container mx-auto max-w-[1200px] px-6">
-          <span className="mb-4 inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] text-[#FFB332] before:mr-3 before:h-px before:w-6 before:bg-[#FFB332] after:ml-3 after:h-px after:w-6 after:bg-[#FFB332]">
-            <ShoppingCart className="h-3.5 w-3.5" aria-hidden />
-            Boutique officielle
-          </span>
-          <h1 className="max-w-3xl text-3xl font-black tracking-tight text-[#F2F4F8] md:text-5xl">
-            Applications métier — licences &amp; abonnements
-          </h1>
-          <p className="mt-4 max-w-2xl text-base leading-relaxed text-[#8D98AA] md:text-lg">
-            Choisissez votre mode : <strong className="text-[#C5CDD9]">licence à vie</strong> (vous hébergez) ou{' '}
-            <strong className="text-[#C5CDD9]">abonnement SaaS</strong> (hébergé par Infinite Core). Paiement en FCFA,
-            activation rapide.
-          </p>
-
-          <div className="mt-8 flex max-w-xl items-center gap-3 rounded-2xl border border-white/10 bg-[#0D1320] px-4 py-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-            <Search className="h-5 w-5 shrink-0 text-[#8D98AA]" aria-hidden />
-            <input
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Rechercher une application (ERP, caisse, clinique…)"
-              className="w-full bg-transparent text-sm text-[#F2F4F8] outline-none placeholder:text-[#6B7280]"
-              aria-label="Rechercher dans la boutique"
-            />
-          </div>
-
-          <div className="mt-4 flex flex-wrap gap-2">
-            {FILTERS.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => setFilter(f.id)}
-                className={`rounded-full px-4 py-1.5 text-xs font-bold transition-colors ${
-                  filter === f.id
-                    ? 'bg-[#FFB332] text-[#06080D]'
-                    : 'border border-white/10 bg-white/5 text-[#8D98AA] hover:text-[#F2F4F8]'
-                }`}
-              >
-                {f.label}
-              </button>
+    <div className="dash-preview">
+      <div className="dp-bar">
+        <div className="dp-dot" style={{ background: '#E05252' }} />
+        <div className="dp-dot" style={{ background: '#E8961E' }} />
+        <div className="dp-dot" style={{ background: '#2EB464' }} />
+        <div className="dp-title">{dash.title}</div>
+      </div>
+      <div className="dp-body">
+        <div className="dp-stats">
+          {dash.stats.map((s) => (
+            <div key={s.l} className="dp-stat">
+              <div className="dp-stat-v">{s.v}</div>
+              <div className="dp-stat-l">{s.l}</div>
+            </div>
+          ))}
+        </div>
+        <div className="dp-chart">
+          <div className="dp-chart-lbl">Activité — 12 dernières périodes</div>
+          <div className="chart-bars">
+            {dash.bars.map((b, i) => (
+              <div
+                key={`${dash.title}-bar-${i}`}
+                className="bar"
+                style={{ background: c, height: `${Math.round((b / bmax) * 44)}px` }}
+              />
             ))}
           </div>
         </div>
-      </section>
-
-      {/* Catalogue */}
-      <section className="py-12 md:py-16">
-        <div className="container mx-auto max-w-[1200px] px-6">
-          {loading ? (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {[1, 2, 3, 4, 5, 6].map((i) => (
-                <div key={i} className="h-72 animate-pulse rounded-2xl bg-white/5" aria-hidden />
-              ))}
+        <div className="dp-list">
+          {dash.rows.map((r) => (
+            <div key={r.n} className="dp-row">
+              <span className="dp-row-n">{r.n}</span>
+              <span className="dp-row-v" style={{ color: r.c }}>
+                {r.v}
+              </span>
             </div>
-          ) : filtered.length === 0 ? (
-            <div className="rounded-2xl border border-white/10 bg-[#0D1320] px-6 py-16 text-center">
-              <p className="text-lg font-semibold text-[#F2F4F8]">Aucune application trouvée</p>
-              <p className="mt-2 text-sm text-[#8D98AA]">Modifiez votre recherche ou réinitialisez les filtres.</p>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OverviewTab({ product }: { product: BoutiqueProduct }) {
+  return (
+    <div className="ov-grid">
+      <DashPreview product={product} />
+      <div className="ov-right">
+        <p className="ov-desc">{product.desc}</p>
+        <div className="incl-title">Ce qui est inclus</div>
+        <div className="incl-grid">
+          {product.incl.map(([ic, label]) => (
+            <div key={label} className="incl-item">
+              <span className="incl-ic">{ic}</span>
+              {label}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FeaturesTab({ product }: { product: BoutiqueProduct }) {
+  return (
+    <div className="mod-grid">
+      {product.modules.map((m) => (
+        <div key={m.n} className="mod">
+          <div className="mod-name">
+            <span className="mod-ic">{m.ic}</span>
+            {m.n}
+          </div>
+          <div className="mod-feats">
+            {m.fs.map((f) => (
+              <div key={f} className="mf">
+                <div className="mf-dot" style={{ background: product.c }} />
+                {f}
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function PricingTab({
+  product,
+  annual,
+  onAnnualChange,
+  isClient,
+}: {
+  product: BoutiqueProduct;
+  annual: boolean;
+  onAnnualChange: (v: boolean) => void;
+  isClient: boolean;
+}) {
+  const hasSub = product.monthlyPrice != null;
+  const displayMonthly =
+    annual && product.annualMonthlyPrice != null
+      ? product.annualMonthlyPrice
+      : product.monthlyPrice;
+  const annualTotal = product.annualTotalPrice;
+  const subCta = resolveBoutiqueCta(isClient, {
+    appId: product.id,
+    pricing: 'subscription',
+    billing: annual ? 'year' : 'month',
+  });
+  const licenseCta = resolveBoutiqueCta(isClient, {
+    appId: product.id,
+    pricing: 'license',
+  });
+  const trialCta = resolveBoutiqueCta(isClient, {
+    appId: product.id,
+    pricing: 'subscription',
+    billing: 'month',
+    trial: true,
+  });
+
+  return (
+    <>
+      {hasSub ? (
+        <>
+          <div className="lic-toggle">
+            <span className="lic-lbl">Abonnement SaaS :</span>
+            <div className="lic-t">
               <button
                 type="button"
-                onClick={() => {
-                  setQuery('');
-                  setFilter('all');
-                }}
-                className="mt-6 text-sm font-bold text-[#FFB332] hover:underline"
+                className={`lt${annual ? '' : ' on'}`}
+                onClick={() => onAnnualChange(false)}
               >
-                Réinitialiser
+                Mensuel
+              </button>
+              <button
+                type="button"
+                className={`lt${annual ? ' on' : ''}`}
+                onClick={() => onAnnualChange(true)}
+              >
+                Annuel
               </button>
             </div>
-          ) : (
-            <>
-              <p className="mb-6 text-sm text-[#8D98AA]">
-                {filtered.length} application{filtered.length !== 1 ? 's' : ''} disponible
-                {filtered.length !== 1 ? 's' : ''}
-              </p>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {filtered.map((app) => (
-                  <AppCatalogBoutiqueCard
-                    key={app.id}
-                    app={app}
-                    buyTo={buyTo(app.id)}
-                    buyLabel={buyLabel}
-                  />
+            {annual ? <span className="ann-badge">−20% sur l&apos;annuel</span> : null}
+          </div>
+
+          <div className="plans" style={{ gridTemplateColumns: '1fr' }}>
+            <div className="plan popular">
+              <div className="plan-pop-badge">Hébergé par Infinite Core</div>
+              <div className="plan-name">Abonnement SaaS</div>
+              <div className="plan-desc">Accès immédiat — rien à installer sur votre serveur</div>
+              {displayMonthly != null ? (
+                <div className="plan-price">
+                  <div className="plan-v">
+                    {formatBoutiqueFcfa(displayMonthly)}
+                    <span className="plan-fcfa"> FCFA</span>
+                  </div>
+                  <div className="plan-u">
+                    par mois
+                    {annual && annualTotal != null
+                      ? ` · ${formatBoutiqueFcfa(annualTotal)} FCFA / an`
+                      : ''}
+                  </div>
+                </div>
+              ) : null}
+              <div className="plan-divider" />
+              <div className="plan-feats">
+                {[
+                  'Hébergement et mises à jour inclus',
+                  'Accès multi-appareils',
+                  'Support en français',
+                  'Paiement sécurisé (Stripe) · Mobile Money via l’équipe',
+                ].map((t) => (
+                  <div key={t} className="pf">
+                    <span className="pf-ok">✓</span>
+                    <span>{t}</span>
+                  </div>
                 ))}
               </div>
-            </>
-          )}
-        </div>
-      </section>
-
-      {/* Comment ça marche */}
-      <section className="border-t border-white/5 bg-[#06080D] py-12 md:py-16">
-        <div className="container mx-auto max-w-[1200px] px-6">
-          <h2 className="text-2xl font-black text-[#F2F4F8] md:text-3xl">Comment obtenir votre application</h2>
-          <div className="mt-8 grid gap-4 md:grid-cols-2">
-            <div className="rounded-2xl border border-[#6EA7EA]/25 bg-[#6EA7EA]/5 p-6">
-              <div className="mb-4 flex items-center gap-2 text-[#6EA7EA]">
-                <Server className="h-5 w-5" aria-hidden />
-                <h3 className="font-bold">Licence à vie — chez vous</h3>
-              </div>
-              <ol className="list-decimal space-y-2 pl-4 text-sm leading-relaxed text-[#8D98AA]">
-                <li>Créez votre compte et choisissez l&apos;application</li>
-                <li>Payez en ligne (Stripe) ou via la messagerie</li>
-                <li>Téléchargez le package ZIP et le guide d&apos;installation</li>
-                <li>Hébergez sur votre serveur ou cloud</li>
-              </ol>
-            </div>
-            <div className="rounded-2xl border border-[#FFB332]/25 bg-[#FFB332]/5 p-6">
-              <div className="mb-4 flex items-center gap-2 text-[#FFB332]">
-                <Cloud className="h-5 w-5" aria-hidden />
-                <h3 className="font-bold">Abonnement — SaaS en ligne</h3>
-              </div>
-              <ol className="list-decimal space-y-2 pl-4 text-sm leading-relaxed text-[#8D98AA]">
-                <li>Souscrivez depuis la boutique client</li>
-                <li>Accès immédiat à l&apos;URL SaaS (multi-tenant)</li>
-                <li>Pas d&apos;installation — Infinite Core héberge pour vous</li>
-                <li>Gérez le renouvellement depuis votre espace</li>
-              </ol>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Audits PADDE gratuits */}
-      <section className="border-t border-white/5 py-12 md:py-16">
-        <div className="container mx-auto max-w-[1200px] px-6">
-          <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-            <div>
-              <span className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.14em] text-[#FFB332]">
-                <Sparkles className="h-3.5 w-3.5" aria-hidden />
-                PADDE-CI · Gratuit
-              </span>
-              <h2 className="mt-2 text-2xl font-black text-[#F2F4F8]">Audits digitaux offerts</h2>
-              <p className="mt-2 max-w-xl text-sm text-[#8D98AA]">
-                Diagnostic gratuit avant d&apos;investir — réservé aux clients connectés.
-              </p>
-            </div>
-            {!isClient && (
-              <Link
-                to="/signup"
-                className="inline-flex items-center gap-2 text-sm font-bold text-[#6EA7EA] hover:gap-3"
-              >
-                Créer un compte pour demander
-                <ArrowRight className="h-4 w-4" aria-hidden />
-              </Link>
-            )}
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            {PADDE_CI_FREE_AUDITS.map((audit) => {
-              const Icon = AUDIT_ICONS[audit.id as keyof typeof AUDIT_ICONS];
-              return (
-                <div
-                  key={audit.id}
-                  className="flex flex-col rounded-2xl border border-white/8 bg-[#0D1320] p-5"
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <Link
+                  className="plan-btn primary"
+                  to={subCta}
+                  style={{ background: product.c, color: '#fff' }}
                 >
-                  <div className="mb-3 flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#FFB332]/12 text-[#FFB332]">
-                      <Icon className="h-5 w-5" aria-hidden />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-bold text-[#F2F4F8]">{audit.title}</h3>
-                      <p className="mt-1 text-[11px] font-semibold uppercase text-[#2BC673]">Gratuit</p>
-                    </div>
-                  </div>
-                  <p className="flex-1 text-xs leading-relaxed text-[#8D98AA]">{audit.desc}</p>
-                  <p className="mt-3 text-[11px] text-[#6B7280]">Délai : {audit.duration}</p>
-                  {isClient ? (
-                    <button
-                      type="button"
-                      onClick={() => openPaddeCiAuditForm(audit.formUrl)}
-                      className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#FFB332] px-3 py-2.5 text-xs font-bold text-[#06080D] transition hover:brightness-105"
-                    >
-                      Demander l&apos;audit
-                      <ExternalLink className="h-4 w-4" aria-hidden />
-                    </button>
-                  ) : (
-                    <Link
-                      to="/signup"
-                      className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 px-3 py-2.5 text-xs font-bold text-[#8D98AA] transition hover:border-[#FFB332]/40 hover:text-[#F2F4F8]"
-                    >
-                      Compte requis
-                    </Link>
-                  )}
-                </div>
-              );
-            })}
+                  {annual ? "S'abonner à l'année" : "S'abonner au mois"}
+                </Link>
+                <Link className="plan-btn ghost" to={trialCta}>
+                  Essai 14 jours gratuit
+                </Link>
+              </div>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      {product.licPrice != null ? (
+        <div className="lic-box">
+          <div>
+            <div className="lb-title">Licence à vie</div>
+            <p className="lb-desc">
+              Payez une seule fois et hébergez l&apos;application chez vous. Sans abonnement mensuel —
+              idéal si vous préférez un investissement unique et un contrôle total de
+              l&apos;infrastructure.
+            </p>
+            <div className="lb-incl">
+              <span className="lbi">À vie</span>
+              <span className="lbi">Auto-hébergée</span>
+              <span className="lbi">Package ZIP</span>
+              <span className="lbi">Sans abonnement</span>
+            </div>
+          </div>
+          <div className="lb-price">
+            <div className="lb-v">
+              {formatBoutiqueFcfa(product.licPrice)}
+              <span className="lb-fcfa"> FCFA</span>
+            </div>
+            <div className="lb-note">Paiement unique</div>
+            <Link className="lb-btn" to={licenseCta} style={{ background: product.c }}>
+              Acheter la licence
+            </Link>
+          </div>
+        </div>
+      ) : null}
+
+      {!hasSub && product.licPrice == null ? (
+        <div className="lic-box">
+          <div>
+            <div className="lb-title">Tarification sur mesure</div>
+            <p className="lb-desc">
+              Contactez-nous pour un devis adapté à votre organisation.
+            </p>
+          </div>
+          <div className="lb-price">
+            <a className="lb-btn" href={CONTACT_TEL} style={{ background: product.c }}>
+              Nous contacter
+            </a>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function ProductDetail({
+  product,
+  tab,
+  onTab,
+  annual,
+  onAnnualChange,
+  isClient,
+}: {
+  product: BoutiqueProduct;
+  tab: TabId;
+  onTab: (t: TabId) => void;
+  annual: boolean;
+  onAnnualChange: (v: boolean) => void;
+  isClient: boolean;
+}) {
+  const trialCta = resolveBoutiqueCta(isClient, {
+    appId: product.id,
+    pricing: 'subscription',
+    billing: 'month',
+    trial: true,
+  });
+  const demo = demoHref(product);
+
+  let content: ReactNode;
+  switch (tab) {
+    case 'apercu':
+      content = <OverviewTab product={product} />;
+      break;
+    case 'features':
+      content = <FeaturesTab product={product} />;
+      break;
+    case 'pricing':
+      content = (
+        <PricingTab
+          product={product}
+          annual={annual}
+          onAnnualChange={onAnnualChange}
+          isClient={isClient}
+        />
+      );
+      break;
+    default: {
+      const _exhaustive: never = tab;
+      content = _exhaustive;
+    }
+  }
+
+  return (
+    <div className="detail" onClick={stopCardToggle} onKeyDown={(e) => e.stopPropagation()}>
+      <div className="detail-inner">
+        <div className="tabs">
+          {(
+            [
+              ['apercu', 'Aperçu'],
+              ['features', 'Fonctionnalités'],
+              ['pricing', 'Tarifs & Licences'],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              className={`tab${tab === id ? ' on' : ''}`}
+              onClick={() => onTab(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {content}
+      </div>
+      <div className="det-footer">
+        <div className="df-trial">
+          <strong>14 jours gratuits</strong> — sans carte bancaire, sans engagement
+        </div>
+        <div className="df-btns">
+          {demo.startsWith('/') ? (
+            <Link className="df-ghost" to={demo}>
+              Voir la démo
+            </Link>
+          ) : (
+            <a className="df-ghost" href={demo} target="_blank" rel="noopener noreferrer">
+              Voir la démo
+            </a>
+          )}
+          <Link className="df-pri" to={trialCta} style={{ background: product.c }}>
+            Commencer l&apos;essai gratuit
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ProductCard({
+  product,
+  open,
+  onToggle,
+  tab,
+  onTab,
+  annual,
+  onAnnualChange,
+  isClient,
+}: {
+  product: BoutiqueProduct;
+  open: boolean;
+  onToggle: () => void;
+  tab: TabId;
+  onTab: (t: TabId) => void;
+  annual: boolean;
+  onAnnualChange: (v: boolean) => void;
+  isClient: boolean;
+}) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const price = product.monthlyPrice;
+  const licenseOnly = price == null && product.licPrice != null;
+
+  const handleToggle = () => {
+    const willOpen = !open;
+    onToggle();
+    if (willOpen) {
+      window.setTimeout(() => {
+        cardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }, 50);
+    }
+  };
+
+  const badgeClass =
+    product.badge === 'Populaire' ? 'badge-pop' : product.badge ? 'badge-new' : null;
+
+  return (
+    <div
+      ref={cardRef}
+      className={`pc${open ? ' open' : ''}`}
+      role="button"
+      tabIndex={0}
+      onClick={handleToggle}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handleToggle();
+        }
+      }}
+    >
+      <div className="pc-head">
+        <div className="pc-icon" style={{ background: `${product.c}22` }}>
+          {product.ic}
+        </div>
+        <div className="pc-info">
+          <div className="pc-name">
+            {product.n}
+            {product.badge && badgeClass ? (
+              <span className={badgeClass}>{product.badge}</span>
+            ) : null}
+          </div>
+          <div className="pc-meta">
+            <span className="pc-sector">{product.sg}</span>
+            <span className="pc-rating">
+              <span className="stars">{stars(product.rating)}</span>
+              {product.rating} ({product.users} clients)
+            </span>
+            <Link
+              to={`/applications/${product.id}`}
+              className="pc-sector"
+              style={{ color: '#E8961E' }}
+              onClick={stopCardToggle}
+            >
+              Fiche produit →
+            </Link>
+          </div>
+        </div>
+        <div className="pc-price-col">
+          <div className="pc-price-from">{licenseOnly ? 'Licence à vie' : 'À partir de'}</div>
+          <div className="pc-price-val">
+            {price != null
+              ? formatBoutiqueFcfa(price)
+              : product.licPrice != null
+                ? formatBoutiqueFcfa(product.licPrice)
+                : 'Sur devis'}
+            <span className="pc-price-unit">
+              {price != null ? ' FCFA/mois' : product.licPrice != null ? ' FCFA' : ''}
+            </span>
+          </div>
+        </div>
+        <div className="pc-chevron" aria-hidden>
+          ▼
+        </div>
+      </div>
+      <p className="pc-tagline">{product.tl}</p>
+      {open ? (
+        <ProductDetail
+          product={product}
+          tab={tab}
+          onTab={onTab}
+          annual={annual}
+          onAnnualChange={onAnnualChange}
+          isClient={isClient}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+export default function Boutique() {
+  const { user, userData } = useAuth();
+  const { apps, loading } = useAppCatalog();
+  const [filter, setFilter] = useState<'all' | BoutiqueSector>('all');
+  const [sort, setSort] = useState<BoutiqueSort>('popularity');
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [tabMap, setTabMap] = useState<Record<string, TabId>>({});
+  const [annualMap, setAnnualMap] = useState<Record<string, boolean>>({});
+
+  const role = typeof userData?.role === 'string' ? userData.role : user?.role;
+  const isClient = Boolean(user && role === 'client');
+
+  const allProducts = useMemo(() => buildBoutiqueProducts(apps), [apps]);
+
+  const products = useMemo(() => {
+    const filtered =
+      filter === 'all' ? allProducts : allProducts.filter((p) => p.s === filter);
+    return sortBoutiqueProducts(filtered, sort);
+  }, [allProducts, filter, sort]);
+
+  return (
+    <div className="boutique-page">
+      <nav className="b-bc" aria-label="Fil d'Ariane">
+        <Link to="/">Accueil</Link>
+        <span>›</span>
+        <Link to="/solutions">Produits</Link>
+        <span>›</span>
+        <em>Boutique</em>
+      </nav>
+
+      <section className="hero">
+        <div className="hero-top">
+          <div className="ht-left">
+            <div className="ey">
+              <div className="ey-d" />
+              <span className="ey-t">Suite logicielle · Made in Abidjan</span>
+            </div>
+            <h1>
+              Trouvez le logiciel fait
+              <br />
+              pour <em>votre métier</em>
+            </h1>
+            <p className="hero-sub">
+              Abonnements flexibles ou licences à vie. Mobile Money accepté. Interface en français.
+              Testez 14 jours gratuitement, aucune carte requise.
+            </p>
+          </div>
+          <div className="stats-row">
+            <div className="st">
+              <div className="st-v">{allProducts.length || '—'}</div>
+              <div className="st-l">Logiciels métier</div>
+            </div>
+            <div className="st">
+              <div className="st-v">300+</div>
+              <div className="st-l">Clients actifs</div>
+            </div>
+            <div className="st">
+              <div className="st-v">4.8★</div>
+              <div className="st-l">Note moyenne</div>
+            </div>
           </div>
         </div>
       </section>
 
-      {/* CTA */}
-      <section className="border-t border-white/5 bg-[#06080D] py-14">
-        <div className="container mx-auto max-w-[800px] px-6 text-center">
-          <h2 className="text-2xl font-black text-[#F2F4F8] md:text-3xl">Prêt à digitaliser votre activité ?</h2>
-          <p className="mt-3 text-sm text-[#8D98AA] md:text-base">
-            Compte gratuit, paiement sécurisé, accompagnement par l&apos;équipe Infinite Core.
-          </p>
-          <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
-            <Link
-              to={isClient ? '/dashboard/boutique' : '/signup'}
-              className="inline-flex items-center gap-2 rounded-xl bg-[#FFB332] px-6 py-3 text-sm font-bold text-[#06080D] shadow-[0_8px_24px_rgba(255,179,50,0.35)] transition hover:brightness-105"
+      <div className="ctrl">
+        <div className="filters">
+          {BOUTIQUE_FILTERS.map((f) => (
+            <button
+              key={f.id}
+              type="button"
+              className={`fp${filter === f.id ? ' on' : ''}`}
+              onClick={() => {
+                setFilter(f.id);
+                setOpenId(null);
+              }}
             >
-              {isClient ? 'Ouvrir ma boutique client' : 'Créer mon compte'}
-              <ArrowRight className="h-4 w-4" aria-hidden />
-            </Link>
-            <Link to="/tarifs" className="text-sm font-semibold text-[#8D98AA] transition hover:text-[#F2F4F8]">
-              Voir les packs tarifaires
-            </Link>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <div className="sort-row">
+          <span className="sort-lbl">Trier par</span>
+          <select
+            className="sort-sel"
+            value={sort}
+            onChange={(e) => setSort(e.target.value as BoutiqueSort)}
+            aria-label="Trier les logiciels"
+          >
+            {BOUTIQUE_SORT_OPTIONS.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      <div className="layout">
+        {loading ? (
+          <>
+            {[1, 2, 3].map((i) => (
+              <div
+                key={i}
+                className="pc"
+                style={{ minHeight: 120, opacity: 0.5 }}
+                aria-hidden
+              />
+            ))}
+          </>
+        ) : products.length === 0 ? (
+          <p className="hero-sub" style={{ padding: '24px 0' }}>
+            Aucun logiciel dans cette catégorie.
+          </p>
+        ) : (
+          products.map((p) => (
+            <ProductCard
+              key={p.id}
+              product={p}
+              open={openId === p.id}
+              onToggle={() => setOpenId((cur) => (cur === p.id ? null : p.id))}
+              tab={tabMap[p.id] ?? 'apercu'}
+              onTab={(t) => setTabMap((m) => ({ ...m, [p.id]: t }))}
+              annual={annualMap[p.id] ?? false}
+              onAnnualChange={(v) => setAnnualMap((m) => ({ ...m, [p.id]: v }))}
+              isClient={isClient}
+            />
+          ))
+        )}
+      </div>
+
+      <div className="pack-sec">
+        <div className="pack">
+          <div>
+            <div className="pey">Offre Entreprise</div>
+            <div className="pt">Pack Complet Infinite Core</div>
+            <p className="pd">
+              Accédez à l&apos;ensemble des modules à un tarif préférentiel. Idéal pour les holdings,
+              groupes et entreprises multi-activités qui veulent un outil de gestion unifié avec un
+              seul contrat.
+            </p>
+            <div className="pms">
+              {allProducts.map((p) => (
+                <span key={p.id} className="pm">
+                  {p.n}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div style={{ textAlign: 'center' }}>
+            <a className="pcta-btn" href={CONTACT_TEL}>
+              Demander un devis entreprise
+            </a>
+            <p className="pcta-note">
+              {CONTACT_DISPLAY}
+              <br />
+              Réponse sous 24h ouvrées
+            </p>
           </div>
         </div>
-      </section>
+      </div>
+
+      <div className="tbar">
+        <div className="tbi">
+          <div className="tbit">
+            <div className="tbi-ic" aria-hidden>
+              🔓
+            </div>
+            <div>
+              <div className="tbi-lbl">14 jours gratuits</div>
+              <div className="tbi-s">Aucune carte requise</div>
+            </div>
+          </div>
+          <div className="tbit">
+            <div className="tbi-ic" aria-hidden>
+              📱
+            </div>
+            <div>
+              <div className="tbi-lbl">Mobile Money</div>
+              <div className="tbi-s">Via l&apos;équipe · Stripe carte</div>
+            </div>
+          </div>
+          <div className="tbit">
+            <div className="tbi-ic" aria-hidden>
+              🇨🇮
+            </div>
+            <div>
+              <div className="tbi-lbl">Conçu à Abidjan</div>
+              <div className="tbi-s">Pour les PME africaines</div>
+            </div>
+          </div>
+          <div className="tbit">
+            <div className="tbi-ic" aria-hidden>
+              💬
+            </div>
+            <div>
+              <div className="tbi-lbl">Support français</div>
+              <div className="tbi-s">Réactif 5j/7</div>
+            </div>
+          </div>
+          <div className="tbit">
+            <div className="tbi-ic" aria-hidden>
+              📄
+            </div>
+            <div>
+              <div className="tbi-lbl">Licence ou abonnement</div>
+              <div className="tbi-s">Vous choisissez</div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

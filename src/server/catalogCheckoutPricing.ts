@@ -25,9 +25,25 @@ function findSubscriptionPricing(
   app: AppCatalogEntry,
   billingCycle: BillingInterval
 ): AppSubscriptionPricing | undefined {
-  return app.pricing.find(
+  const exact = app.pricing.find(
     (p): p is AppSubscriptionPricing => p.type === "subscription" && p.billingCycle === billingCycle
   );
+  if (exact) return exact;
+  /** Fallback : annuel dérivé du mensuel (−20 % sur 12 mois) si non configuré en base. */
+  if (billingCycle === "year") {
+    const monthly = app.pricing.find(
+      (p): p is AppSubscriptionPricing => p.type === "subscription" && p.billingCycle === "month"
+    );
+    if (monthly && monthly.price > 0) {
+      return {
+        type: "subscription",
+        price: Math.round(monthly.price * 0.8 * 12),
+        billingCycle: "year",
+        label: monthly.label,
+      };
+    }
+  }
+  return undefined;
 }
 
 function findLicensePricing(
@@ -86,8 +102,14 @@ export function resolveCatalogLicenseCheckout(
     requestedDurationDays !== undefined && requestedDurationDays >= 0
       ? requestedDurationDays
       : licenseEntries[0].durationDays;
-  const pricing = findLicensePricing(app, durationDays) ?? licenseEntries[0];
-  if (!pricing || pricing.price <= 0) {
+  const pricing = findLicensePricing(app, durationDays);
+  if (!pricing) {
+    return {
+      ok: false,
+      error: "Durée de licence non proposée au catalogue.",
+    };
+  }
+  if (pricing.price <= 0) {
     return { ok: false, error: "Tarif licence introuvable." };
   }
   return {

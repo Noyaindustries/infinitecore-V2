@@ -571,29 +571,11 @@ export async function resolveAuthPayload(raw: AuthPayload): Promise<AuthPayload 
   });
   if (!account) return null;
 
-  let effectiveRole = account.role;
-
-  // Auto-répare les comptes staff créés avec un rôle "client" côté user_accounts.
-  if (effectiveRole === "client") {
-    const profileDoc = await prisma.dataDocument.findUnique({
-      where: { collectionPath_docId: { collectionPath: "users", docId: raw.uid } },
-      select: { data: true },
-    });
-    const profile = coerceRecord(profileDoc?.data);
-    const profileRole = typeof profile.role === "string" ? profile.role : "";
-    if (VALID_ROLES.has(profileRole) && profileRole !== effectiveRole) {
-      effectiveRole = profileRole;
-      await prisma.userAccount.update({
-        where: { uid: raw.uid },
-        data: { role: effectiveRole },
-      });
-    }
-  }
-
+  // Rôle source de vérité = user_accounts uniquement (jamais le document users/*).
   return {
     uid: account.uid,
     email: account.email,
-    role: effectiveRole,
+    role: account.role,
   };
 }
 
@@ -668,22 +650,27 @@ function hasCollectionAccess(role: string, op: DataOperation, collectionPath: st
   return allow.some((prefix) => isPathPrefix(collectionPath, prefix));
 }
 
+function filterEq(filters: QueryFilter[], field: string, value: string): boolean {
+  return filters.some((f) => f.field === field && f.operator === "==" && String(f.value) === value);
+}
+
 function hasClientScopedFilters(
   auth: AuthPayload,
   collectionPath: string,
   filters: QueryFilter[]
 ): boolean {
-  const eq = (field: string, value: string) =>
-    filters.some((f) => f.field === field && f.operator === "==" && String(f.value) === value);
-
-  if (isPath(collectionPath, "users")) return eq("uid", auth.uid);
-  if (isPath(collectionPath, "notifications")) return eq("userId", auth.uid);
-  if (isPath(collectionPath, "missions")) return eq("clientId", auth.uid);
-  if (isPath(collectionPath, "dossier_steps")) return eq("clientId", auth.uid);
-  if (isPath(collectionPath, "payments")) return eq("userId", auth.uid) || eq("clientId", auth.uid);
-  if (isPath(collectionPath, "orders")) return eq("userId", auth.uid) || eq("clientId", auth.uid);
-  if (isPath(collectionPath, "licenses")) return eq("userId", auth.uid);
-  if (isPath(collectionPath, "chats")) return eq("clientId", auth.uid);
+  if (isPath(collectionPath, "users")) return filterEq(filters, "uid", auth.uid);
+  if (isPath(collectionPath, "notifications")) return filterEq(filters, "userId", auth.uid);
+  if (isPath(collectionPath, "missions")) return filterEq(filters, "clientId", auth.uid);
+  if (isPath(collectionPath, "dossier_steps")) return filterEq(filters, "clientId", auth.uid);
+  if (isPath(collectionPath, "payments")) {
+    return filterEq(filters, "userId", auth.uid) || filterEq(filters, "clientId", auth.uid);
+  }
+  if (isPath(collectionPath, "orders")) {
+    return filterEq(filters, "userId", auth.uid) || filterEq(filters, "clientId", auth.uid);
+  }
+  if (isPath(collectionPath, "licenses")) return filterEq(filters, "userId", auth.uid);
+  if (isPath(collectionPath, "chats")) return filterEq(filters, "clientId", auth.uid);
   if (isPathPrefix(collectionPath, "chats/")) {
     const parts = collectionPath.split("/");
     return parts[0] === "chats" && parts[1] === auth.uid;
@@ -691,7 +678,59 @@ function hasClientScopedFilters(
   return false;
 }
 
-function hasClientScopedDocumentAccess(auth: AuthPayload, collectionPath: string, docId: string): boolean {
+/** Partenaire : au moins un filtre d’ownership obligatoire (sauf resources en lecture). */
+function hasPartnerScopedFilters(
+  auth: AuthPayload,
+  collectionPath: string,
+  filters: QueryFilter[]
+): boolean {
+  if (isPath(collectionPath, "resources")) return true;
+  if (isPath(collectionPath, "users")) {
+    return (
+      filterEq(filters, "referredByPartnerId", auth.uid) ||
+      filterEq(filters, "uid", auth.uid) ||
+      filterEq(filters, "referredBy", auth.uid)
+    );
+  }
+  if (isPath(collectionPath, "leads")) return filterEq(filters, "partnerId", auth.uid);
+  if (isPath(collectionPath, "notifications")) return filterEq(filters, "userId", auth.uid);
+  if (isPath(collectionPath, "missions")) {
+    return filterEq(filters, "partnerId", auth.uid) || filterEq(filters, "clientId", auth.uid);
+  }
+  if (isPath(collectionPath, "payments") || isPath(collectionPath, "orders")) {
+    return filterEq(filters, "partnerId", auth.uid) || filterEq(filters, "userId", auth.uid);
+  }
+  if (isPath(collectionPath, "chats")) return filterEq(filters, "clientId", auth.uid);
+  if (isPathPrefix(collectionPath, "chats/")) {
+    const parts = collectionPath.split("/");
+    return parts[0] === "chats" && parts[1] === auth.uid;
+  }
+  return false;
+}
+
+function hasDeveloperScopedFilters(
+  auth: AuthPayload,
+  collectionPath: string,
+  filters: QueryFilter[]
+): boolean {
+  if (isPath(collectionPath, "users")) return filterEq(filters, "uid", auth.uid);
+  if (isPath(collectionPath, "notifications")) return filterEq(filters, "userId", auth.uid);
+  if (isPath(collectionPath, "missions")) return filterEq(filters, "assigneeId", auth.uid);
+  if (isPath(collectionPath, "livrables")) return filterEq(filters, "developerId", auth.uid);
+  if (isPath(collectionPath, "chats")) return filterEq(filters, "clientId", auth.uid);
+  if (isPathPrefix(collectionPath, "chats/")) {
+    const parts = collectionPath.split("/");
+    return parts[0] === "chats" && parts[1] === auth.uid;
+  }
+  return false;
+}
+
+function hasClientScopedDocumentAccess(
+  auth: AuthPayload,
+  collectionPath: string,
+  docId: string,
+  existing?: Record<string, unknown> | null
+): boolean {
   if (isPath(collectionPath, "users")) return docId === auth.uid;
   if (isPath(collectionPath, "chats")) return docId === auth.uid;
   if (isPath(collectionPath, "licenses")) return docId.startsWith(`${auth.uid}__`);
@@ -699,7 +738,87 @@ function hasClientScopedDocumentAccess(auth: AuthPayload, collectionPath: string
     const parts = collectionPath.split("/");
     return parts[0] === "chats" && parts[1] === auth.uid;
   }
-  return true;
+  if (isPath(collectionPath, "dossier_steps")) {
+    // Clients ne créent pas d’étapes : ownership via clientId déjà en base.
+    if (!existing || !Object.keys(existing).length) return false;
+    return String(existing.clientId || "") === auth.uid;
+  }
+  if (isPath(collectionPath, "orders")) {
+    if (!existing || !Object.keys(existing).length) return true;
+    return (
+      String(existing.userId || "") === auth.uid || String(existing.clientId || "") === auth.uid
+    );
+  }
+  if (isPath(collectionPath, "notifications")) {
+    if (!existing || !Object.keys(existing).length) return false;
+    return String(existing.userId || "") === auth.uid;
+  }
+  if (isPath(collectionPath, "missions") || isPath(collectionPath, "payments")) {
+    if (!existing || !Object.keys(existing).length) return false;
+    return (
+      String(existing.clientId || "") === auth.uid || String(existing.userId || "") === auth.uid
+    );
+  }
+  return false;
+}
+
+function hasPartnerScopedDocumentAccess(
+  auth: AuthPayload,
+  collectionPath: string,
+  docId: string,
+  existing?: Record<string, unknown> | null
+): boolean {
+  if (isPath(collectionPath, "users")) return docId === auth.uid;
+  if (isPath(collectionPath, "resources")) return true;
+  if (isPath(collectionPath, "notifications")) {
+    // Création autorisée ; le payload userId est vérifié dans assertDataDocAuthorized.
+    if (!existing || !Object.keys(existing).length) return true;
+    return String(existing.userId || "") === auth.uid;
+  }
+  if (isPath(collectionPath, "leads")) {
+    if (!existing) return true;
+    return String(existing.partnerId || "") === auth.uid;
+  }
+  if (isPath(collectionPath, "missions") || isPath(collectionPath, "payments") || isPath(collectionPath, "orders")) {
+    if (!existing) return true;
+    return (
+      String(existing.partnerId || "") === auth.uid ||
+      String(existing.referredByPartnerId || "") === auth.uid
+    );
+  }
+  if (isPath(collectionPath, "chats")) return docId === auth.uid;
+  if (isPathPrefix(collectionPath, "chats/")) {
+    const parts = collectionPath.split("/");
+    return parts[0] === "chats" && parts[1] === auth.uid;
+  }
+  return false;
+}
+
+function hasDeveloperScopedDocumentAccess(
+  auth: AuthPayload,
+  collectionPath: string,
+  docId: string,
+  existing?: Record<string, unknown> | null
+): boolean {
+  if (isPath(collectionPath, "users")) return docId === auth.uid;
+  if (isPath(collectionPath, "notifications")) {
+    if (!existing) return false;
+    return String(existing.userId || "") === auth.uid;
+  }
+  if (isPath(collectionPath, "livrables")) {
+    if (!existing) return true;
+    return String(existing.developerId || "") === auth.uid;
+  }
+  if (isPath(collectionPath, "missions")) {
+    if (!existing) return false;
+    return String(existing.assigneeId || "") === auth.uid;
+  }
+  if (isPath(collectionPath, "chats")) return docId === auth.uid;
+  if (isPathPrefix(collectionPath, "chats/")) {
+    const parts = collectionPath.split("/");
+    return parts[0] === "chats" && parts[1] === auth.uid;
+  }
+  return false;
 }
 
 function hasClientWritablePayload(auth: AuthPayload, collectionPath: string, data: Record<string, unknown>) {
@@ -750,6 +869,12 @@ function assertDataQueryAuthorized(
   if (auth.role === "client" && !hasClientScopedFilters(auth, collectionPath, filters)) {
     return { ok: false, error: "Requête client non scopée sur votre propre compte." };
   }
+  if (auth.role === "partner" && !hasPartnerScopedFilters(auth, collectionPath, filters)) {
+    return { ok: false, error: "Requête partenaire non scopée." };
+  }
+  if (auth.role === "developer" && !hasDeveloperScopedFilters(auth, collectionPath, filters)) {
+    return { ok: false, error: "Requête développeur non scopée." };
+  }
   return { ok: true };
 }
 
@@ -758,19 +883,66 @@ function assertDataDocAuthorized(
   op: DataOperation,
   collectionPath: string,
   docId: string,
-  payload?: Record<string, unknown>
+  payload?: Record<string, unknown>,
+  existing?: Record<string, unknown> | null
 ): { ok: true } | { ok: false; error: string } {
   if (!hasCollectionAccess(auth.role, op, collectionPath)) {
     return { ok: false, error: "Accès interdit à cette collection." };
   }
+
+  // Seul un admin peut modifier le champ role (évite l’élévation via document users).
+  if (
+    op === "write" &&
+    isPath(collectionPath, "users") &&
+    auth.role !== "admin" &&
+    payload &&
+    "role" in payload
+  ) {
+    const requestedRole = String(payload.role || "").trim().toLowerCase();
+    if (auth.role === "client") {
+      if (requestedRole && requestedRole !== "client") {
+        return { ok: false, error: "Modification du rôle interdite." };
+      }
+    } else {
+      return { ok: false, error: "Modification du rôle réservée à l'administrateur." };
+    }
+  }
+
   if (auth.role === "client") {
-    if (!hasClientScopedDocumentAccess(auth, collectionPath, docId)) {
+    if (!hasClientScopedDocumentAccess(auth, collectionPath, docId, existing)) {
       return { ok: false, error: "Accès interdit à ce document." };
     }
     if (op === "write" && payload && !hasClientWritablePayload(auth, collectionPath, payload)) {
       return { ok: false, error: "Écriture non autorisée sur ce document." };
     }
   }
+
+  if (auth.role === "partner") {
+    if (!hasPartnerScopedDocumentAccess(auth, collectionPath, docId, existing)) {
+      return { ok: false, error: "Accès interdit à ce document." };
+    }
+    if (op === "write" && isPath(collectionPath, "users") && docId !== auth.uid) {
+      return { ok: false, error: "Écriture partenaire limitée à votre propre profil." };
+    }
+    if (
+      op === "write" &&
+      isPath(collectionPath, "notifications") &&
+      payload &&
+      String(payload.userId || "") !== auth.uid
+    ) {
+      return { ok: false, error: "Notification partenaire limitée à votre compte." };
+    }
+  }
+
+  if (auth.role === "developer") {
+    if (!hasDeveloperScopedDocumentAccess(auth, collectionPath, docId, existing)) {
+      return { ok: false, error: "Accès interdit à ce document." };
+    }
+    if (op === "write" && isPath(collectionPath, "users") && docId !== auth.uid) {
+      return { ok: false, error: "Écriture développeur limitée à votre propre profil." };
+    }
+  }
+
   return { ok: true };
 }
 

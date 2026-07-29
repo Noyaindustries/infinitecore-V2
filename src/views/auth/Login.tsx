@@ -55,8 +55,25 @@ export default function Login({ isStaff = false }: { isStaff?: boolean }) {
   React.useEffect(() => {
     if (!isAuthReady || !user) return;
     const role = userData?.role || user.role;
+    const params = new URLSearchParams(location.search);
+    const raw = params.get('returnTo');
+    let returnTo: string | null = null;
+    if (raw) {
+      try {
+        const decoded = decodeURIComponent(raw);
+        if (decoded.startsWith('/') && !decoded.startsWith('//') && !decoded.includes('://')) {
+          returnTo = decoded;
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    if (returnTo && (role === 'client' || !role)) {
+      navigate(returnTo, { replace: true });
+      return;
+    }
     navigate(homePathForRole(role), { replace: true });
-  }, [isAuthReady, user, userData?.role, navigate]);
+  }, [isAuthReady, user, userData?.role, navigate, location.search]);
 
   const runGoogleSignIn = useCallback(
     async () => {

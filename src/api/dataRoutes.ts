@@ -37,7 +37,8 @@ type RegisterDataRoutesDeps = {
     op: "read" | "write",
     collectionPath: string,
     docId: string,
-    payload?: Record<string, unknown>
+    payload?: Record<string, unknown>,
+    existing?: Record<string, unknown> | null
   ) => { ok: true } | { ok: false; error: string };
   coerceRecord: (value: unknown) => Record<string, unknown>;
   applyFilters: (
@@ -235,13 +236,20 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       if (!collectionPath || !docId || !deps.isSafeCollectionPath(collectionPath) || !deps.isSafeDocId(docId)) {
         return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
       }
-      const authz = deps.assertDataDocAuthorized(auth, "read", collectionPath, docId);
-      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
 
       const row = await deps.prisma.dataDocument.findUnique({
         where: { collectionPath_docId: { collectionPath, docId } },
       });
       const splitRow = await getSplitDoc(collectionPath, docId);
+      const existing = splitRow
+        ? deps.coerceRecord(splitRow.data)
+        : row
+          ? deps.coerceRecord(row.data)
+          : null;
+
+      const authz = deps.assertDataDocAuthorized(auth, "read", collectionPath, docId, undefined, existing);
+      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
+
       return res.status(200).json({
         success: true,
         exists: Boolean(splitRow || row),
@@ -276,8 +284,6 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       if (!collectionPath || !deps.isSafeCollectionPath(collectionPath) || !deps.isSafeDocId(docId)) {
         return res.status(400).json({ success: false, error: "collectionPath ou docId invalides." });
       }
-      const authz = deps.assertDataDocAuthorized(auth, "write", collectionPath, docId, incoming);
-      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
 
       const splitCurrent = await getSplitDoc(collectionPath, docId);
       const legacyCurrent = await deps.prisma.dataDocument.findUnique({
@@ -287,6 +293,19 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       const fallbackCurrent = splitCurrent
         ? deps.coerceRecord(splitCurrent.data)
         : deps.coerceRecord(legacyCurrent?.data);
+      const existing =
+        splitCurrent || legacyCurrent ? fallbackCurrent : null;
+
+      const authz = deps.assertDataDocAuthorized(
+        auth,
+        "write",
+        collectionPath,
+        docId,
+        incoming,
+        existing
+      );
+      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
+
       await deps.upsertDataDocument(collectionPath, docId, incoming, merge);
       await upsertSplitDoc(collectionPath, docId, incoming, merge, fallbackCurrent);
       logAuditDataChange({
@@ -330,8 +349,6 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       ) {
         return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
       }
-      const authz = deps.assertDataDocAuthorized(auth, "write", collectionPath, docId, updates);
-      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
 
       const splitExisting = await getSplitDoc(collectionPath, docId);
       const existing = await deps.prisma.dataDocument.findUnique({
@@ -341,6 +358,9 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       if (!Object.keys(current).length && !existing && !splitExisting) {
         return res.status(404).json({ success: false, error: "Document introuvable." });
       }
+
+      const authz = deps.assertDataDocAuthorized(auth, "write", collectionPath, docId, updates, current);
+      if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
 
       const next = { ...current, ...updates };
       for (const key of deleteKeys) delete next[key];
@@ -377,7 +397,24 @@ export function registerDataRoutes(app: Express, deps: RegisterDataRoutesDeps) {
       if (!collectionPath || !docId || !deps.isSafeCollectionPath(collectionPath) || !deps.isSafeDocId(docId)) {
         return res.status(400).json({ success: false, error: "collectionPath et docId invalides." });
       }
-      const authz = deps.assertDataDocAuthorized(auth, "write", collectionPath, docId);
+
+      const splitExisting = await getSplitDoc(collectionPath, docId);
+      const existing = await deps.prisma.dataDocument.findUnique({
+        where: { collectionPath_docId: { collectionPath, docId } },
+        select: { data: true },
+      });
+      const current = splitExisting
+        ? deps.coerceRecord(splitExisting.data)
+        : deps.coerceRecord(existing?.data);
+
+      const authz = deps.assertDataDocAuthorized(
+        auth,
+        "write",
+        collectionPath,
+        docId,
+        undefined,
+        Object.keys(current).length ? current : null
+      );
       if (authz.ok === false) return res.status(403).json({ success: false, error: authz.error });
 
       await deps.prisma.dataDocument.deleteMany({

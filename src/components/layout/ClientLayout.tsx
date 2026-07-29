@@ -30,6 +30,7 @@ export default function ClientLayout() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
+  const [unreadChats, setUnreadChats] = useState(0);
 
   useEffect(() => {
     localStorage.setItem('theme', theme);
@@ -41,8 +42,6 @@ export default function ClientLayout() {
   }, [theme]);
 
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
-
-  const [unreadChats, setUnreadChats] = useState(0);
 
   useEffect(() => {
     if (user) {

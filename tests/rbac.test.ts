@@ -61,17 +61,37 @@ ko(
 ok(assertDataDocAuthorized(auth("client"), "read", "chats/u_client/messages", "m1"));
 ko(assertDataDocAuthorized(auth("client"), "read", "chats/u_other/messages", "m1"));
 
-// Client: validation dossier autorisée uniquement sur son propre clientId et statut "valide".
+// Client: validation dossier — ownership via clientId du document existant.
 ok(
-  assertDataDocAuthorized(auth("client"), "write", "dossier_steps", "step1", {
-    clientId: "u_client",
-    status: "valide",
-    validatedAt: "2026-01-01T00:00:00.000Z",
-  })
+  assertDataDocAuthorized(
+    auth("client"),
+    "write",
+    "dossier_steps",
+    "step1",
+    {
+      clientId: "u_client",
+      status: "valide",
+      validatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    { clientId: "u_client", status: "soumis" }
+  )
+);
+ko(
+  assertDataDocAuthorized(
+    auth("client"),
+    "write",
+    "dossier_steps",
+    "step1",
+    {
+      clientId: "u_client",
+      status: "valide",
+    },
+    { clientId: "u_other", status: "soumis" }
+  )
 );
 ko(
   assertDataDocAuthorized(auth("client"), "write", "dossier_steps", "step1", {
-    clientId: "u_other",
+    clientId: "u_client",
     status: "valide",
   })
 );
@@ -79,7 +99,7 @@ ko(
   assertDataDocAuthorized(auth("client"), "write", "dossier_steps", "step1", {
     clientId: "u_client",
     status: "soumis",
-  })
+  }, { clientId: "u_client" })
 );
 
 // Client: licences scopées sur son UID.
@@ -87,5 +107,23 @@ ok(assertDataQueryAuthorized(auth("client"), "licenses", [where("userId", "u_cli
 ko(assertDataQueryAuthorized(auth("client"), "licenses", [where("userId", "u_other")]));
 ok(assertDataDocAuthorized(auth("client"), "read", "licenses", "u_client__crm"));
 ko(assertDataDocAuthorized(auth("client"), "read", "licenses", "u_other__crm"));
+
+// Partner: query users doit être scopée.
+ok(
+  assertDataQueryAuthorized(auth("partner", "u_partner"), "users", [
+    where("referredByPartnerId", "u_partner"),
+  ])
+);
+ko(assertDataQueryAuthorized(auth("partner", "u_partner"), "users", []));
+ko(
+  assertDataDocAuthorized(auth("partner", "u_partner"), "write", "users", "u_other", {
+    role: "admin",
+  })
+);
+ko(
+  assertDataDocAuthorized(auth("partner", "u_partner"), "write", "users", "u_partner", {
+    role: "admin",
+  })
+);
 
 console.log("RBAC tests passed");

@@ -35,7 +35,7 @@ import { resolveLocalUploadFile, normalizePublicIdQuery, mimeFromStorageKey } fr
 import { parseAuthFromRequest, registerMongoApi, resolveAuthPayload, type AuthPayload } from "./mongoApi";
 import { sendStaffNotifyEmail } from "./src/server/staffNotifyEmail";
 import { sendLeadEmail } from "./src/server/sendLeadEmail";
-import { LicenseCheckoutSchema, OrderSchema, PaddeAuditPayloadSchema } from "./src/lib/schemas";
+import { LicenseCheckoutSchema, OrderSchema, PaddeAuditPayloadSchema, StartTrialSchema } from "./src/lib/schemas";
 import {
   INFINITE_APP_CATALOG,
   mergeCatalogWithDefaults,
@@ -49,6 +49,7 @@ import {
   LICENSES_COLLECTION_PATH,
   patchLicenseBySubscriptionId,
   provisionSaasLicense,
+  startAppTrial,
   upsertExternalSubscriptionLicense,
 } from "./src/server/licenseActivation";
 import { verifySaasBridgeAuth } from "./src/server/saasAppBridge";
@@ -150,7 +151,16 @@ function rejectUnauthorizedWebhook(
   secretExpected: string,
   allowPlainSecret: boolean
 ): boolean {
-  if (!secretExpected.trim()) return false;
+  if (!secretExpected.trim()) {
+    if (appEnv.node.isProduction) {
+      res.status(503).json({
+        success: false,
+        error: "Webhook non configuré : secret manquant.",
+      });
+      return true;
+    }
+    return false;
+  }
   const auth = verifyInboundWebhookAuth({
     secretExpected,
     req,
@@ -240,6 +250,11 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   const noyaWebhookSecret = appEnv.webhooks.noyaRecrutementWebhookSecret;
   const allowPlainWebhookSecret =
     appEnv.node.isDevelopment || process.env.WEBHOOK_ALLOW_PLAIN_SECRET === "1";
+  if (appEnv.node.isProduction && process.env.WEBHOOK_ALLOW_PLAIN_SECRET === "1") {
+    console.warn(
+      "[security] WEBHOOK_ALLOW_PLAIN_SECRET=1 en production : les webhooks acceptent le secret en clair (migration temporaire — préférer HMAC)."
+    );
+  }
   const stripeSecretKey = appEnv.stripe.secretKey;
   const stripeWebhookSecret = appEnv.stripe.webhookSecret;
   const r2AccountId = appEnv.r2.accountId;
@@ -412,6 +427,9 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   applyCsrfProtection(app, corsOrigins);
 
   app.get("/health", (_req, res) => {
+    if (appEnv.node.isProduction) {
+      return res.status(200).json({ ok: true });
+    }
     res.status(200).json({
       ok: true,
       nodeEnv: appEnv.node.env,
@@ -437,6 +455,33 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       return res.status(200).json({ success: true, apps });
     } catch (error) {
       console.error("[apps/catalog GET]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
+  /** Branding public (logo / favicon) — lisible sans auth pour marketing + onglets. */
+  app.get("/api/branding", async (_req, res) => {
+    try {
+      const row = await prisma.dataDocument.findUnique({
+        where: {
+          collectionPath_docId: { collectionPath: "settings", docId: "general" },
+        },
+      });
+      const data =
+        row?.data && typeof row.data === "object" ? (row.data as Record<string, unknown>) : {};
+      const asUrl = (value: unknown): string => {
+        const s = typeof value === "string" ? value.trim() : "";
+        return s.startsWith("http://") || s.startsWith("https://") || s.startsWith("/") ? s : "";
+      };
+      res.setHeader("Cache-Control", "public, max-age=60");
+      return res.status(200).json({
+        success: true,
+        logoUrl: asUrl(data.logoUrl),
+        faviconUrl: asUrl(data.faviconUrl),
+        siteName: typeof data.siteName === "string" ? data.siteName.trim() : "",
+      });
+    } catch (error) {
+      console.error("[branding GET]", error);
       return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
     }
   });
@@ -823,6 +868,41 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
     }
   });
 
+  app.post("/api/licenses/start-trial", async (req, res) => {
+    try {
+      const auth = await readAuthenticatedUser(req);
+      if (!auth) return res.status(401).json({ success: false, error: "Non authentifie." });
+
+      const validated = StartTrialSchema.safeParse(req.body);
+      if (!validated.success) {
+        return res.status(400).json({
+          success: false,
+          error: "Paramètres essai invalides.",
+          details: validated.error.format(),
+        });
+      }
+
+      const result = await startAppTrial({
+        userId: auth.uid,
+        appId: validated.data.appId,
+        email: auth.email,
+      });
+      if (!result.ok) {
+        return res.status(400).json({ success: false, error: result.error });
+      }
+
+      return res.status(200).json({
+        success: true,
+        appName: result.appName,
+        expiresAt: result.expiresAt,
+        trialDays: 14,
+      });
+    } catch (error) {
+      console.error("[licenses/start-trial]", error);
+      return res.status(500).json({ success: false, error: "Erreur interne du serveur." });
+    }
+  });
+
   app.post("/api/orders/notify-team", async (req, res) => {
     try {
       const auth = await readAuthenticatedUser(req);
@@ -1038,6 +1118,12 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
   app.get("/api/saas/verify-token", async (req, res) => {
     try {
       const bridgeKey = String(process.env.SAAS_BRIDGE_API_KEY || "").trim();
+      if (appEnv.node.isProduction && !bridgeKey) {
+        return res.status(503).json({
+          success: false,
+          error: "SAAS_BRIDGE_API_KEY non configurée.",
+        });
+      }
       if (bridgeKey) {
         const provided = String(req.headers["x-infinitecore-saas-key"] || "").trim();
         if (!provided || !secureSecretEquals(bridgeKey, provided)) {
@@ -1162,6 +1248,11 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
           return res.status(400).json({ success: false, error: "Webhook Stripe invalide." });
         }
         event = stripe.webhooks.constructEvent(rawBody, signature, stripeWebhookSecret);
+      } else if (appEnv.node.isProduction) {
+        return res.status(503).json({
+          success: false,
+          error: "STRIPE_WEBHOOK_SECRET non configuré.",
+        });
       } else {
         event = req.body as Stripe.Event;
       }
@@ -1338,6 +1429,12 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
 
       const folderRaw = typeof req.body?.folder === "string" ? req.body.folder : "misc";
       const folder = sanitizeFolder(folderRaw);
+      if (blobFolderIsPublic(folder) && auth.role !== "admin" && auth.role !== "commando") {
+        return res.status(403).json({
+          success: false,
+          error: "Uploads publics (catalogue/branding) réservés au staff (admin/commando).",
+        });
+      }
       const safeOriginal = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
       const objectKey = `${folder}/${Date.now()}-${randomUUID()}-${safeOriginal}`;
 
@@ -1959,7 +2056,6 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
       webhookSecretConfigured: noyaSecretExpected.length > 0,
       webhookHmacRequired: noyaSecretExpected.length > 0 && appEnv.node.isProduction && !allowPlainWebhookSecret,
       partnerMappingConfigured: configuredPartnerId.length > 0,
-      noyaPartnerId: configuredPartnerId || null,
       nodeEnv: appEnv.node.env,
       vercel: Boolean(process.env.VERCEL),
       vercelEnv: process.env.VERCEL_ENV || null,
@@ -1969,6 +2065,8 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
 
   app.post("/api/webhooks/noya-recrutement", async (req, res) => {
     try {
+      if (rejectUnauthorizedWebhook(req, res, noyaSecretExpected, allowPlainWebhookSecret)) return;
+
       const origin = String(req.headers.origin || "").trim();
       if (origin && !noyaAllowedOrigins.has(origin)) {
         return res.status(403).json({ success: false, error: "Origin non autorisée." });
@@ -1991,20 +2089,9 @@ export async function createExpressApplication(): Promise<{ app: Express; port: 
         payload[normalizedKey] = value;
       }
 
-      const providedSecret = verifyInboundWebhookAuth({
-        secretExpected: noyaSecretExpected,
-        req,
-        rawBody: (req as Request & { rawBody?: Buffer }).rawBody,
-        isProduction: appEnv.node.isProduction,
-        allowPlainSecret: allowPlainWebhookSecret,
-      });
       delete payload.webhooksecret;
       delete payload.secret;
       delete payload.webhook_secret;
-
-      if (noyaSecretExpected && !providedSecret.ok) {
-        return res.status(401).json({ success: false, error: providedSecret.reason || "Webhook non autorisé." });
-      }
 
       const firstName = normalizeText(
         extractFirstFilled(payload, "prenom", "first_name", "firstname", "first")

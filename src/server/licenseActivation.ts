@@ -466,3 +466,122 @@ export async function provisionSaasLicense(input: {
 
   return data;
 }
+
+/**
+ * Essai SaaS 14 jours sans paiement — une fois par utilisateur / application.
+ * Refuse si une licence payante active existe déjà.
+ */
+export async function startAppTrial(input: {
+  userId: string;
+  appId: string;
+  email?: string | null;
+}): Promise<{ ok: true; expiresAt: string; appName: string } | { ok: false; error: string }> {
+  const catalog = await loadAppCatalog();
+  const app = catalog.find((a) => a.id === input.appId);
+  if (!app) return { ok: false, error: "Application introuvable." };
+  if (!app.onlineCheckout) {
+    return { ok: false, error: "Cette application n'est pas disponible en essai." };
+  }
+  const hasSubscription = app.pricing.some((p) => p.type === "subscription");
+  if (!hasSubscription) {
+    return { ok: false, error: "Aucun abonnement SaaS n'est proposé pour cette application." };
+  }
+
+  const docId = licenseDocId(input.userId, input.appId);
+  const existing = await prisma.dataDocument.findUnique({
+    where: {
+      collectionPath_docId: { collectionPath: LICENSES_COLLECTION_PATH, docId },
+    },
+  });
+  const current = existing ? readDataRowAsRecord(existing.data) : null;
+  if (current) {
+    const status = String(current.status || "");
+    const orderId = String(current.orderId || "");
+    const isTrialOrder = orderId.startsWith("TRIAL-");
+    const expiresAtMs = current.expiresAt ? Date.parse(String(current.expiresAt)) : NaN;
+    const stillActive =
+      status === "active" && (!Number.isFinite(expiresAtMs) || expiresAtMs > Date.now());
+
+    if (stillActive && !isTrialOrder) {
+      return { ok: false, error: "Vous avez déjà un accès actif à cette application." };
+    }
+    if (stillActive && isTrialOrder) {
+      return {
+        ok: false,
+        error: `Votre essai est déjà actif jusqu'au ${new Date(expiresAtMs).toLocaleDateString("fr-FR")}.`,
+      };
+    }
+    if (isTrialOrder) {
+      return { ok: false, error: "Vous avez déjà utilisé l'essai gratuit pour cette application." };
+    }
+  }
+
+  const trialDays = 14;
+  const expiresAt = new Date(Date.now() + trialDays * 24 * 60 * 60 * 1000).toISOString();
+  const orderId = `TRIAL-${randomUUID().split("-")[0]!.toUpperCase()}`;
+  const saasState = initialSaasStateForSubscription(app, input.userId, input.appId);
+
+  await upsertAppLicense({
+    userId: input.userId,
+    appId: input.appId,
+    moduleKey: app.moduleKey,
+    appName: app.title,
+    type: "subscription",
+    status: "active",
+    orderId,
+    expiresAt,
+    saasInstanceUrl: saasState.saasInstanceUrl,
+    saasTenantId: saasState.saasTenantId,
+    saasProvisioningStatus: saasState.saasProvisioningStatus,
+  });
+
+  const notifId = randomUUID();
+  await prisma.dataDocument.create({
+    data: {
+      collectionPath: "notifications",
+      docId: notifId,
+      data: {
+        id: notifId,
+        userId: input.userId,
+        title: `Essai ${trialDays} jours — ${app.title}`,
+        message: `Votre essai gratuit est actif jusqu'au ${new Date(expiresAt).toLocaleDateString("fr-FR")}. Aucune carte requise.`,
+        type: "license",
+        read: false,
+        createdAt: new Date().toISOString(),
+        metadata: {
+          appId: input.appId,
+          moduleKey: app.moduleKey,
+          orderId,
+          licenseType: "subscription",
+          trial: true,
+        },
+      } as never,
+    },
+  });
+
+  try {
+    await postWelcomeDeliveryMessage({
+      userId: input.userId,
+      licenseType: "subscription",
+      guide: deliveryContextFromApp(app),
+    });
+  } catch (err) {
+    console.warn("[startAppTrial] welcome message failed:", err);
+  }
+
+  try {
+    await notifySaasTenantProvision({
+      app,
+      userId: input.userId,
+      appId: input.appId,
+      moduleKey: app.moduleKey,
+      tenantId: saasState.saasTenantId,
+      email: input.email ?? undefined,
+      appName: app.title,
+    });
+  } catch (err) {
+    console.warn("[startAppTrial] saas provision notify failed:", err);
+  }
+
+  return { ok: true, expiresAt, appName: app.title };
+}

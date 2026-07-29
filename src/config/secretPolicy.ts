@@ -80,10 +80,9 @@ export function validateProductionSecrets(input: {
   });
 
   checks.push(validateSharedSecret("PADDE_WEBHOOK_SECRET", input.paddeWebhookSecret, { required: true }));
-
-  if (input.noyaWebhookSecret.trim()) {
-    checks.push(validateSharedSecret("NOYA_RECRUTEMENT_WEBHOOK_SECRET", input.noyaWebhookSecret));
-  }
+  checks.push(
+    validateSharedSecret("NOYA_RECRUTEMENT_WEBHOOK_SECRET", input.noyaWebhookSecret, { required: true })
+  );
 
   if (input.saasBridgeApiKey.trim()) {
     checks.push(validateSharedSecret("SAAS_BRIDGE_API_KEY", input.saasBridgeApiKey));

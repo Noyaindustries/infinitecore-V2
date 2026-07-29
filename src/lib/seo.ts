@@ -82,9 +82,9 @@ export const STATIC_SEO_ROUTES: Record<string, Omit<SeoPayload, 'path'>> = {
     image: '/infinite-core-logo-v2.png',
   },
   '/boutique': {
-    title: 'Boutique Infinite Core — Licences & abonnements',
+    title: 'Boutique Infinite Core — Logiciels métier',
     description:
-      'ERP, CRM, caisse et applications métier en FCFA. Licence à vie auto-hébergée ou abonnement SaaS hébergé par Infinite Core.',
+      'CaisseCI, School Manager, Diamond Hotel et plus. Abonnements ou licences perpétuelles en FCFA. Essai 14 jours, Mobile Money accepté.',
     image: '/infinite-core-logo-v2.png',
   },
   '/tarifs': {

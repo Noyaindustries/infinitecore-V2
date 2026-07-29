@@ -260,5 +260,9 @@ void run()
     process.exitCode = 1;
   })
   .finally(async () => {
-    await prisma.$disconnect();
+    try {
+      await prisma.$disconnect();
+    } finally {
+      process.exit(process.exitCode ?? 0);
+    }
   });

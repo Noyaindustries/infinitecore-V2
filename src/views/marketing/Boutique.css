@@ -1,0 +1,1182 @@
+/* Boutique logiciels — thème Abidjan (scopé) */
+.boutique-page {
+  --bg: #07100c;
+  --s1: #0d1810;
+  --s2: #131f17;
+  --s3: #19271d;
+  --s4: #1e2e22;
+  --or: #e8961e;
+  --or2: #c77a0e;
+  --or-a: rgba(232, 150, 30, 0.12);
+  --or-b: rgba(232, 150, 30, 0.22);
+  --bl: #4a7fb5;
+  --bd: rgba(255, 255, 255, 0.065);
+  --bd2: rgba(255, 255, 255, 0.11);
+  --bd3: rgba(255, 255, 255, 0.18);
+  --t1: #e8ede9;
+  --t2: #8fa89a;
+  --t3: #526158;
+  --t4: #2e3d33;
+  --ok: #2eb464;
+  --ok-a: rgba(46, 180, 100, 0.13);
+
+  background: var(--bg);
+  color: var(--t1);
+  min-height: 100%;
+  overflow-x: hidden;
+  font-family: Inter, Urbanist, ui-sans-serif, system-ui, sans-serif;
+  margin: 0 calc(50% - 50vw);
+  width: 100vw;
+  position: relative;
+  z-index: 1;
+}
+
+.boutique-page * {
+  box-sizing: border-box;
+}
+
+.boutique-page .b-bc {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 18px 5% 0;
+  font-size: 12px;
+  color: var(--t3);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.boutique-page .b-bc a {
+  color: var(--t3);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.boutique-page .b-bc a:hover {
+  color: #e8961e;
+}
+
+.boutique-page .b-bc em {
+  color: #e8961e;
+  font-style: normal;
+  font-weight: 600;
+}
+
+.boutique-page .hero {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 40px 5% 32px;
+}
+
+.boutique-page .hero-top {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-bottom: 8px;
+}
+
+.boutique-page .ey {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--or-a);
+  border: 1px solid var(--or-b);
+  border-radius: 100px;
+  padding: 4px 12px;
+  margin-bottom: 16px;
+}
+
+.boutique-page .ey-d {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #e8961e;
+}
+
+.boutique-page .ey-t {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  color: #e8961e;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.boutique-page .hero h1 {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 900;
+  font-size: clamp(24px, 3.5vw, 42px);
+  color: var(--t1);
+  line-height: 1.05;
+  margin-bottom: 10px;
+}
+
+.boutique-page .hero h1 em {
+  font-style: normal;
+  color: #e8961e;
+}
+
+.boutique-page .hero-sub {
+  font-size: 14px;
+  color: var(--t2);
+  max-width: 520px;
+  line-height: 1.75;
+}
+
+.boutique-page .stats-row {
+  display: flex;
+  gap: 28px;
+  flex-shrink: 0;
+}
+
+.boutique-page .st {
+  text-align: right;
+}
+
+.boutique-page .st-v {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 24px;
+  color: var(--t1);
+}
+
+.boutique-page .st-l {
+  font-size: 11px;
+  color: var(--t3);
+  margin-top: 1px;
+}
+
+.boutique-page .ctrl {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 5% 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.boutique-page .filters {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.boutique-page .fp {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 6px 14px;
+  border-radius: 100px;
+  border: 1px solid var(--bd);
+  background: transparent;
+  color: var(--t3);
+  cursor: pointer;
+  transition: all 0.18s;
+  white-space: nowrap;
+}
+
+.boutique-page .fp:hover,
+.boutique-page .fp.on {
+  border-color: #e8961e;
+  color: #e8961e;
+}
+
+.boutique-page .fp.on {
+  background: var(--or-a);
+}
+
+.boutique-page .sort-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.boutique-page .sort-lbl {
+  font-size: 11px;
+  color: var(--t3);
+}
+
+.boutique-page .sort-sel {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  color: var(--t2);
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  outline: none;
+}
+
+.boutique-page .layout {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 5% 60px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.boutique-page .pc {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 14px;
+  overflow: hidden;
+  cursor: pointer;
+  transition:
+    border-color 0.2s,
+    transform 0.2s;
+  position: relative;
+}
+
+.boutique-page .pc:hover {
+  border-color: var(--bd2);
+  transform: translateY(-2px);
+}
+
+.boutique-page .pc.open {
+  border-color: var(--or-b);
+  transform: none;
+}
+
+.boutique-page .pc-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+}
+
+.boutique-page .pc-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.boutique-page .pc-name {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 17px;
+  color: var(--t1);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.boutique-page .badge-pop {
+  background: var(--or-a);
+  border: 1px solid var(--or-b);
+  color: #e8961e;
+  font-size: 9px;
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.boutique-page .badge-new {
+  background: rgba(46, 180, 100, 0.12);
+  border: 1px solid rgba(46, 180, 100, 0.22);
+  color: #2eb464;
+  font-size: 9px;
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.boutique-page .pc-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.boutique-page .pc-sector {
+  font-size: 11px;
+  color: var(--t3);
+  font-weight: 500;
+}
+
+.boutique-page .pc-rating {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--t2);
+}
+
+.boutique-page .stars {
+  color: #e8961e;
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+
+.boutique-page .pc-price-col {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.boutique-page .pc-price-from {
+  font-size: 10px;
+  color: var(--t3);
+  margin-bottom: 2px;
+}
+
+.boutique-page .pc-price-val {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--t1);
+}
+
+.boutique-page .pc-price-unit {
+  font-size: 11px;
+  color: var(--t3);
+}
+
+.boutique-page .pc-chevron {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--bd);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: var(--t3);
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.boutique-page .pc.open .pc-chevron {
+  border-color: var(--or-b);
+  color: #e8961e;
+  transform: rotate(180deg);
+}
+
+.boutique-page .pc-tagline {
+  font-size: 12.5px;
+  color: var(--t2);
+  padding: 0 20px 16px;
+  border-top: 1px solid var(--bd);
+  padding-top: 14px;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.boutique-page .detail {
+  border-top: 1px solid var(--bd);
+}
+
+.boutique-page .detail-inner {
+  padding: 24px;
+}
+
+.boutique-page .tabs {
+  display: flex;
+  gap: 2px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  padding: 4px;
+  margin-bottom: 24px;
+  width: fit-content;
+  flex-wrap: wrap;
+}
+
+.boutique-page .tab {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 7px 18px;
+  border-radius: 7px;
+  cursor: pointer;
+  color: var(--t3);
+  transition: all 0.18s;
+  border: none;
+  background: transparent;
+}
+
+.boutique-page .tab.on {
+  background: var(--s4);
+  color: var(--t1);
+}
+
+.boutique-page .ov-grid {
+  display: grid;
+  grid-template-columns: 1fr 380px;
+  gap: 24px;
+}
+
+.boutique-page .dash-preview {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.boutique-page .dp-bar {
+  height: 36px;
+  background: var(--s3);
+  border-bottom: 1px solid var(--bd);
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  gap: 8px;
+}
+
+.boutique-page .dp-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.boutique-page .dp-title {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--t3);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.boutique-page .dp-body {
+  padding: 16px;
+}
+
+.boutique-page .dp-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.boutique-page .dp-stat {
+  background: var(--s3);
+  border-radius: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--bd);
+}
+
+.boutique-page .dp-stat-v {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--t1);
+}
+
+.boutique-page .dp-stat-l {
+  font-size: 10px;
+  color: var(--t3);
+  margin-top: 2px;
+}
+
+.boutique-page .dp-chart {
+  background: var(--s3);
+  border-radius: 8px;
+  padding: 12px;
+  border: 1px solid var(--bd);
+}
+
+.boutique-page .dp-chart-lbl {
+  font-size: 10px;
+  color: var(--t3);
+  margin-bottom: 8px;
+}
+
+.boutique-page .chart-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 48px;
+}
+
+.boutique-page .bar {
+  flex: 1;
+  border-radius: 3px 3px 0 0;
+  opacity: 0.8;
+}
+
+.boutique-page .dp-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.boutique-page .dp-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 10px;
+  background: var(--s3);
+  border-radius: 6px;
+  border: 1px solid var(--bd);
+  gap: 8px;
+}
+
+.boutique-page .dp-row-n {
+  font-size: 11px;
+  color: var(--t2);
+}
+
+.boutique-page .dp-row-v {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.boutique-page .ov-desc {
+  font-size: 13px;
+  color: var(--t2);
+  line-height: 1.75;
+  margin-bottom: 20px;
+}
+
+.boutique-page .incl-title {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  color: var(--t1);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 12px;
+}
+
+.boutique-page .incl-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.boutique-page .incl-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--t2);
+  padding: 7px 10px;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 7px;
+}
+
+.boutique-page .incl-ic {
+  font-size: 14px;
+}
+
+.boutique-page .mod-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.boutique-page .mod {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.boutique-page .mod-name {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--t1);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.boutique-page .mod-ic {
+  font-size: 16px;
+}
+
+.boutique-page .mod-feats {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.boutique-page .mf {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--t2);
+  line-height: 1.5;
+}
+
+.boutique-page .mf-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+
+.boutique-page .lic-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+}
+
+.boutique-page .lic-lbl {
+  font-size: 12px;
+  color: var(--t3);
+  font-weight: 500;
+}
+
+.boutique-page .lic-t {
+  display: flex;
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 8px;
+  padding: 3px;
+}
+
+.boutique-page .lt {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 11px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--t3);
+  transition: all 0.15s;
+  white-space: nowrap;
+  border: none;
+  background: transparent;
+}
+
+.boutique-page .lt.on {
+  background: var(--s4);
+  color: var(--t1);
+}
+
+.boutique-page .ann-badge {
+  background: var(--ok-a);
+  border: 1px solid rgba(46, 180, 100, 0.2);
+  color: #2eb464;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 100px;
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+}
+
+.boutique-page .plans {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.boutique-page .plan {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  padding: 20px;
+  position: relative;
+  transition: border-color 0.18s;
+}
+
+.boutique-page .plan.popular {
+  border-color: var(--or-b);
+}
+
+.boutique-page .plan-pop-badge {
+  position: absolute;
+  top: -1px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #e8961e;
+  color: #fff;
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 3px 12px;
+  border-radius: 0 0 8px 8px;
+}
+
+.boutique-page .plan-name {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 15px;
+  color: var(--t1);
+  margin-bottom: 4px;
+}
+
+.boutique-page .plan-desc {
+  font-size: 11px;
+  color: var(--t3);
+  margin-bottom: 16px;
+}
+
+.boutique-page .plan-price {
+  margin-bottom: 16px;
+}
+
+.boutique-page .plan-v {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 28px;
+  color: var(--t1);
+}
+
+.boutique-page .plan-fcfa {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--t2);
+}
+
+.boutique-page .plan-u {
+  font-size: 11px;
+  color: var(--t3);
+  margin-top: 2px;
+}
+
+.boutique-page .plan-divider {
+  height: 1px;
+  background: var(--bd);
+  margin: 14px 0;
+}
+
+.boutique-page .plan-feats {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.boutique-page .pf {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--t2);
+  line-height: 1.45;
+}
+
+.boutique-page .pf-ok {
+  color: var(--ok);
+  font-size: 11px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  font-weight: 700;
+}
+
+.boutique-page .pf-no {
+  color: var(--t4);
+  font-size: 11px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  font-weight: 700;
+}
+
+.boutique-page .plan-btn {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.18s;
+  border: none;
+  text-align: center;
+  text-decoration: none;
+  display: block;
+}
+
+.boutique-page .plan-btn.primary {
+  background: #e8961e;
+  color: #fff;
+}
+
+.boutique-page .plan-btn.primary:hover {
+  background: #c77a0e;
+}
+
+.boutique-page .plan-btn.ghost {
+  background: transparent;
+  border: 1px solid var(--bd2);
+  color: var(--t2);
+}
+
+.boutique-page .plan-btn.ghost:hover {
+  border-color: #e8961e;
+  color: #e8961e;
+}
+
+.boutique-page .lic-box {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 12px;
+  padding: 20px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 20px;
+}
+
+.boutique-page .lb-title {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--t1);
+  margin-bottom: 6px;
+}
+
+.boutique-page .lb-desc {
+  font-size: 12px;
+  color: var(--t2);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.boutique-page .lb-incl {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.boutique-page .lbi {
+  background: var(--s3);
+  border: 1px solid var(--bd);
+  color: var(--t2);
+  font-size: 11px;
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 5px;
+}
+
+.boutique-page .lb-price {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.boutique-page .lb-v {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 26px;
+  color: var(--t1);
+}
+
+.boutique-page .lb-fcfa {
+  font-size: 13px;
+  color: var(--t2);
+  font-weight: 400;
+}
+
+.boutique-page .lb-note {
+  font-size: 10px;
+  color: var(--t3);
+  margin-top: 3px;
+}
+
+.boutique-page .lb-btn {
+  display: block;
+  background: #e8961e;
+  color: #fff;
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 10px 22px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  margin-top: 12px;
+  text-align: center;
+  text-decoration: none;
+  transition: background 0.18s;
+  white-space: nowrap;
+}
+
+.boutique-page .lb-btn:hover {
+  background: #c77a0e;
+}
+
+.boutique-page .det-footer {
+  border-top: 1px solid var(--bd);
+  padding: 16px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--s1);
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.boutique-page .df-trial {
+  font-size: 12px;
+  color: var(--t3);
+}
+
+.boutique-page .df-trial strong {
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.boutique-page .df-btns {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.boutique-page .df-ghost {
+  background: transparent;
+  border: 1px solid var(--bd2);
+  color: var(--t2);
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 8px 16px;
+  border-radius: 7px;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.18s;
+}
+
+.boutique-page .df-ghost:hover {
+  border-color: #e8961e;
+  color: #e8961e;
+}
+
+.boutique-page .df-pri {
+  background: #e8961e;
+  color: #fff;
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 8px 18px;
+  border-radius: 7px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.18s;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.boutique-page .df-pri:hover {
+  background: #c77a0e;
+}
+
+.boutique-page .pack-sec {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 5% 72px;
+}
+
+.boutique-page .pack {
+  background: var(--s1);
+  border: 1px solid var(--bd);
+  border-radius: 16px;
+  padding: 36px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 32px;
+  position: relative;
+  overflow: hidden;
+}
+
+.boutique-page .pack::before {
+  content: '';
+  position: absolute;
+  right: -60px;
+  top: -60px;
+  width: 220px;
+  height: 220px;
+  background: radial-gradient(circle, rgba(232, 150, 30, 0.09), transparent 70%);
+  pointer-events: none;
+}
+
+.boutique-page .pey {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #e8961e;
+  margin-bottom: 8px;
+}
+
+.boutique-page .pt {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+  font-size: 22px;
+  color: var(--t1);
+  margin-bottom: 8px;
+}
+
+.boutique-page .pd {
+  font-size: 13px;
+  color: var(--t2);
+  line-height: 1.7;
+  max-width: 480px;
+}
+
+.boutique-page .pms {
+  display: flex;
+  gap: 5px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+}
+
+.boutique-page .pm {
+  background: var(--s2);
+  border: 1px solid var(--bd);
+  border-radius: 5px;
+  font-size: 10px;
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  color: var(--t3);
+  padding: 3px 9px;
+}
+
+.boutique-page .pcta-btn {
+  background: #e8961e;
+  color: #fff;
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  padding: 12px 26px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  display: block;
+  transition: background 0.18s;
+  text-align: center;
+}
+
+.boutique-page .pcta-btn:hover {
+  background: #c77a0e;
+}
+
+.boutique-page .pcta-note {
+  font-size: 10px;
+  color: var(--t3);
+  text-align: center;
+  margin-top: 8px;
+  line-height: 1.6;
+}
+
+.boutique-page .tbar {
+  border-top: 1px solid var(--bd);
+  border-bottom: 1px solid var(--bd);
+  padding: 18px 5%;
+  background: var(--s1);
+}
+
+.boutique-page .tbi {
+  max-width: 1400px;
+  margin: 0 auto;
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+
+.boutique-page .tbit {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.boutique-page .tbi-ic {
+  font-size: 18px;
+}
+
+.boutique-page .tbi-lbl {
+  font-family: Urbanist, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--t1);
+}
+
+.boutique-page .tbi-s {
+  font-size: 10px;
+  color: var(--t3);
+}
+
+@media (max-width: 900px) {
+  .boutique-page .ov-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .boutique-page .plans {
+    grid-template-columns: 1fr;
+  }
+
+  .boutique-page .mod-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .boutique-page .pack {
+    grid-template-columns: 1fr;
+  }
+
+  .boutique-page .lic-box {
+    grid-template-columns: 1fr;
+  }
+
+  .boutique-page .lb-price {
+    text-align: left;
+  }
+
+  .boutique-page .pc-head {
+    grid-template-columns: auto 1fr;
+  }
+
+  .boutique-page .pc-price-col,
+  .boutique-page .pc-chevron {
+    display: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .boutique-page .incl-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .boutique-page .tbi {
+    gap: 20px;
+  }
+
+  .boutique-page .stats-row {
+    display: none;
+  }
+
+  .boutique-page .dp-stats {
+    grid-template-columns: 1fr;
+  }
+}

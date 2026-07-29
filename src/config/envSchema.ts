@@ -145,6 +145,9 @@ export function validateProcessEnv(
 
   if (isProduction) {
     errors.push(...secretErrors("PADDE_WEBHOOK_SECRET", env.PADDE_WEBHOOK_SECRET?.trim(), true));
+    errors.push(
+      ...secretErrors("NOYA_RECRUTEMENT_WEBHOOK_SECRET", env.NOYA_RECRUTEMENT_WEBHOOK_SECRET?.trim(), true)
+    );
     if (!env.SAAS_BRIDGE_API_KEY?.trim()) {
       warnings.push(
         "SAAS_BRIDGE_API_KEY absent — les webhooks SaaS (/api/saas/webhooks/*) seront refusés en production."
@@ -159,9 +162,11 @@ export function validateProcessEnv(
     errors.push(...secretErrors("STRIPE_WEBHOOK_SECRET", env.STRIPE_WEBHOOK_SECRET?.trim(), true));
   }
 
-  const noyaSecret = env.NOYA_RECRUTEMENT_WEBHOOK_SECRET?.trim();
-  if (noyaSecret) {
-    errors.push(...secretErrors("NOYA_RECRUTEMENT_WEBHOOK_SECRET", noyaSecret, false));
+  if (!isProduction) {
+    const noyaSecret = env.NOYA_RECRUTEMENT_WEBHOOK_SECRET?.trim();
+    if (noyaSecret) {
+      errors.push(...secretErrors("NOYA_RECRUTEMENT_WEBHOOK_SECRET", noyaSecret, false));
+    }
   }
 
   errors.push(...corsErrors(parsed.data.CORS_ORIGIN, isProduction));

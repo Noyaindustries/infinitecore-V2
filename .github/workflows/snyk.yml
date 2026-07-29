@@ -26,8 +26,9 @@ jobs:
       - name: Install
         run: npm ci
 
+      # Pin to snyk/actions v1.0.0 (commit SHA) — avoid floating @master
       - name: Snyk test (dependencies)
-        uses: snyk/actions/node@master
+        uses: snyk/actions/node@9adf32b1121593767fc3c057af55b55db032dc04
         continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
@@ -36,7 +37,7 @@ jobs:
 
       - name: Snyk monitor (main pushes)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-        uses: snyk/actions/node@master
+        uses: snyk/actions/node@9adf32b1121593767fc3c057af55b55db032dc04
         continue-on-error: true
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}

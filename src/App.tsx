@@ -6,6 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { PageLoadingFallback } from './components/PageLoadingFallback';
 import ScrollToTop from './components/ScrollToTop';
 import { AuthProvider } from './components/AuthProvider';
+import { BrandingProvider } from './components/BrandingProvider';
 import CookieBanner from './components/CookieBanner';
 import GoogleEmailModal from './components/GoogleEmailModal';
 import GoogleConfirmModal from './components/GoogleConfirmModal';
@@ -84,6 +85,7 @@ function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
+        <BrandingProvider>
         <Toaster
           position="bottom-center"
           containerClassName="!bottom-4 max-sm:!px-3 sm:!bottom-6"
@@ -99,6 +101,7 @@ function App() {
           <ScrollToTop />
           <AnimatedRoutes />
         </Router>
+        </BrandingProvider>
       </AuthProvider>
     </ErrorBoundary>
   );

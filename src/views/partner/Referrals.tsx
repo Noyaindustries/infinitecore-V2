@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Copy, Download, Link2, UserPlus, Users } from 'lucide-react';
-import { collection, onSnapshot } from '@/lib/mongoFirestore';
+import { collection, onSnapshot, query, where } from '@/lib/mongoFirestore';
 import { db } from '@/lib/clientSdk';
 import { useAuth } from '../../components/AuthProvider';
 import { Lead, leadService } from '../../services/leadService';
@@ -49,7 +49,9 @@ export default function PartnerReferrals() {
       setReferredSignups([]);
       return;
     }
-    const unsubscribe = onSnapshot(collection(db, 'users'), (snapshot) => {
+    const unsubscribe = onSnapshot(
+      query(collection(db, 'users'), where('referredByPartnerId', '==', partnerUid)),
+      (snapshot) => {
       const referralKeys = new Set<string>([
         referralCode,
         normalizePartnerCode(String(userData?.referralCode || '')),

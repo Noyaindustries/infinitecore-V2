@@ -41,6 +41,23 @@ export default function Signup() {
   const [googleChallengeId, setGoogleChallengeId] = useState('');
   const [googleVerificationEmail, setGoogleVerificationEmail] = useState('');
   const [googleIsNewUser, setGoogleIsNewUser] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [referralCode, setReferralCode] = useState<string | null>(null);
+  const [referrerName, setReferrerName] = useState<string | null>(null);
+  const [referrerId, setReferrerId] = useState<string | null>(null);
+  const [formData, setFormData] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    company: '',
+    companyDescription: '',
+    industry: '',
+    industryOther: '',
+    employees: '',
+    password: '',
+    confirmPassword: '',
+  });
 
   const homePathForRole = (role: string | undefined): string => {
     switch (role) {
@@ -54,37 +71,39 @@ export default function Signup() {
   };
 
   const navigateAfterSignup = async () => {
+    const params = new URLSearchParams(location.search);
+    const returnTo = (() => {
+      const raw = params.get('returnTo');
+      if (!raw) return null;
+      try {
+        const decoded = decodeURIComponent(raw);
+        if (decoded.startsWith('/') && !decoded.startsWith('//') && !decoded.includes('://')) {
+          return decoded;
+        }
+      } catch {
+        /* ignore */
+      }
+      return null;
+    })();
+
     try {
       const { apiRequest } = await import('../../lib/apiClient');
       const meData = await apiRequest<{ success: boolean; userData?: { role?: string } }>('/api/auth/me');
-      navigate(homePathForRole(meData?.userData?.role), { replace: true });
+      const role = meData?.userData?.role;
+      if (returnTo && (role === 'client' || !role)) {
+        navigate(returnTo, { replace: true });
+        return;
+      }
+      navigate(homePathForRole(role), { replace: true });
     } catch {
-      navigate('/dashboard', { replace: true });
+      navigate(returnTo || '/dashboard', { replace: true });
     }
   };
-   const [isLoading, setIsLoading] = useState(false);
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
-  const [referralCode, setReferralCode] = useState<string | null>(null);
-  const [referrerName, setReferrerName] = useState<string | null>(null);
-  const [referrerId, setReferrerId] = useState<string | null>(null);
 
   const getPartnerLabel = (data: { firstName?: string; lastName?: string; email?: string }, fallbackId: string) => {
     const fullName = `${data.firstName || ''} ${data.lastName || ''}`.trim();
     return fullName || data.email || `Partenaire ${fallbackId}`;
   };
-  
-  const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    phone: '',
-    company: '',
-    companyDescription: '',
-    industry: '',
-    industryOther: '',
-    employees: '',
-    password: '',
-    confirmPassword: '',
-  });
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
