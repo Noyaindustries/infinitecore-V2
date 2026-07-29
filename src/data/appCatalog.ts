@@ -370,10 +370,26 @@ function mergeStoredWithDefault(def: AppCatalogEntry, found?: AppCatalogEntry): 
   return mergeDetailFields(merged);
 }
 
-/** Fusionne les apps par défaut + personnalisées (admin). */
-export function mergeCatalogWithDefaults(remote: AppCatalogEntry[]): AppCatalogEntry[] {
+/** Fusionne les apps par défaut + personnalisées (admin).
+ *  `preserveRemoteSet: true` : la liste distante fait foi (pas de réapparition d’apps
+ *  intégrées renommées / retirées). Enrichit seulement les entrées présentes. */
+export function mergeCatalogWithDefaults(
+  remote: AppCatalogEntry[],
+  options?: { preserveRemoteSet?: boolean }
+): AppCatalogEntry[] {
+  const preserveRemoteSet = options?.preserveRemoteSet === true;
   const remoteById = new Map(remote.map((r) => [r.id, r]));
   const defaultIds = new Set(INFINITE_APP_CATALOG.map((d) => d.id));
+
+  if (preserveRemoteSet) {
+    return enrichCatalogSaasDefaults(
+      remote.map((r) => {
+        const def = INFINITE_APP_CATALOG.find((d) => d.id === r.id);
+        if (def) return mergeStoredWithDefault(def, r);
+        return mergeDetailFields({ ...r, pricing: normalizeEntryPricing(r.pricing || []) });
+      })
+    );
+  }
 
   const defaults = INFINITE_APP_CATALOG.map((def) =>
     mergeStoredWithDefault(def, remoteById.get(def.id))

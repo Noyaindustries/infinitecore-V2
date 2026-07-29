@@ -89,7 +89,7 @@ test('client connecté : CTAs boutique marketing pointent vers Shop', async ({ p
   await expect(page.locator('.detail').first()).toBeVisible({ timeout: 10_000 });
   await page.locator('.tab', { hasText: /Tarifs/i }).first().click();
 
-  const trialLink = page.locator('a').filter({ hasText: /essai|S'abonner|Acheter la licence/i }).first();
+  const trialLink = page.locator('a').filter({ hasText: /essai|S'abonner|Demander un devis/i }).first();
   await expect(trialLink).toBeVisible({ timeout: 10_000 });
   const href = await trialLink.getAttribute('href');
   expect(href).toMatch(/^\/dashboard\/boutique\?/);

@@ -1,4 +1,4 @@
-import type { AppCatalogEntry, AppLicensePricing, AppSubscriptionPricing, BillingInterval } from "@/data/appCatalog";
+import type { AppCatalogEntry, AppSubscriptionPricing, BillingInterval } from "@/data/appCatalog";
 import { isExternalSaasBilling } from "@/lib/saasBilling";
 
 export type CatalogCheckoutError = { ok: false; error: string };
@@ -46,15 +46,6 @@ function findSubscriptionPricing(
   return undefined;
 }
 
-function findLicensePricing(
-  app: AppCatalogEntry,
-  durationDays: number
-): AppLicensePricing | undefined {
-  return app.pricing.find(
-    (p): p is AppLicensePricing => p.type === "license" && p.durationDays === durationDays
-  );
-}
-
 /** Prix abonnement issu du catalogue (ignore le montant client). */
 export function resolveCatalogSubscriptionCheckout(
   catalog: AppCatalogEntry[],
@@ -83,41 +74,14 @@ export function resolveCatalogSubscriptionCheckout(
   };
 }
 
-/** Prix licence issu du catalogue (ignore le montant client). */
+/** Prix licence issu du catalogue — checkout public désactivé (licence = sur devis). */
 export function resolveCatalogLicenseCheckout(
-  catalog: AppCatalogEntry[],
-  appId: string,
-  requestedDurationDays?: number
+  _catalog: AppCatalogEntry[],
+  _appId: string,
+  _requestedDurationDays?: number
 ): LicenseCheckoutResolved | CatalogCheckoutError {
-  const app = catalog.find((a) => a.id === appId);
-  if (!app) return { ok: false, error: "Application introuvable." };
-  if (!app.onlineCheckout) {
-    return { ok: false, error: "Le checkout en ligne est désactivé pour cette application." };
-  }
-  const licenseEntries = app.pricing.filter((p): p is AppLicensePricing => p.type === "license");
-  if (!licenseEntries.length) {
-    return { ok: false, error: "Aucun tarif licence configuré pour cette application." };
-  }
-  const durationDays =
-    requestedDurationDays !== undefined && requestedDurationDays >= 0
-      ? requestedDurationDays
-      : licenseEntries[0].durationDays;
-  const pricing = findLicensePricing(app, durationDays);
-  if (!pricing) {
-    return {
-      ok: false,
-      error: "Durée de licence non proposée au catalogue.",
-    };
-  }
-  if (pricing.price <= 0) {
-    return { ok: false, error: "Tarif licence introuvable." };
-  }
   return {
-    ok: true,
-    unitAmount: Math.round(pricing.price),
-    appName: app.title,
-    moduleKey: app.moduleKey,
-    licenseDurationDays: pricing.durationDays,
-    app,
+    ok: false,
+    error: "La licence à vie est sur devis. Contactez l'équipe pour un tarif personnalisé.",
   };
 }

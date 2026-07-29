@@ -1,11 +1,10 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Plus, Save, X } from 'lucide-react';
 import {
   formatFcfa,
   hasLicensePricing,
   hasSubscriptionPricing,
-  isBuiltInAppId,
   setLicensePricingEnabled,
   setSubscriptionPricingEnabled,
   slugifyAppId,
@@ -30,15 +29,6 @@ type Props = {
 
 function patchDraft(draft: AppCatalogEntry, patch: Partial<AppCatalogEntry>): AppCatalogEntry {
   return { ...draft, ...patch };
-}
-
-function patchLicensePrice(draft: AppCatalogEntry, price: number): AppCatalogEntry {
-  return {
-    ...draft,
-    pricing: draft.pricing.map((p) =>
-      p.type === 'license' ? { ...p, price: Math.max(0, price) } : p
-    ),
-  };
 }
 
 function patchSubscriptionPrice(draft: AppCatalogEntry, price: number): AppCatalogEntry {
@@ -71,7 +61,14 @@ export default function AppCatalogEditorModal({ mode, draft, onChange, onClose, 
   const license = draft.pricing.find((p): p is AppLicensePricing => p.type === 'license');
   const subscription = draft.pricing.find((p): p is AppSubscriptionPricing => p.type === 'subscription');
   const isCreate = mode === 'create';
-  const autoSlugFromTitle = isCreate || draft.id.startsWith('nouvelle-app-');
+  /** Dès que l’admin édite l’identifiant à la main, on arrête de le réécrire depuis le titre. */
+  const [idLockedByUser, setIdLockedByUser] = useState(false);
+  const autoSlugFromTitle =
+    !idLockedByUser && (isCreate || draft.id.startsWith('nouvelle-app-'));
+
+  useEffect(() => {
+    setIdLockedByUser(false);
+  }, [mode, isCreate]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -163,8 +160,8 @@ export default function AppCatalogEditorModal({ mode, draft, onChange, onClose, 
                 <input
                   id="editor-id"
                   value={draft.id}
-                  disabled={!isCreate && isBuiltInAppId(draft.id)}
                   onChange={(e) => {
+                    setIdLockedByUser(true);
                     const newId = slugifyAppId(e.target.value);
                     onChange(
                       patchDraft(draft, {
@@ -173,9 +170,12 @@ export default function AppCatalogEditorModal({ mode, draft, onChange, onClose, 
                       })
                     );
                   }}
-                  className="w-full rounded-xl border border-border bg-noya-black px-3 py-2 font-mono text-sm text-text-primary disabled:opacity-60"
+                  className="w-full rounded-xl border border-border bg-noya-black px-3 py-2 font-mono text-sm text-text-primary"
                 />
-                <p className="mt-1 font-mono text-[10px] text-text-muted">/applications/{draft.id}</p>
+                <p className="mt-1 font-mono text-[10px] text-text-muted">/applications/{draft.id || '…'}</p>
+                <p className="mt-1 text-[11px] text-text-secondary">
+                  Modifiable librement. Après renommage, enregistrez le formulaire pour mettre à jour l&apos;URL publique.
+                </p>
               </div>
             </div>
           </Section>
@@ -219,9 +219,9 @@ export default function AppCatalogEditorModal({ mode, draft, onChange, onClose, 
             </label>
 
             <div className="mt-4 rounded-xl border border-noya-orange/25 bg-noya-orange/5 p-4">
-              <p className="text-xs font-bold uppercase tracking-wider text-noya-orange">Tarifs (FCFA)</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-noya-orange">Tarifs</p>
               <p className="mt-1 text-xs text-text-muted">
-                Cochez les offres proposées. Licence à vie : client héberge. Abonnement : SaaS en ligne par Infinite Core.
+                Licence à vie : toujours sur devis (contact). Abonnement : prix SaaS en ligne (Stripe).
               </p>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <div className={`rounded-lg border p-3 ${hasLicensePricing(draft) ? 'border-border bg-noya-black/40' : 'border-border/60 bg-noya-black/20 opacity-80'}`}>
@@ -235,23 +235,12 @@ export default function AppCatalogEditorModal({ mode, draft, onChange, onClose, 
                     Licence à vie — auto-hébergée
                   </label>
                   {license ? (
-                    <>
-                      <label htmlFor="editor-license-price" className="mb-1 mt-3 block text-xs font-semibold text-text-secondary">
-                        Montant (FCFA)
-                      </label>
-                      <input
-                        id="editor-license-price"
-                        type="number"
-                        min={0}
-                        step={1000}
-                        value={license.price}
-                        onChange={(e) => onChange(patchLicensePrice(draft, Number(e.target.value)))}
-                        className="w-full rounded-lg border border-border bg-noya-black px-3 py-2 text-sm font-bold text-text-primary"
-                      />
+                    <div className="mt-3 rounded-lg border border-border/80 bg-noya-black/50 px-3 py-2">
+                      <p className="text-sm font-bold text-noya-orange">Sur devis</p>
                       <p className="mt-1 text-xs text-text-muted">
-                        {formatFcfa(license.price)} — à vie, hébergement client
+                        Pas de montant en ligne — le client demande un devis (téléphone / WhatsApp / messagerie).
                       </p>
-                    </>
+                    </div>
                   ) : (
                     <p className="mt-2 text-xs text-text-muted">Non proposée aux clients.</p>
                   )}

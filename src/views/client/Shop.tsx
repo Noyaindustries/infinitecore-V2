@@ -124,8 +124,24 @@ export default function ClientShop() {
       toast.error('Vous devez être connecté pour passer une commande.');
       return;
     }
-    setSelectedService(service);
-    setSelectedPricing(pricing ?? service.pricing?.[0] ?? null);
+    // Licence à vie = sur devis (messagerie), jamais Stripe.
+    if (pricing?.type === 'license') {
+      setSelectedService({ ...service, onlineCheckout: false, pricing: undefined });
+      setSelectedPricing(null);
+      setNote(`Demande de devis — licence à vie pour « ${service.title} ».`);
+      setOrderSent(false);
+      return;
+    }
+    const subscriptionOptions = (service.pricing || []).filter((p) => p.type === 'subscription');
+    setSelectedService({
+      ...service,
+      pricing: subscriptionOptions.length ? subscriptionOptions : service.pricing,
+    });
+    setSelectedPricing(
+      pricing?.type === 'subscription'
+        ? pricing
+        : subscriptionOptions[0] ?? service.pricing?.find((p) => p.type === 'subscription') ?? null
+    );
     setNote('');
     setOrderSent(false);
   };
@@ -153,6 +169,7 @@ export default function ClientShop() {
     const pickPricing = (): AppPricing | undefined => {
       const list = mod.pricing || [];
       if (pricingIntent === 'license') {
+        // Intention licence → devis (pas de formule Stripe licence).
         return list.find((p) => p.type === 'license');
       }
       if (pricingIntent === 'subscription') {
@@ -162,7 +179,7 @@ export default function ClientShop() {
           list.find((p) => p.type === 'subscription')
         );
       }
-      return list[0];
+      return list.find((p) => p.type === 'subscription') || list[0];
     };
 
     if (wantTrial) {
@@ -297,7 +314,7 @@ export default function ClientShop() {
   };
 
   const startStripeCheckout = async (
-    endpoint: '/api/stripe/checkout/subscription' | '/api/stripe/checkout/license',
+    endpoint: '/api/stripe/checkout/subscription',
     body: Record<string, unknown>
   ) => {
     const payload = await apiRequest<{
@@ -342,14 +359,8 @@ export default function ClientShop() {
             }
           }
           if (pricing.type === 'license') {
-            await startStripeCheckout('/api/stripe/checkout/license', {
-              appId: selectedService.id,
-              appName: selectedService.title,
-              moduleKey: selectedService.moduleKey || selectedService.id,
-              amount: pricing.price,
-              licenseDurationDays: pricing.type === 'license' ? pricing.durationDays : 0,
-              ...(note.trim() ? { note: note.trim() } : {}),
-            });
+            toast.error('La licence à vie est sur devis. Envoyez une demande via la messagerie.');
+            await submitOrderViaMessagerie();
             return;
           }
           await startStripeCheckout('/api/stripe/checkout/subscription', {
@@ -593,9 +604,9 @@ export default function ClientShop() {
                   <p className="mt-1 font-bold text-noya-orange">Sur devis</p>
                 )}
                 <p className="mb-4 mt-3 flex-grow text-sm text-text-secondary">{module.desc}</p>
-                {module.onlineCheckout && licensePrice && (
+                {licensePrice && (
                   <p className="text-xs text-text-muted mb-4">
-                    Licence à vie : {formatFcfa(licensePrice.price)} — auto-hébergée chez vous
+                    Licence à vie : sur devis — auto-hébergée chez vous
                   </p>
                 )}
                 <div className="flex justify-between items-end mt-auto pt-4 border-t border-border gap-2">
@@ -681,9 +692,14 @@ export default function ClientShop() {
                     {selectedService.onlineCheckout && selectedService.pricing && selectedService.pricing.length > 0 && (
                       <div className="space-y-2">
                         <p className="text-sm font-medium text-text-primary">Formule</p>
-                        {selectedService.pricing.map((option) => (
+                        {selectedService.pricing
+                          .filter(
+                            (option): option is Extract<AppPricing, { type: 'subscription' }> =>
+                              option.type === 'subscription'
+                          )
+                          .map((option) => (
                           <label
-                            key={option.type === 'license' ? `license-${option.durationDays}` : `sub-${option.billingCycle}`}
+                            key={`sub-${option.billingCycle}`}
                             className={`flex cursor-pointer items-center justify-between rounded-xl border px-4 py-3 transition-colors ${
                               selectedPricing === option
                                 ? 'border-noya-orange bg-noya-orange/10'
@@ -700,8 +716,7 @@ export default function ClientShop() {
                               />
                               <div>
                                 <span className="text-sm font-medium text-text-primary">
-                                  {option.label ??
-                                    (option.type === 'license' ? 'Licence à vie' : 'Abonnement mensuel')}
+                                  {option.label ?? 'Abonnement mensuel'}
                                 </span>
                                 <p className="text-xs text-text-muted">{formatPricingHostingShort(option)}</p>
                                 <p className="text-[11px] text-text-muted">{formatPricingHostingLabel(option)}</p>
@@ -709,14 +724,17 @@ export default function ClientShop() {
                             </div>
                             <span className="text-sm font-bold text-noya-orange">
                               {formatFcfa(option.price)}
-                              {option.type === 'subscription'
-                                ? option.billingCycle === 'year'
-                                  ? '/an'
-                                  : '/mois'
-                                : ''}
+                              {option.billingCycle === 'year' ? '/an' : '/mois'}
                             </span>
                           </label>
                         ))}
+                        {(selectedService.pricing.some((p) => p.type === 'license') ||
+                          note.toLowerCase().includes('licence')) && (
+                          <p className="rounded-xl border border-border bg-surface-primary/50 px-4 py-3 text-xs text-text-secondary">
+                            <span className="font-bold text-noya-orange">Licence à vie : sur devis.</span>{' '}
+                            Indiquez votre besoin dans la note — l&apos;équipe vous répondra dans la messagerie.
+                          </p>
+                        )}
                       </div>
                     )}
 

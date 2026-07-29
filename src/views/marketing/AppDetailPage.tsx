@@ -235,8 +235,11 @@ export default function AppDetailPage() {
                 {license && app.onlineCheckout && (
                   <div className="rounded-2xl border border-white/10 bg-[#0D1320] p-5">
                     <p className="text-xs font-bold uppercase tracking-wider text-[#6EA7EA]">Licence à vie</p>
-                    <p className="mt-2 text-2xl font-black text-[#F2F4F8]">{formatFcfa(license.price)}</p>
+                    <p className="mt-2 text-2xl font-black text-[#F2F4F8]">Sur devis</p>
                     <p className="mt-2 text-xs text-[#8D98AA]">{formatLicenseHostingLabel()}</p>
+                    <p className="mt-3 text-sm text-[#8D98AA]">
+                      Tarif personnalisé selon votre organisation — demandez un devis ou prenez rendez-vous.
+                    </p>
                   </div>
                 )}
                 <p className="text-sm text-[#8D98AA]">

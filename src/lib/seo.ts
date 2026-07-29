@@ -23,7 +23,6 @@ export type SeoPayload = {
 };
 
 export function buildAppProductJsonLd(app: AppCatalogEntry): Record<string, unknown> {
-  const license = app.pricing.find((p) => p.type === 'license');
   const subscription = app.pricing.find((p) => p.type === 'subscription');
   const offers = [];
   if (subscription && app.onlineCheckout) {
@@ -39,16 +38,7 @@ export function buildAppProductJsonLd(app: AppCatalogEntry): Record<string, unkn
       description: `Abonnement mensuel SaaS Infinite Core — ${formatFcfa(subscription.price)}`,
     });
   }
-  if (license && app.onlineCheckout) {
-    offers.push({
-      '@type': 'Offer',
-      price: license.price,
-      priceCurrency: 'XOF',
-      availability: 'https://schema.org/InStock',
-      url: absoluteUrl(`/applications/${app.id}`),
-      description: `Licence à vie auto-hébergée — ${formatFcfa(license.price)}`,
-    });
-  }
+  // Licence à vie = sur devis : pas d'offre chiffrée dans le JSON-LD public.
 
   return {
     '@context': 'https://schema.org',
@@ -84,12 +74,13 @@ export const STATIC_SEO_ROUTES: Record<string, Omit<SeoPayload, 'path'>> = {
   '/boutique': {
     title: 'Boutique Infinite Core — Logiciels métier',
     description:
-      'CaisseCI, School Manager, Diamond Hotel et plus. Abonnements ou licences perpétuelles en FCFA. Essai 14 jours, Mobile Money accepté.',
+      'CaisseCI, School Manager, Diamond Hotel et plus. Abonnements SaaS en FCFA ; licences à vie sur devis. Essai 14 jours, Mobile Money accepté.',
     image: '/infinite-core-logo-v2.png',
   },
   '/tarifs': {
     title: 'Tarifs Infinite Core — Licences et abonnements',
-    description: 'Tarifs en FCFA : licence à vie (auto-hébergée) ou abonnement mensuel SaaS Infinite Core.',
+    description:
+      'Abonnement mensuel SaaS Infinite Core en FCFA ; licence à vie auto-hébergée sur devis.',
     image: '/infinite-core-logo-v2.png',
   },
   '/signup': {

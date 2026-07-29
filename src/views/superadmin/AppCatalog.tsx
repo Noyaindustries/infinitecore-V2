@@ -12,7 +12,6 @@ import {
   mergeCatalogWithDefaults,
   validateCatalogEntryPricing,
   type AppCatalogEntry,
-  type AppLicensePricing,
   type AppSubscriptionPricing,
 } from '../../data/appCatalog';
 import { appCatalogService } from '../../services/appCatalogService';
@@ -211,6 +210,7 @@ export default function SuperAdminAppCatalog() {
 
       {editor ? (
         <AppCatalogEditorModal
+          key={`${editor.mode}:${editor.originalId ?? editor.draft.id}`}
           mode={editor.mode}
           draft={editor.draft}
           onChange={(draft) => setEditor((prev) => (prev ? { ...prev, draft } : prev))}
@@ -221,7 +221,6 @@ export default function SuperAdminAppCatalog() {
 
       <div className="space-y-4">
         {apps.map((app) => {
-          const license = app.pricing.find((p): p is AppLicensePricing => p.type === 'license');
           const subscription = app.pricing.find((p): p is AppSubscriptionPricing => p.type === 'subscription');
           const featureCount = (app.features ?? []).length;
           const isCustom = !isBuiltInAppId(app.id);
@@ -245,8 +244,8 @@ export default function SuperAdminAppCatalog() {
                     </p>
                     <p className="mt-1 text-xs text-text-muted">
                       {[
-                        hasLicensePricing(app) && license
-                          ? `Licence : ${formatFcfa(license.price)}`
+                        hasLicensePricing(app)
+                          ? 'Licence : sur devis'
                           : 'Licence : —',
                         hasSubscriptionPricing(app) && subscription
                           ? `Abo : ${formatFcfa(subscription.price)}/mois`

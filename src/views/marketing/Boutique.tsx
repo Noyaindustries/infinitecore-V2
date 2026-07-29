@@ -157,16 +157,21 @@ function PricingTab({
     pricing: 'subscription',
     billing: annual ? 'year' : 'month',
   });
-  const licenseCta = resolveBoutiqueCta(isClient, {
-    appId: product.id,
-    pricing: 'license',
-  });
   const trialCta = resolveBoutiqueCta(isClient, {
     appId: product.id,
     pricing: 'subscription',
     billing: 'month',
     trial: true,
   });
+  const licenseQuoteHref =
+    whatsappHref({
+      ...product,
+      whatsappMessage:
+        product.whatsappMessage ||
+        `Bonjour, je souhaite un devis pour la licence à vie de ${product.n}.`,
+    }) || CONTACT_TEL;
+  /** Licence toujours proposée sur devis (même si un prix catalogue existe en admin). */
+  const showLicenseQuote = product.licPrice != null || !hasSub;
 
   return (
     <>
@@ -243,46 +248,26 @@ function PricingTab({
         </>
       ) : null}
 
-      {product.licPrice != null ? (
+      {showLicenseQuote ? (
         <div className="lic-box">
           <div>
             <div className="lb-title">Licence à vie</div>
             <p className="lb-desc">
-              Payez une seule fois et hébergez l&apos;application chez vous. Sans abonnement mensuel —
-              idéal si vous préférez un investissement unique et un contrôle total de
-              l&apos;infrastructure.
+              Hébergez l&apos;application chez vous, sans abonnement mensuel. Le tarif est établi sur
+              devis selon votre organisation, le périmètre et l&apos;accompagnement.
             </p>
             <div className="lb-incl">
               <span className="lbi">À vie</span>
               <span className="lbi">Auto-hébergée</span>
-              <span className="lbi">Package ZIP</span>
+              <span className="lbi">Sur devis</span>
               <span className="lbi">Sans abonnement</span>
             </div>
           </div>
           <div className="lb-price">
-            <div className="lb-v">
-              {formatBoutiqueFcfa(product.licPrice)}
-              <span className="lb-fcfa"> FCFA</span>
-            </div>
-            <div className="lb-note">Paiement unique</div>
-            <Link className="lb-btn" to={licenseCta} style={{ background: product.c }}>
-              Acheter la licence
-            </Link>
-          </div>
-        </div>
-      ) : null}
-
-      {!hasSub && product.licPrice == null ? (
-        <div className="lic-box">
-          <div>
-            <div className="lb-title">Tarification sur mesure</div>
-            <p className="lb-desc">
-              Contactez-nous pour un devis adapté à votre organisation.
-            </p>
-          </div>
-          <div className="lb-price">
-            <a className="lb-btn" href={CONTACT_TEL} style={{ background: product.c }}>
-              Nous contacter
+            <div className="lb-v">Sur devis</div>
+            <div className="lb-note">Tarif personnalisé</div>
+            <a className="lb-btn" href={licenseQuoteHref} style={{ background: product.c }}>
+              Demander un devis
             </a>
           </div>
         </div>
@@ -405,7 +390,6 @@ function ProductCard({
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const price = product.monthlyPrice;
-  const licenseOnly = price == null && product.licPrice != null;
 
   const handleToggle = () => {
     const willOpen = !open;
@@ -462,16 +446,10 @@ function ProductCard({
           </div>
         </div>
         <div className="pc-price-col">
-          <div className="pc-price-from">{licenseOnly ? 'Licence à vie' : 'À partir de'}</div>
+          <div className="pc-price-from">{price != null ? 'À partir de' : 'Licence à vie'}</div>
           <div className="pc-price-val">
-            {price != null
-              ? formatBoutiqueFcfa(price)
-              : product.licPrice != null
-                ? formatBoutiqueFcfa(product.licPrice)
-                : 'Sur devis'}
-            <span className="pc-price-unit">
-              {price != null ? ' FCFA/mois' : product.licPrice != null ? ' FCFA' : ''}
-            </span>
+            {price != null ? formatBoutiqueFcfa(price) : 'Sur devis'}
+            <span className="pc-price-unit">{price != null ? ' FCFA/mois' : ''}</span>
           </div>
         </div>
         <div className="pc-chevron" aria-hidden>

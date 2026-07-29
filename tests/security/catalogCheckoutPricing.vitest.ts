@@ -57,16 +57,15 @@ describe("resolveCatalogSubscriptionCheckout", () => {
 });
 
 describe("resolveCatalogLicenseCheckout", () => {
-  it("retourne le prix licence du catalogue", () => {
+  it("rejette toujours le checkout licence (sur devis)", () => {
     const result = resolveCatalogLicenseCheckout([sampleApp], "erp-multi-ecole");
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.unitAmount).toBe(2_500_000);
-      expect(result.licenseDurationDays).toBe(0);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/sur devis/i);
     }
   });
 
-  it("rejette une durée absente du catalogue (pas de fallback)", () => {
+  it("rejette même avec une durée absente du catalogue", () => {
     const multi: AppCatalogEntry = {
       ...sampleApp,
       pricing: [

@@ -45,7 +45,8 @@ function stripLegacyCatalogEntries(rawApps: unknown): unknown[] {
 }
 
 async function persistCatalog(apps: AppCatalogEntry[]): Promise<AppCatalogEntry[]> {
-  const merged = mergeCatalogWithDefaults(apps);
+  /** Liste admin = source de vérité (autorise renommage / retrait d’IDs intégrés). */
+  const merged = mergeCatalogWithDefaults(apps, { preserveRemoteSet: true });
   const now = new Date().toISOString();
   await prisma.dataDocument.upsert({
     where: {
@@ -79,12 +80,8 @@ export async function loadAppCatalog(): Promise<AppCatalogEntry[]> {
   const parsed = parseAppCatalogEntries(rawApps);
   if (!parsed.length) return mergeCatalogWithDefaults(INFINITE_APP_CATALOG);
 
-  const missingDefault = INFINITE_APP_CATALOG.some((a) => !parsed.some((c) => c.id === a.id));
-  if (missingDefault) {
-    return persistCatalog(mergeCatalogWithDefaults(parsed));
-  }
-
-  return mergeCatalogWithDefaults(parsed);
+  /** Catalogue déjà enregistré : ne pas réinjecter les apps intégrées renommées/retirées. */
+  return mergeCatalogWithDefaults(parsed, { preserveRemoteSet: true });
 }
 
 export async function saveAppCatalog(apps: AppCatalogEntry[]): Promise<AppCatalogEntry[]> {

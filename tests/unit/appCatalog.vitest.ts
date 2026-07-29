@@ -28,6 +28,26 @@ describe('mergeCatalogWithDefaults', () => {
     expect(merged.map((a) => a.id)).toEqual(INFINITE_APP_CATALOG.map((a) => a.id));
   });
 
+  it('preserveRemoteSet : n’ajoute pas les apps intégrées absentes (renommage / retrait)', () => {
+    const renamed = mergeCatalogWithDefaults(
+      [
+        {
+          id: 'caisse-ci',
+          moduleKey: 'caisse-ci',
+          title: 'Caisse CI',
+          desc: 'Renommée',
+          deliveryLabel: '3 jours',
+          pricing: [{ type: 'subscription', price: 12_000, billingCycle: 'month' }],
+          onlineCheckout: true,
+        },
+      ],
+      { preserveRemoteSet: true }
+    );
+    expect(renamed).toHaveLength(1);
+    expect(renamed[0]?.id).toBe('caisse-ci');
+    expect(renamed.some((a) => a.id === 'caisse-enregistreuse')).toBe(false);
+  });
+
   it('conserve uniquement la licence sans réinjecter l’abonnement par défaut', () => {
     const merged = mergeCatalogWithDefaults([
       {
