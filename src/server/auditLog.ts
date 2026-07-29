@@ -16,6 +16,7 @@ export type AuditAuthAction =
   | "auth.password_reset.request"
   | "auth.password_reset.confirm"
   | "auth.admin_role.change"
+  | "auth.admin_email.change"
   | "auth.admin_create"
   | "auth.profile.update";
 

@@ -2458,6 +2458,88 @@ export function registerMongoApi(app: Express) {
     }
   });
 
+  app.post("/api/auth/admin-update-email", async (req: Request, res: Response) => {
+    try {
+      const auth = await requireAuth(req, res);
+      if (!auth) return;
+      if (auth.role !== "admin") {
+        return res.status(403).json({ success: false, error: "Accès refusé." });
+      }
+
+      const uid = String(req.body?.uid || "").trim();
+      const rawEmail = String(req.body?.email || "").trim().toLowerCase();
+      if (!uid) return res.status(400).json({ success: false, error: "UID requis." });
+      if (!isSafeDocId(uid)) {
+        return res.status(400).json({ success: false, error: "UID invalide." });
+      }
+      if (!rawEmail || !isValidEmail(rawEmail)) {
+        return res.status(400).json({ success: false, error: "Email invalide." });
+      }
+
+      const target = await prisma.userAccount.findUnique({
+        where: { uid },
+        select: { uid: true, email: true, role: true },
+      });
+      if (!target) {
+        return res.status(404).json({ success: false, error: "Utilisateur introuvable." });
+      }
+
+      if (target.email === rawEmail) {
+        return res.status(200).json({
+          success: true,
+          unchanged: true,
+          uid: target.uid,
+          email: target.email,
+        });
+      }
+
+      const emailTaken = await prisma.userAccount.findUnique({
+        where: { email: rawEmail },
+        select: { uid: true },
+      });
+      if (emailTaken && emailTaken.uid !== uid) {
+        return res.status(409).json({ success: false, error: "Cet email est déjà utilisé." });
+      }
+
+      const updatedAccount = await prisma.userAccount.update({
+        where: { uid },
+        data: { email: rawEmail },
+      });
+
+      await upsertDataDocument(
+        "users",
+        uid,
+        {
+          uid,
+          email: rawEmail,
+          updatedAt: new Date().toISOString(),
+          updatedByAdminUid: auth.uid,
+        },
+        true
+      );
+
+      logAuditAuth({
+        action: "auth.admin_email.change",
+        success: true,
+        req,
+        actorUid: auth.uid,
+        actorEmail: auth.email,
+        actorRole: auth.role,
+        targetEmail: rawEmail,
+        reason: `${target.email}->${rawEmail}`,
+      });
+
+      return res.status(200).json({
+        success: true,
+        uid: updatedAccount.uid,
+        email: updatedAccount.email,
+        previousEmail: target.email,
+      });
+    } catch (error) {
+      return sendAuthPrismaError(res, "[auth/admin-update-email]", error);
+    }
+  });
+
   app.post("/api/auth/admin-create", async (req: Request, res: Response) => {
     try {
       const auth = await requireAuth(req, res);

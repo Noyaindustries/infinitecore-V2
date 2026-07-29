@@ -41,6 +41,14 @@ test.describe("contournement auth — API", () => {
     expect(response.status()).toBe(403);
   });
 
+  test("POST /api/auth/admin-update-email en tant que client → 403", async ({ request }) => {
+    const response = await request.post("/api/auth/admin-update-email", {
+      headers: authHeaders("client"),
+      data: { uid: "usr_client_test", email: "hacked@example.com" },
+    });
+    expect(response.status()).toBe(403);
+  });
+
   test("PATCH /api/data/doc sans auth → 401", async ({ request }) => {
     const response = await request.patch("/api/data/doc", {
       data: {

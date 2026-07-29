@@ -78,8 +78,8 @@ async function seedUsers(password: string) {
         provider: "seed",
         profile: { source: "seed-test-data" } as any,
       },
+      // Ne pas forcer `email` en update : évite d'écraser un mail modifié via l'admin UI / Atlas.
       update: {
-        email: user.email,
         role: user.role,
         firstName: user.firstName,
         lastName: user.lastName,
@@ -87,14 +87,26 @@ async function seedUsers(password: string) {
       },
     });
 
+    const existingMirror = await prisma.dataDocument.findUnique({
+      where: { collectionPath_docId: { collectionPath: "users", docId: user.uid } },
+    });
+    const existingData =
+      existingMirror?.data && typeof existingMirror.data === "object"
+        ? (existingMirror.data as Record<string, unknown>)
+        : {};
+    const preservedEmail =
+      typeof existingData.email === "string" && existingData.email.trim()
+        ? existingData.email.trim()
+        : user.email;
+
     await upsertDataDocument("users", user.uid, {
       uid: user.uid,
-      email: user.email,
+      email: preservedEmail,
       firstName: user.firstName,
       lastName: user.lastName,
       role: user.role,
       companyId: user.companyId || null,
-      createdAt: nowIso(),
+      createdAt: typeof existingData.createdAt === "string" ? existingData.createdAt : nowIso(),
     });
   }
 }

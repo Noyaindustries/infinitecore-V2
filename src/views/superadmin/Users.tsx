@@ -24,7 +24,9 @@ export default function SuperAdminUsers() {
   const [loading, setLoading] = useState(true);
   const [editingUser, setEditingUser] = useState<string | null>(null);
   const [selectedRole, setSelectedRole] = useState<string>('');
+  const [editingEmail, setEditingEmail] = useState('');
   const [savingRole, setSavingRole] = useState(false);
+  const [savingEmail, setSavingEmail] = useState(false);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createEmail, setCreateEmail] = useState('');
   const [createRole, setCreateRole] = useState('client');
@@ -79,8 +81,14 @@ export default function SuperAdminUsers() {
     return () => unsubscribe();
   }, []);
 
+  const closeEditor = () => {
+    setEditingUser(null);
+    setSelectedRole('');
+    setEditingEmail('');
+  };
+
   const handleRoleChange = async (userId: string) => {
-    if (!selectedRole || savingRole) return;
+    if (!selectedRole || savingRole || savingEmail) return;
     setSavingRole(true);
     try {
       // Endpoint autoritaire : met à jour `UserAccount.role` ET `users.role` (doc miroir).
@@ -98,13 +106,46 @@ export default function SuperAdminUsers() {
           ? 'Rôle inchangé.'
           : `Rôle mis à jour : ${getRoleLabel(result.role)}`
       );
-      setEditingUser(null);
-      setSelectedRole('');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erreur inconnue';
       toast.error(`Mise à jour impossible : ${message}`);
     } finally {
       setSavingRole(false);
+    }
+  };
+
+  const handleEmailChange = async (userId: string, currentEmail: string) => {
+    const email = editingEmail.trim().toLowerCase();
+    if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error('Email invalide.');
+      return;
+    }
+    if (email === currentEmail.trim().toLowerCase()) {
+      toast.success('Email inchangé.');
+      return;
+    }
+    if (savingEmail || savingRole) return;
+    setSavingEmail(true);
+    try {
+      const result = await apiRequest<{
+        success: boolean;
+        unchanged?: boolean;
+        email: string;
+      }>('/api/auth/admin-update-email', {
+        method: 'POST',
+        body: JSON.stringify({ uid: userId, email }),
+      });
+      toast.success(
+        result.unchanged
+          ? 'Email inchangé.'
+          : `Email mis à jour : ${result.email}`
+      );
+      setEditingEmail(result.email);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Erreur inconnue';
+      toast.error(`Mise à jour email impossible : ${message}`);
+    } finally {
+      setSavingEmail(false);
     }
   };
 
@@ -257,14 +298,41 @@ export default function SuperAdminUsers() {
                       {user.companyId && <div className="text-[10px] text-text-muted font-black uppercase tracking-tighter mt-1">ID ENT : {user.companyId.slice(0, 8)}</div>}
                     </td>
                     <td className="p-4">
-                      <div className="flex items-center gap-2 text-text-secondary font-medium italic opacity-80">
-                        <Mail size={14} className="text-noya-blue/50" /> {user.email}
-                      </div>
-                      {user.referredByPartnerName ? (
-                        <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-noya-blue/20 bg-noya-blue/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-noya-blue">
-                          Parrain: {user.referredByPartnerName}
+                      {editingUser === user.uid ? (
+                        <div className="flex flex-col gap-2">
+                          <label className="sr-only" htmlFor={`edit-email-${user.uid}`}>
+                            Email
+                          </label>
+                          <input
+                            id={`edit-email-${user.uid}`}
+                            type="email"
+                            value={editingEmail}
+                            onChange={(e) => setEditingEmail(e.target.value)}
+                            disabled={savingEmail || savingRole}
+                            className="w-full min-w-[220px] rounded-lg border border-border-subtle bg-surface-primary px-3 py-1.5 text-sm font-medium text-text-primary outline-none focus:ring-1 focus:ring-noya-blue disabled:opacity-50"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => void handleEmailChange(user.uid, user.email)}
+                            disabled={savingEmail || savingRole}
+                            className="inline-flex w-fit items-center gap-1.5 rounded-lg bg-noya-blue/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-widest text-noya-blue transition-all hover:bg-noya-blue/25 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {savingEmail ? <Loader2 size={12} className="animate-spin" /> : <Mail size={12} />}
+                            Sauver email
+                          </button>
                         </div>
-                      ) : null}
+                      ) : (
+                        <>
+                          <div className="flex items-center gap-2 text-text-secondary font-medium italic opacity-80">
+                            <Mail size={14} className="text-noya-blue/50" /> {user.email}
+                          </div>
+                          {user.referredByPartnerName ? (
+                            <div className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-noya-blue/20 bg-noya-blue/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-noya-blue">
+                              Parrain: {user.referredByPartnerName}
+                            </div>
+                          ) : null}
+                        </>
+                      )}
                     </td>
                     <td className="p-4">
                       <div className="flex flex-col gap-1">
@@ -288,17 +356,18 @@ export default function SuperAdminUsers() {
                               aria-label="Choisir un rôle utilisateur"
                               value={selectedRole || user.role}
                               onChange={(e) => setSelectedRole(e.target.value)}
-                              className="bg-surface-primary border border-border-subtle text-[10px] font-black uppercase tracking-widest px-2 py-1.5 rounded-lg outline-none focus:ring-1 focus:ring-noya-blue"
+                              disabled={savingRole || savingEmail}
+                              className="bg-surface-primary border border-border-subtle text-[10px] font-black uppercase tracking-widest px-2 py-1.5 rounded-lg outline-none focus:ring-1 focus:ring-noya-blue disabled:opacity-50"
                             >
                               {roles.map(r => (
                                 <option key={r.value} value={r.value}>{r.name}</option>
                               ))}
                             </select>
                             <button
-                              onClick={() => handleRoleChange(user.uid)}
-                              disabled={savingRole}
+                              onClick={() => void handleRoleChange(user.uid)}
+                              disabled={savingRole || savingEmail}
                               className="p-1.5 rounded-lg bg-noya-green/20 text-noya-green transition-all hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
-                              title="Valider"
+                              title="Valider le rôle"
                             >
                               {savingRole ? (
                                 <Loader2 size={14} className="animate-spin" />
@@ -307,13 +376,10 @@ export default function SuperAdminUsers() {
                               )}
                             </button>
                             <button
-                              onClick={() => {
-                                setEditingUser(null);
-                                setSelectedRole('');
-                              }}
-                              disabled={savingRole}
+                              onClick={closeEditor}
+                              disabled={savingRole || savingEmail}
                               className="p-1.5 rounded-lg bg-noya-red/20 text-noya-red transition-all hover:scale-110 disabled:cursor-not-allowed disabled:opacity-50"
-                              title="Annuler"
+                              title="Fermer"
                             >
                               <X size={14} />
                             </button>
@@ -324,9 +390,10 @@ export default function SuperAdminUsers() {
                               onClick={() => {
                                 setEditingUser(user.uid);
                                 setSelectedRole(user.role);
+                                setEditingEmail(user.email || '');
                               }}
                               className="p-2 transition-all text-text-secondary/50 hover:text-noya-orange hover:bg-noya-orange/10 rounded-xl group/btn"
-                              title="Modifier les privilèges"
+                              title="Modifier email / rôle"
                             >
                               <Edit2 size={16} className="group-hover/btn:scale-110 transition-all" />
                             </button>
